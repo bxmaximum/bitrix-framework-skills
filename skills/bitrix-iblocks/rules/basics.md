@@ -1,77 +1,54 @@
-# Hierarchy, IDs, API boundary
+# IDs, API boundary, iblock setup, rights
 
-## Hierarchy
+Iblock type (`b_iblock_type`) → iblock (`b_iblock`, bound to sites) → sections (tree, `b_iblock_section`) → elements (`b_iblock_element`) with properties (`b_iblock_property`).
 
-- **Iblock Type** (`b_iblock_type`) — a family of iblocks with a shared structure: "news", "catalog".
-- **Iblock** (`b_iblock`) — a table of elements of a certain type, linked to sites.
-- **Section** (`b_iblock_section`) — a group of elements, forming a tree.
-- **Element** (`b_iblock_element`) — a unit of content (news, product).
-- **Property** (`b_iblock_property`) — an additional characteristic of an element.
+## Identifiers
 
-## Key Identifiers
+- `API_CODE`: `^[a-z][a-z0-9]{0,49}$` (case-insensitive; no `_`), unique across iblocks. Without it there is no property-aware ORM class and no REST (`REST_ON`). The docs list it as string(255); the kernel limits it to 50.
+- `CODE`: symbolic code for URLs; `XML_ID`: external ID for exchange and migrations.
 
-- `CODE` — symbolic code (latin+digits+`-`), used in URLs and code.
-- `API_CODE` — 1–50 characters, starts with a letter, **CamelCase recommended**. Object-oriented ORM only works if it's present. Set in iblock settings.
-- `XML_ID` — external identifier (for exchanges, Highload directories).
-
-## Where ORM / Classic API Boundary Lies
+## ORM vs classic API
 
 | Task | API |
 | --- | --- |
-| Create iblock type | `CIBlockType::Add` (ORM won't add name translations) |
-| Create iblock | `CIBlock::Add` (ORM won't link to site, permissions, SEO) |
-| Add/change property | `CIBlockProperty::Add/Update/Delete` |
-| Basic iblock permissions | `CIBlock::SetPermission` / `GROUP_ID` field in `Add` |
-| Advanced permissions | `CIBlockRights` / `CIBlockSectionRights` / `CIBlockElementRights` |
-| Image resizing | `CFile::ResizeImage` |
-| Full-text search | `CIBlockElement::UpdateSearch($id)` |
-| Daily element/section CRUD | ORM |
+| Iblock type | `CIBlockType::Add` (ORM does not write lang names) |
+| Iblock | `CIBlock::Add/Update` (ORM does not bind sites, rights, SEO templates) |
+| Property add/update/delete | `CIBlockProperty` (see storage versions) |
+| Rights | `CIBlock::SetPermission`, `CIBlockRights`, `CIBlockSectionRights`, `CIBlockElementRights` |
+| Element/section CRUD | compiled ORM (`rules/orm-entities.md`) or `CIBlockElement`/`CIBlockSection` |
+| Thumbnails | `CFile::ResizeImageGet($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL)['src']` |
+| Search index | `CIBlockElement::UpdateSearch($id, true)` |
 
-## Compiling ORM Classes
-
-ORM generates classes "on the fly" by iblock `API_CODE` (`News` in examples below):
-
-```php
-\Bitrix\Iblock\IblockTable::compileEntity('News');
-// Elements class: \Bitrix\Iblock\Elements\ElementNewsTable
-// Sections class: \Bitrix\Iblock\Model\Section::compileEntityByIblock('News')
-
-$elementClass = \Bitrix\Iblock\Elements\ElementNewsTable::class;
-$sectionClass = \Bitrix\Iblock\Model\Section::compileEntityByIblock('News');
-```
-
-Do not use `\Bitrix\Iblock\ElementTable` and `\Bitrix\Iblock\SectionTable` — they **only** work with basic fields and **do not know about properties/UF**.
-
-IDE annotations: `php bitrix/bitrix.php orm:annotate`.
-
-## Creating an Iblock Programmatically
+## Create an iblock
 
 ```php
 $iblock = new \CIBlock();
 $iblockId = $iblock->Add([
-    'IBLOCK_TYPE_ID' => 'mynews',
+    'IBLOCK_TYPE_ID' => 'news',
     'NAME'           => 'News',
-    'CODE'           => 'mycompany_news',
-    'API_CODE'       => 'News',           // required for ORM
-    'ACTIVE'         => 'Y',
-    'LID'            => ['s1'],           // link to site
-    'GROUP_ID'       => [
-        2 => \CIBlockRights::PUBLIC_READ,
-        8 => \CIBlockRights::EDIT_ACCESS,
-    ],
-    'VERSION'        => 2,                // property storage version (usually 2)
+    'CODE'           => 'news',
+    'API_CODE'       => 'News',      // required for ORM
+    'LID'            => ['s1'],
+    'VERSION'        => 2,           // explicit; the default is 1
+    'GROUP_ID'       => [2 => \CIBlockRights::PUBLIC_READ, 8 => \CIBlockRights::EDIT_ACCESS],
 ]);
-if (!$iblockId) { throw new \RuntimeException($iblock->getLastError()->getMessage()); }
+if (!$iblockId) {
+    throw new \RuntimeException($iblock->LAST_ERROR);
+}
 ```
 
-### Property Storage Versions
+## Property storage versions
 
-- **Version 1** — separate row in the shared `b_iblock_element_property` table. Slow selection, wins with hundreds of properties.
-- **Version 2** (default for new) — single/multiple values in `b_iblock_element_prop_s{IBLOCK_ID}` / `b_iblock_element_prop_m{IBLOCK_ID}`. Fast selection when property count is moderate.
-- **`PropertyTable`** (`Bitrix\Iblock\PropertyTable`) — fine for **reading** property metadata (`getList` / `getById`). For **add/update/delete**, use **`CIBlockProperty`**: on VERSION=2, classic `Add`/`Update`/`Delete` also alter the `prop_s` / `prop_m` tables (`CIBlockProperty::_Add` and related). Plain `PropertyTable::add/update/delete` only touch `b_iblock_property` and will leave v2 storage inconsistent.
+- **1 (default)**: all values in shared `b_iblock_element_property`. `CIBlock::Add` stores 2 only when 2 is passed; `IblockTable` defaults to `PROPERTY_STORAGE_COMMON`.
+- **2**: `b_iblock_element_prop_s{ID}` (single values, one row per element) + `b_iblock_element_prop_m{ID}` (multiple). Faster selections with a moderate number of properties.
+- `PropertyTable` is fine for **reading** property metadata. Write with `CIBlockProperty::Add/Update/Delete`: on v2 they also alter `prop_s`/`prop_m`. `PropertyTable::add/update/delete` touch only `b_iblock_property` and leave v2 storage inconsistent.
 
-## Rights and Public API
+## Rights
 
-- Basic rights: `CIBlock::SetPermission` / `GROUP_ID` on `CIBlock::Add` (letters like `CIBlockRights::PUBLIC_READ`).
-- Extended (element/section level): `CIBlockRights`, `CIBlockSectionRights`, `CIBlockElementRights`. Selections often honor `MIN_PERMISSION` (default public read).
-- Namespace `Bitrix\Iblock\Public\` in the kernel is mainly REST validation helpers (`Public\Service\RestValidator\…`), not a general-purpose CRUD façade — prefer compiled ORM entities + classic APIs above for module code.
+- Simple mode: `GROUP_ID` on `Add`, or `CIBlock::SetPermission($iblockId, [$groupId => 'R'])`. Letters: `CIBlockRights::PUBLIC_READ` (R), `EDIT_ACCESS` (W), `FULL_ACCESS` (X). Extended mode (`RIGHTS_MODE = 'E'`): `CIBlockRights`/`CIBlockSectionRights`/`CIBlockElementRights`.
+- Check: `CIBlockElementRights::UserHasRightTo($iblockId, $elementId, 'element_read')` (both modes, current `$USER` only; `false` without it), `CIBlock::GetPermission($iblockId, $userId)` (iblock-level letter). In agents/CLI decide the access model explicitly.
+- `CIBlockElement::GetList` checks rights only with `'CHECK_PERMISSIONS' => 'Y'` (+ `MIN_PERMISSION`, default `R`; `PERMISSIONS_BY` = user ID). ORM `getList` never checks them.
+- Never pass user-supplied filters straight into `GetList`: drop `CHECK_PERMISSIONS`, `PERMISSIONS_BY`, `MIN_PERMISSION`, `IBLOCK_ID` from them and set these server-side.
+- Moving an element/section: check that the target section belongs to the same iblock and that the user has add rights there. Send `IBLOCK_SECTION_ID` only when moving (`0` = root).
+- Lists module (Bitrix24 "Lists"): `CListPermissions::CheckAccess($USER, $typeId, $iblockId)` returns a letter (`CListPermissions::ACCESS_DENIED` … `IS_ADMIN`) or a negative int (`WRONG_IBLOCK_TYPE`, `WRONG_IBLOCK`, …). Treat `is_int($r) && $r < 0` as an error too, not only `ACCESS_DENIED`.
+- `Bitrix\Iblock\Public\…` is mostly REST validation helpers, not a CRUD facade.

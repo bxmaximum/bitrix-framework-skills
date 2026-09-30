@@ -1,194 +1,83 @@
 ---
 name: bitrix-datetime
-description: Covers date and time in Bitrix — Bitrix\Main\Type\Date and DateTime, parsing and formatting by kernel masks, date arithmetic, time zones via toUserTime/disableUserTime/enableUserTime, Context::getCulture() and locale formats, conversion to timestamp. Applied when building schedules, converting time zones, comparing dates, working with ORM fields DateField and DatetimeField. Key terms — Date, DateTime, toUserTime, format, timezone, Culture, DateField, timestamp.
+description: 'Bitrix\Main\Type\Date and DateTime — parsing, culture formats and masks, arithmetic, server vs user time zone, ORM DateField/DatetimeField. Use when parsing, formatting, comparing or storing dates and times.'
 ---
 
-# Date and Time in Bitrix
+# Date and time
 
-Baseline: **main 23.0+**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-Bitrix does not use raw `\DateTime` — there are two wrappers that take into account **site regional settings** and **user time zone**.
+- `Bitrix\Main\Type\Date` — date only (time `00:00:00`). **Not** a `\DateTime` subclass: it wraps one, so `modify()`, `sub()`, `setTimestamp()` don't exist.
+- `Bitrix\Main\Type\DateTime extends Date` — adds time, time zone and user-time conversion.
 
-- `Bitrix\Main\Type\Date` — date only (time is always `00:00:00`).
-- `Bitrix\Main\Type\DateTime` — date + time + time zone. Inherits from `Date`.
-
-Both inherit from PHP `\DateTime`, so `->format(...)`, `->getTimestamp()`, etc., work.
+Available: `format()`, `add()`, `setDate()`, `getTimestamp()`, `getDiff()`, `toString()`; `DateTime` adds `setTime()`, `setTimeZone()`, `setDefaultTimeZone()`, `toUserTime()`, `disableUserTime()`.
 
 ```php
 use Bitrix\Main\Type\Date;
 use Bitrix\Main\Type\DateTime;
 
-$date = new Date('25.11.2025', 'd.m.Y');
-$dt = new DateTime();                         // now()
-$dt = new DateTime('2025-11-25 14:30:00', 'Y-m-d H:i:s');
+$d = new Date('25.11.2025', 'd.m.Y');                  // 2nd arg is a PHP format
+$dt = new DateTime('2025-11-25 14:30:00', 'Y-m-d H:i:s', new \DateTimeZone('UTC'));
+$now = new DateTime();
+$fromSite = new DateTime($request->get('DATE'));       // no format = site culture format; bad input throws ObjectException
 ```
 
-## Formats: Bitrix Masks vs PHP
+## Parsing user input
 
-Regional settings use their own mask language (`DD.MM.YYYY HH:MI:SS`). The `convertFormatToPhp(...)` method converts it to PHP format.
+```php
+$dt = DateTime::tryParse($input, 'd.m.Y H:i');         // null on error
+$isValid = $dt !== null && $dt->format('d.m.Y H:i') === $input;   // strict
+```
 
-| Bitrix Mask | PHP | Description |
-| --- | --- | --- |
-| `YYYY` | `Y` | Year |
-| `MM` | `m` | Month (with leading zero) |
-| `MMMM` | `F` | Month name |
-| `DD` | `d` | Day (with leading zero) |
-| `HH` | `H` | Hour 24 |
-| `GG` | `h` | Hour 12 |
-| `H` / `G` | `G` / `g` | Hour without leading zero |
-| `MI` | `i` | Minutes |
-| `SS` | `s` | Seconds |
-| `TT` / `T` | `A` / `a` | AM/PM |
+`Date::isCorrect('31.02.2025', 'd.m.Y')` returns **true**: the parser rolls it over to 03.03.2025. Use the strict round-trip above or `checkdate()`.
+
+Other sources: `DateTime::createFromTimestamp($ts)`, `DateTime::createFromPhp(\DateTime $php)` (a `\DateTimeImmutable` needs `\DateTime::createFromImmutable()` first), `Date::createFromText('tomorrow')` (returns `DateTime|null`).
+
+## Culture formats and masks
+
+Culture (`Context::getCurrent()->getCulture()`) stores **site masks** (`DD.MM.YYYY HH:MI:SS`), not PHP formats. Never pass them to `format()`:
 
 ```php
 $culture = \Bitrix\Main\Context::getCurrent()->getCulture();
-echo $dt->format($culture->getDateTimeFormat()); // 25.11.2025 14:30:00
-echo (string)$dt;                                // string conversion = format(culture.DateTime)
+echo $dt->toString($culture);                           // culture format, user TZ
+echo $dt->format(DateTime::getFormat($culture));        // culture format, no TZ shift
+echo $d->format(Date::convertFormatToPhp($culture->getDateFormat()));
 ```
 
-Use `Culture::getDateFormat()`/`getDateTimeFormat()` for UI output — this allows the project to switch to another language without code changes.
+`Date::convertFormatToPhp()`:
 
-## Creation / Parsing
-
-### Safe Parsing
-
-```php
-$dt = DateTime::tryParse($request['DATE'], 'd.m.Y H:i'); // null on error
-if ($dt === null) { /* format error */ }
-
-if (!DateTime::isCorrect('31.02.2025', 'd.m.Y')) { /* ... */ }
-```
-
-Constructor with an incorrect string throws `Bitrix\Main\ObjectException` — so use `tryParse`/`isCorrect` for user input.
-
-### From Other Sources
-
-```php
-$dt = DateTime::createFromPhp(new \DateTime('2025-11-25 14:30:00', new \DateTimeZone('UTC')));
-$dt = DateTime::createFromTimestamp(time());
-$date = Date::createFromText('end of next week');    // null if unparseable; understands local language
-```
+| Mask | PHP | Note |
+| --- | --- | --- |
+| `YYYY`, `MMMM`, `MM`, `DD` | `Y`, `F`, `m`, `d` | |
+| `MI`, `SS` | `i`, `s` | |
+| `HH` / `H` | `H` / `h` | a lone `H` (no `HH`) means 12-hour |
+| `GG` / `G` | `G` / `g` | same rule, no leading zero |
+| `TT` / `T` | `A` / `a` | AM/PM |
 
 ## Arithmetic
 
-`add($interval)` accepts **both** `DateInterval` strings (`P10D`, `-P1M`, `P1Y2M10D`) **and** human text (`+5 days`, `-2 weeks`):
+`add()` mutates and returns the object. It accepts ISO intervals (`P10D`, `-P1M`, `PT30M`) and relative text (`+2 weeks`, `-3 days`):
 
 ```php
-$date = new Date('01.02.2025', 'd.m.Y');
-$date->add('P10D');      // +10 days → 11.02.2025
-$date->add('-P1M');      // -1 month → 11.01.2025
-$date->add('+2 weeks');  // +14 days
+$tomorrow = (clone $now)->add('P1D');
+$dayStart = (clone $now)->setTime(0, 0);
+$monday = (clone $dayStart)->add('-' . ((int)$now->format('N') - 1) . ' days');
+$days = $d1->getDiff($d2)->days;                        // \DateInterval from $d1 to $d2
 ```
 
-Important: `add` **mutates the object** and returns it. If you need an immutable calculation — clone it: `$later = (clone $dt)->add('P1D');`.
+## Time zones
 
-Setting specific values:
+Values are kept in **server** time; users see their own zone when time zones are enabled in the main module.
 
-```php
-$dt->setDate(2026, 1, 15);
-$dt->setTime(9, 30, 0);
-```
+| Call | Result |
+| --- | --- |
+| `(string)$dt`, `$dt->toString()` | culture format in **user** TZ (if enabled and not disabled on the object) |
+| `$dt->format(...)` | the object's own TZ (server unless set, e.g. the UTC example above), never user-shifted |
+| `$dt->disableUserTime()` | `toString()` stays in server time: logs, e-mails, text for humans in server TZ |
+| `DateTime::createFromUserTime($str)` | parses a user-TZ string into server time |
+| `$dt->toUserTime()` | shifts the object itself; use on a clone, never save it |
 
-Diffs:
-
-```php
-$diff = $d2->getDiff($d1);   // \DateInterval
-echo $diff->days;
-```
-
-## Time Zones
-
-Bitrix stores dates in **server** time zone and shows them to the user in their time zone (from profile or auto-detected by browser). Configured in *Settings → Main Module → Time Zones*.
-
-### Explicitly Changing Object Time Zone
-
-```php
-$dt->setTimeZone(new \DateTimeZone('Europe/Berlin'));
-$dt->setDefaultTimeZone(); // return to server time zone
-```
-
-### Converting To/From User Time
-
-```php
-// User input in their TZ → server time object
-$serverDt = DateTime::createFromUserTime('25.11.2025 18:00');
-
-// Server time object → string in user's TZ
-$userDt = $serverDt->toUserTime();
-```
-
-### Auto-conversion on String Cast
-
-If time zones are enabled in `main` module settings, `DateTime` → string cast **automatically** converts to user's time zone:
-
-```php
-$dt = new DateTime('2025-11-25 12:00:00', 'Y-m-d H:i:s'); // UTC server
-echo $dt;  // for a user in UTC+3 it will be "25.11.2025 15:00:00"
-```
-
-**Disable** (for logs, debugging, system events, email to admin):
-
-```php
-$dt->disableUserTime();        // server time
-$dt->enableUserTime();         // enable back
-$dt->isUserTimeEnabled();      // true|false
-```
-
-> ORM fields of `DatetimeField` type return a ready-to-use `DateTime` — you can immediately write `echo $post->getCreatedAt();`, but call `disableUserTime()` when logging.
-
-## ORM Integration
-
-```php
-use Bitrix\Main\ORM\Fields\DatetimeField;
-use Bitrix\Main\ORM\Fields\DateField;
-
-(new DatetimeField('CREATED_AT'))
-    ->configureRequired()
-    ->configureDefaultValue(static fn () => new DateTime());
-
-(new DateField('BIRTH_DAY'))->configureNullable();
-```
-
-In queries, you can compare directly with `DateTime`:
-
-```php
-PostTable::getList([
-    'filter' => [
-        '>CREATED_AT' => (new DateTime())->add('-P7D'),  // a week ago
-    ],
-]);
-```
-
-## When to use `\DateTime`, when Bitrix `DateTime`
-
-- Public API (writing to DB, UI output, ORM) — **Bitrix `DateTime`**.
-- Bridge with an external library using PSR/Symfony — get `\DateTimeImmutable` and convert via `DateTime::createFromPhp(...)`.
-- For arithmetic and differences — `DateTime` works, both APIs are available.
-
-## Practical Recipes
-
-### Start/End of Day
-
-```php
-$start = (clone $now)->setTime(0, 0, 0);
-$end   = (clone $now)->setTime(23, 59, 59);
-```
-
-### Start of Week (Monday)
-
-```php
-$weekStart = (clone $now);
-$weekStart->setTime(0, 0, 0);
-$weekStart->modify('monday this week');
-```
-
-### Same Day Last Year
-
-```php
-$lastYear = (clone $now)->add('-P1Y');
-```
-
-### Outputting "in 5 minutes" in a Cron Task
+Legacy writers (`CAgent::AddAgent`, `$DB->Add()`/`PrepareUpdate()`) run date strings through `CDatabase::CharToDateFunction()`, which subtracts the user offset. Pass them **user-time** strings — plain `toString()`, not `disableUserTime()`:
 
 ```php
 \CAgent::AddAgent(
@@ -198,8 +87,16 @@ $lastYear = (clone $now)->add('-P1Y');
     60,
     '',
     'Y',
-    (new DateTime())->add('+5 minutes')->toString(),
+    (new DateTime())->add('+5 minutes')->toString(),   // user time; the kernel shifts it back
 );
 ```
 
-Use `Culture::getDateFormat()` / `getDateTimeFormat()` (via `Context::getCurrent()->getCulture()`) for locale-aware date formatting instead of hardcoded `date()` masks.
+## ORM
+
+`DateField` returns `Date`, `DatetimeField` returns `DateTime`; filter with objects, not strings:
+
+```php
+PostTable::query()->setSelect(['ID'])->where('CREATED_AT', '>', (new DateTime())->add('-P7D'))->fetchAll();
+```
+
+At the SQL level `DateTime` is written in server TZ (`bitrix-database`). Third-party code wanting `\DateTimeInterface`: `\DateTime::createFromFormat('U', (string)$dt->getTimestamp())`.

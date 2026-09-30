@@ -1,6 +1,6 @@
 # Bitrix Framework Skills
 
-Набор AI-скиллов для разработки на **1С-Битрикс / Bitrix Framework** (D7): ORM, контроллеры, роутинг, кеш, безопасность, компоненты, REST, Sale, миграции (`sprint.migration`) и другие темы ядра.
+Набор AI-скиллов для разработки на **1С-Битрикс / Bitrix Framework** (D7) и **Битрикс24** (облако и коробка): ORM, контроллеры, роутинг, кеш, безопасность, компоненты, REST, Sale, CRM, задачи, чаты, миграции (`sprint.migration`) и другие темы ядра.
 
 Скиллы собирает и поддерживает сообщество **[BXMax](https://bxmax.ru)** — платформа для разработчиков 1С-Битрикс: практические материалы, разборы ядра, эксперименты с AI и обмен опытом между коллегами. Это не официальная документация Битрикс, а концентрированные operational-правила для AI-агентов при проектировании и написании кода в `/local/`.
 
@@ -11,22 +11,25 @@
 - [docs.1c-bitrix.ru](https://docs.1c-bitrix.ru/) — «1С-Битрикс: Управление сайтом».
 - [apidocs.bitrix24.ru](https://apidocs.bitrix24.ru/) — REST «Битрикс24».
 
-## AGENTS.md
+Скиллы сверены с ядром коробки Битрикс24 **main 26.800.0**: каждый PHP-пример проходит `php -l`, а классы, методы, константы и именованные аргументы проверяются по исходникам ядра скриптом [`tools/verify-skills.php`](tools/verify-skills.php). Базовые паттерны рассчитаны на **main 23.0+**; всё, что новее, помечено `Since` с вариантом для старого ядра.
 
-Системный промпт для AI-агентов — [AGENTS.md](AGENTS.md) в корне репозитория. Содержит приоритеты D7, границы DI, чеклист перед коммитом, анти-паттерны и индекс скиллов.
+## Каноны и AGENTS.md
 
-Скиллы проверены на ядре **main 26.150.0**; baseline-паттерны — **main 23.0+** (см. version policy в AGENTS.md).
+Общие правила — `/local/`, D7, границы DI, безопасность, политика версий — лежат в скилле `bitrix-framework`. Он ставится вместе с остальными, поэтому отдельный системный промпт не обязателен.
+
+[AGENTS.md](AGENTS.md) — короткий системный промпт для проекта: язык ответов, порядок работы и индекс скиллов. Его можно скопировать в корень Bitrix-проекта или подключить как rule в Cursor.
 
 ## Skills
 
 Каждый skill — самодостаточный справочник в `skills/<name>/SKILL.md`. После установки через `npx skills` попадает в `.agents/skills/<name>/` целевого проекта.
 
-«Толстые» скиллы используют progressive disclosure: агент открывает `SKILL.md` (роутер), затем только нужные файлы из `rules/*.md`. Полный индекс — в [AGENTS.md](AGENTS.md).
+«Толстые» скиллы — это роутеры: агент открывает `SKILL.md` с таблицей «задача → файл», затем только нужный файл из `rules/*.md`. Описания скиллов короче 250 символов: они попадают в контекст каждой сессии, и мы следим, чтобы набор из 50 скиллов не съедал лишние токены: все описания вместе занимают около 11 КБ, средний `SKILL.md` — около 2,7 КБ.
 
 Каталог:
 
 | Область | Skill |
 | --- | --- |
+| Каноны, версии, DI, безопасность — начать отсюда | `bitrix-framework` |
 | Структура проекта, Loader, `/local` | `bitrix-project-structure` |
 | Секции `.settings.php` ядра | `bitrix-settings` |
 | Создание модулей, install/uninstall | `bitrix-modules` |
@@ -44,6 +47,8 @@
 | Result, Error, ErrorCollection | `bitrix-result-and-errors` |
 | Компоненты, templates, SEF | `bitrix-components` |
 | Инфоблоки, свойства, SEO | `bitrix-iblocks` |
+| Модуль поиска, индексация | `bitrix-search` |
+| Генератор документов | `bitrix-documentgenerator` |
 | Highload-блоки | `bitrix-highloadblock` |
 | Торговый каталог, цены, SKU | `bitrix-catalog` |
 | Интернет-магазин, заказы, оплата | `bitrix-sale` |
@@ -53,6 +58,8 @@
 | SEO, мета, sitemap | `bitrix-seo` |
 | Бизнес-процессы | `bitrix-bizproc` |
 | HttpClient, SSRF, GeoIP | `bitrix-http-client` |
+| Почтовые события, SMTP | `bitrix-mail` |
+| Файлы, `CFile`, загрузка | `bitrix-files` |
 | PSR-3 logging | `bitrix-logger` |
 | Локализация, Loc | `bitrix-localization` |
 | Date/DateTime, timezones | `bitrix-datetime` |
@@ -67,6 +74,27 @@
 | CMS: sites, menus, templates | `bitrix-cms-basics` |
 | Миграции БД/схемы ([sprint.migration](https://marketplace.1c-bitrix.ru/solutions/sprint.migration/)) | `bitrix-sprint-migration` |
 
+Битрикс24:
+
+| Область | Skill |
+| --- | --- |
+| REST API снаружи: вебхуки, OAuth, batch, лимиты, события, REST 3.0 | `bitrix24-rest-api` |
+| Официальный MCP документации, Vibecode | `bitrix24-ai-tools` |
+| CRM в коробке: Factory, Item, смарт-процессы, права, события | `bitrix24-crm` |
+| Задачи в коробке | `bitrix24-tasks` |
+| Чаты, уведомления, боты в коробке | `bitrix24-im` |
+| Кастомизация портала: страницы, меню, структура, диск | `bitrix24-portal` |
+
+### Официальный MCP Битрикс24
+
+Для работы с REST Битрикс24 подключите официальный MCP-сервер документации: он ищет методы, поля и события в актуальной документации REST. Доступа к данным портала у него нет, авторизация не нужна.
+
+```bash
+claude mcp add --transport http b24-dev-mcp https://mcp-dev.bitrix24.com/mcp
+```
+
+Настройка для Cursor, Codex и других клиентов — в скилле `bitrix24-ai-tools`.
+
 ### Как добавить
 
 Напрямую попросить агента:
@@ -75,11 +103,19 @@
 Добавь в проект скиллы из репозитория https://github.com/bxmaximum/bitrix-framework-skills
 ```
 
-Через [skills](https://www.npmjs.com/package/skills) — все скиллы сразу:
+Через [skills](https://www.npmjs.com/package/skills) — все скиллы, CLI спросит, в какие агенты ставить:
 
 ```bash
-npx skills add bxmaximum/bitrix-framework-skills --all
+npx skills add bxmaximum/bitrix-framework-skills --skill '*'
 ```
+
+Без вопросов, сразу в нужные агенты (Cursor, Codex и другие читают общую папку `.agents/skills/`):
+
+```bash
+npx skills add bxmaximum/bitrix-framework-skills --skill '*' -a claude-code cursor -y
+```
+
+Флаг `--all` не советуем: это `--skill '*' --agent '*' -y`, скиллы ставятся сразу во все ~60 поддерживаемых агентов, и в проекте появляются десятки папок вроде `.windsurf/`, `.roo/`.
 
 Или конкретные:
 
@@ -94,7 +130,15 @@ npx skills add bxmaximum/bitrix-framework-skills --list   # список без 
 npx skills update
 ```
 
-После установки скиллы попадают в `.agents/skills/` целевого проекта. Скопируйте [AGENTS.md](AGENTS.md) в корень Bitrix-проекта (или подключите как rule в Cursor), чтобы агент знал приоритеты и индекс скиллов.
+После установки скиллы попадают в `.agents/skills/` целевого проекта (для Claude Code — ещё и в `.claude/skills/`). [AGENTS.md](AGENTS.md) можно дополнительно скопировать в корень Bitrix-проекта или подключить как rule в Cursor.
+
+## Обновления и участие
+
+Скиллы обновляются раз в месяц: после релиза [документации](https://github.com/bitrix-tools/framework-docs), по разборам обновлений ядра и по issue сообщества. Что изменилось — в [CHANGELOG.md](CHANGELOG.md). Как устроен скилл, как его проверить и как прислать правку — в [CONTRIBUTING.md](CONTRIBUTING.md).
+
+```bash
+php tools/verify-skills.php --kernel=/path/to/bitrix/modules
+```
 
 ## Связанные проекты
 

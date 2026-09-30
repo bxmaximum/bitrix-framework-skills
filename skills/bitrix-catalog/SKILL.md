@@ -1,174 +1,105 @@
 ---
 name: bitrix-catalog
-description: Covers Trade Catalog module — products, SKU/offers, prices, inventory, discounts, bundles, export/import, catalog API choice. Applied for e-commerce features requiring prices, stock, and sale integration. Key terms — catalog, product, SKU, offer, price type, CCatalogProduct, catalog module.
+description: 'Trade catalog on top of iblocks — catalog iblocks, product types, SKU/offers, price types and prices (Model\Price), stock and stores, store rights. Use when writing products, prices or stock, or reading them for storefront and integrations.'
 ---
 
-# Trade Catalog Module
+# Trade catalog (`catalog`)
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: catalog 26.400.0, main 26.800.0
 
-Catalog attaches commerce data to iblock elements. Requires `iblock` + `catalog`. Cart/orders live in `sale` — see skill `bitrix-sale`.
+Product ID = iblock element ID. Needs `iblock` + `catalog` loaded. Cart, orders, payments → `bitrix-sale`; elements and properties → `bitrix-iblocks`.
 
-```php
-\Bitrix\Main\Loader::includeModule('iblock');
-\Bitrix\Main\Loader::includeModule('catalog');
-```
+## API choice
 
-Product ID = iblock element ID. Trade row: `b_catalog_product` (`ProductTable`). Prices: `b_catalog_price` (`PriceTable`). Catalog↔iblock link: `b_catalog_iblock` (`CatalogIblockTable` / `CCatalog`).
-
-## Linking an Iblock to Catalog
-
-Register the product iblock as a catalog:
-
-```php
-\CCatalog::Add([
-    'IBLOCK_ID' => $productIblockId,
-    'YANDEX_EXPORT' => 'N',
-    'SUBSCRIPTION' => 'N',
-]);
-```
-
-Read binding via ORM:
-
-```php
-$row = \Bitrix\Catalog\CatalogIblockTable::getByPrimary($productIblockId)->fetch();
-// IBLOCK_ID, PRODUCT_IBLOCK_ID, SKU_PROPERTY_ID, VAT_ID, …
-```
-
-Iblock catalog kinds (`CCatalogSku`, `catalog/general/catalog_sku.php`):
-
-| Constant | Meaning |
+| Need | Use |
 | --- | --- |
-| `TYPE_CATALOG` (`D`) | Simple catalog (no SKU) |
-| `TYPE_PRODUCT` (`P`) | Product iblock with separate offers iblock |
-| `TYPE_OFFERS` (`O`) | Offers (SKU) iblock |
-| `TYPE_FULL` (`X`) | Product iblock that itself holds simple products + SKUs |
+| Read product/price/store rows | `ProductTable`, `PriceTable`, `StoreProductTable`, `CatalogIblockTable` (ORM) |
+| Write product fields (qty, type, VAT) | `Model\Product::add/update` — recalculates `AVAILABLE`, parent SKU type/availability, sets, subscriptions |
+| Write prices | `Model\Price::add/update/delete` — computes `PRICE_SCALE`, validates currency, recounts parent SKU prices |
+| Register catalog iblock | `CCatalog::Add/Update` (no D7 writer) |
+| Legacy, compat only | `CCatalogProduct`, `CPrice`, `CCatalogSku` helpers |
+
+Never write `ProductTable`/`PriceTable` directly: `PriceTable::add()` without `PRICE_SCALE` fails validation, and direct writes skip availability and SKU recalculation.
+
+## Catalog iblocks and SKU
 
 ```php
-$info = \CCatalogSku::GetInfoByIBlock($iblockId);
-// CATALOG_TYPE, PRODUCT_IBLOCK_ID, SKU_PROPERTY_ID, …
+\CCatalog::Add(['IBLOCK_ID' => $productIblockId]);                       // simple catalog
+\CCatalog::Add([
+    'IBLOCK_ID' => $offersIblockId,
+    'PRODUCT_IBLOCK_ID' => $productIblockId,
+    'SKU_PROPERTY_ID' => $skuPropertyId, // E property on the offers iblock, USER_TYPE = PropertyTable::USER_TYPE_SKU, LINK_IBLOCK_ID = products
+]);
+$info = \CCatalogSku::GetInfoByIBlock($iblockId); // CATALOG_TYPE, PRODUCT_IBLOCK_ID, IBLOCK_ID, SKU_PROPERTY_ID…
 ```
 
-## Product Types (`ProductTable`)
+`CATALOG_TYPE`: `CCatalogSku::TYPE_CATALOG` (D, plain), `TYPE_PRODUCT` (P, parents only), `TYPE_OFFERS` (O, offers iblock), `TYPE_FULL` (X, products + SKU parents). Offers of products: `\CCatalogSku::getOffersList($productIds, $iblockId)`.
 
-Verified in `catalog/lib/product.php`:
-
-| Constant | Value | Meaning |
-| --- | --- | --- |
-| `TYPE_PRODUCT` | 1 | Simple product |
-| `TYPE_SET` | 2 | Set / bundle |
-| `TYPE_SKU` | 3 | Parent with offers |
-| `TYPE_OFFER` | 4 | Offer (SKU variant) |
-| `TYPE_FREE_OFFER` | 5 | Offer without parent link |
-| `TYPE_EMPTY_SKU` | 6 | SKU parent without offers |
-| `TYPE_SERVICE` | 7 | Service (no warehouse tracking) |
+Product types `ProductTable::TYPE_*`: `PRODUCT` 1, `SET` 2, `SKU` 3 (parent with offers), `OFFER` 4, `FREE_OFFER` 5 (offer without parent), `EMPTY_SKU` 6, `SERVICE` 7 (no stock tracking). Buy the offer (`TYPE_OFFER`), never the SKU parent.
 
 ```php
+use Bitrix\Catalog\Model\Product;
 use Bitrix\Catalog\ProductTable;
 
-$product = ProductTable::getByPrimary($elementId, [
-    'select' => ['ID', 'TYPE', 'QUANTITY', 'AVAILABLE', 'VAT_ID', 'VAT_INCLUDED'],
-])->fetch();
-
-ProductTable::update($elementId, [
+$result = Product::update($elementId, [ // Product::add(['ID' => $elementId, 'TYPE' => ProductTable::TYPE_PRODUCT, …]) for a new row
     'QUANTITY' => 10,
     'QUANTITY_TRACE' => ProductTable::STATUS_YES,
     'CAN_BUY_ZERO' => ProductTable::STATUS_NO,
 ]);
+if (!$result->isSuccess()) { /* $result->getErrorMessages() */ }
 ```
 
-Prefer `\Bitrix\Catalog\Model\Product` for add/update when you need catalog automation (availability, parent SKU type, subscriptions). Legacy: `CCatalogProduct`.
+## Prices
 
-## SKU / Offers Pattern
-
-1. Product iblock (parents) + offers iblock (variants).
-2. In the **offers** iblock: property `PROPERTY_TYPE = E`, `LINK_IBLOCK_ID = product iblock` (SKU link). Prefer `USER_TYPE = SKU` (`PropertyTable::USER_TYPE_SKU`).
-3. Register offers iblock as catalog linked to the product iblock:
+Price types: `GroupTable` (`b_catalog_group`); base type `GroupTable::getBasePriceTypeId()` (cached, `?int`). Who may see/buy by type: `GroupAccessTable`.
 
 ```php
-\CCatalog::Add([
-    'IBLOCK_ID' => $offersIblockId,
-    'PRODUCT_IBLOCK_ID' => $productIblockId,
-    'SKU_PROPERTY_ID' => $skuPropertyId, // E-property on offers iblock
-]);
-```
-
-Parent elements get `TYPE_SKU`; offer elements get `TYPE_OFFER`. Customer buys a specific offer (or a simple `TYPE_PRODUCT` when no SKU).
-
-## Prices and Price Types
-
-- Price type (catalog group): `b_catalog_group` → `Bitrix\Catalog\GroupTable` (`BASE`, `NAME`, …). Access: `GroupAccessTable` / legacy `CCatalogGroup`.
-- Price row: `Bitrix\Catalog\PriceTable` — `PRODUCT_ID`, `CATALOG_GROUP_ID`, `PRICE`, `CURRENCY`, optional `QUANTITY_FROM` / `QUANTITY_TO`.
-
-```php
-use Bitrix\Catalog\PriceTable;
 use Bitrix\Catalog\GroupTable;
+use Bitrix\Catalog\Model\Price;
+use Bitrix\Catalog\PriceTable;
 
-$base = GroupTable::getRow(['filter' => ['=BASE' => 'Y']]);
-
-PriceTable::add([
+$result = Price::add([
     'PRODUCT_ID' => $elementId,
-    'CATALOG_GROUP_ID' => (int)$base['ID'],
+    'CATALOG_GROUP_ID' => GroupTable::getBasePriceTypeId(),
     'PRICE' => 1990.00,
-    'CURRENCY' => 'RUB',
+    'CURRENCY' => 'RUB',   // must exist in the currency module
 ]);
+if (!$result->isSuccess()) { /* $result->getErrorMessages() */ }
 
 $prices = PriceTable::getList([
+    'select' => ['ID', 'CATALOG_GROUP_ID', 'PRICE', 'CURRENCY', 'QUANTITY_FROM', 'QUANTITY_TO'],
     'filter' => ['=PRODUCT_ID' => $elementId],
-    'select' => ['ID', 'PRICE', 'CURRENCY', 'CATALOG_GROUP_ID'],
 ])->fetchAll();
 ```
 
-Legacy write helpers: `CPrice`. VAT fields live on the product (`VAT_ID`, `VAT_INCLUDED`).
+VAT lives on the product (`VAT_ID`, `VAT_INCLUDED`); rates in `VatTable`. Final buyer prices and discounts are computed by `sale` (`bitrix-sale`), not by reading `PriceTable`.
 
-## Stock and Stores (Overview)
+## Stock and stores
 
-- Product-level qty: `ProductTable` fields `QUANTITY`, `QUANTITY_RESERVED`, `QUANTITY_TRACE`, `CAN_BUY_ZERO`, `AVAILABLE`.
-- Multi-store: `StoreTable` (`b_catalog_store`) + `StoreProductTable` (`b_catalog_store_product`: `STORE_ID`, `PRODUCT_ID`, `AMOUNT`, `QUANTITY_RESERVED`).
-- Documents / batches: `StoreDocumentTable`, `StoreBatchTable`, … — use for warehouse ops, not ad-hoc SQL.
+- Product level: `QUANTITY`, `QUANTITY_RESERVED`, `QUANTITY_TRACE`, `CAN_BUY_ZERO`, `AVAILABLE` on `ProductTable`.
+- Stores: `StoreTable` + `StoreProductTable` (`STORE_ID`, `PRODUCT_ID`, `AMOUNT`, `QUANTITY_RESERVED`). Warehouse operations (receipt, move, write-off) go through store documents (`StoreDocumentTable`, conduct with `CCatalogDocs::conductDocument($docId, $userId)`, `false` + `$APPLICATION->GetException()` on error), not direct `AMOUNT` edits or SQL.
+- Store rights (inventory management with `crm`): mirror what the user may see:
 
 ```php
+use Bitrix\Catalog\Access\AccessController;
+use Bitrix\Catalog\Access\ActionDictionary;
 use Bitrix\Catalog\StoreProductTable;
 
-$amounts = StoreProductTable::getList([
-    'filter' => ['=PRODUCT_ID' => $elementId],
+$access = AccessController::getCurrent()
+    ->getEntityFilter(ActionDictionary::ACTION_STORE_VIEW, StoreProductTable::class) ?? [];
+$rows = StoreProductTable::getList([
     'select' => ['STORE_ID', 'AMOUNT', 'QUANTITY_RESERVED'],
+    'filter' => [['=PRODUCT_ID' => $elementId], $access], // nested: an OR in user filter cannot bypass access
 ])->fetchAll();
 ```
 
-`TYPE_SERVICE` products are not warehouse-tracked like ordinary goods.
-
-## Boundary with `sale`
-
-| Concern | Module |
-| --- | --- |
-| Product card, type, qty, prices, stores | `catalog` |
-| Basket, order, payment, delivery, shipments | `sale` |
-
-Basket lines reference catalog product/offer IDs; price resolution and discounts may involve both modules. Do not invent cart APIs inside `catalog` — use skill `bitrix-sale`.
-
-## API Choice
-
-| Use | Prefer |
-| --- | --- |
-| Read product/price/store rows | `ProductTable`, `PriceTable`, `StoreProductTable`, `CatalogIblockTable` |
-| Write with catalog side effects | `\Bitrix\Catalog\Model\Product`, `CCatalog::Add/Update` |
-| Legacy admin / compatibility | `CCatalogProduct`, `CPrice`, `CCatalogSku` |
-
-Inspect `bitrix/modules/catalog/lib/` before adopting newer `v2` / REST helpers — confirm against the project kernel.
-
-## Performance
-
-- Batch price/stock updates; avoid per-item `CCatalogProduct::GetByID` in loops/templates.
-- Cache list queries; warm after bulk import.
-- Load with ORM collections / joins, not N+1.
+- **Since catalog 26.400** REST `catalog.storeproduct.list/get` and `catalog.document.element.list` apply this filter. Document rows of forbidden stores return `STORE_FROM`/`STORE_TO`/`AMOUNT`/`PURCHASING_PRICE` = `null`, and these fields cannot be filtered or sorted. Integrations must not rely on them. Stock rows are not filtered for admins and in legacy mode: `AccessController::getCurrent()->isLegacyAccessMode()` (**Since catalog 26.400**; before: `!ModuleManager::isModuleInstalled('crm')`). Older versions return all stores over REST: filter in the integration.
 
 ## Checklist
 
-- [ ] `iblock` + `catalog` included.
-- [ ] Product iblock linked via `CCatalog::Add` / `CatalogIblockTable`.
-- [ ] SKU: offers iblock + `PRODUCT_IBLOCK_ID` + `SKU_PROPERTY_ID`.
-- [ ] Types use `ProductTable::TYPE_*`.
-- [ ] Prices via `PriceTable` / price types (`GroupTable`).
-- [ ] Stock via catalog API / `StoreProductTable`, not raw SQL.
-- [ ] Cart/orders delegated to `sale` (`bitrix-sale`).
+- [ ] `iblock` + `catalog` loaded; catalog iblocks registered via `CCatalog::Add`, SKU with `PRODUCT_IBLOCK_ID` + `SKU_PROPERTY_ID`.
+- [ ] Product and price writes via `Model\Product` / `Model\Price`, every `Result` checked.
+- [ ] Base price type via `GroupTable::getBasePriceTypeId()`, no hardcoded IDs.
+- [ ] Offers (not SKU parents) go to the basket.
+- [ ] Stock read with the store access filter where users are restricted; no raw SQL.
+- [ ] Batch reads (collect IDs, one query); no `CCatalogProduct::GetByID` in loops.

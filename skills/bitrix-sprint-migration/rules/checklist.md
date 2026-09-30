@@ -1,55 +1,34 @@
-# Safety and finish checklist
+# Safety and review
 
-## Safety rules
+## Safety
 
-- Write migrations under configured `migration_dir` only — never patch
-  `sprint.migration` module source for product needs.
-- Treat `up`/`down` as **production-capable**: they may alter schema and data.
-- Do not embed secrets, tokens, or personal dumps in migration files or exchange
-  dirs.
-- Prefer identifying records by stable business keys (CODE, XML_ID), not by IDs
-  copied from a local DB.
-- Avoid `delete` / mass `down` on shared environments unless explicitly requested.
-- `mark --as=installed` skips code execution — use only to align status after a
-  known manual change, never as a substitute for a failed `up`.
-- Applying migrations on production requires explicit human approval; do not
-  treat a successful local `up` as permission to change production.
+- `up`/`down` change schema and data: production only with explicit human approval, never because a local `up` passed.
+- `down` without a version name and `delete` are destructive; name the version.
+- `mark --as=installed` skips code: only to align status after a known manual change, never instead of a failed `up`.
+- No secrets, tokens or personal dumps in migrations or exchange dirs.
 
 ## Anti-patterns
 
-| Anti-pattern | Do instead |
+| Don't | Do |
 | --- | --- |
-| Hand-editing installed migration that already ran on other copies | Add a **new** migration |
-| Hard-coded element/section IDs from local DB | Resolve by CODE/XML_ID via helpers |
-| Non-idempotent `add` that fails on second env | `save*` / `*IfNotExists` |
-| Empty `description` | Write a clear one-line purpose |
-| Giant irreversible data wipe in `down` “for symmetry” | Document one-way `down()` or omit |
-| Committing builder output without review | Diff-check generated arrays/files |
-| Using migrations for runtime business logic | Put logic in module services; migration only bootstraps/schema |
-
-## Author checklist
-
-- [ ] Created via `add` or a builder (valid class name + timestamp).
-- [ ] `namespace Sprint\Migration;` and class name = file name.
-- [ ] `$description` filled.
-- [ ] `up()` is idempotent or safe to run once per environment.
-- [ ] `down()` implemented or explicitly documented as one-way.
-- [ ] Helpers used where available; modules `includeModule`'d for custom code.
-- [ ] No secrets; no `/bitrix/` edits.
-- [ ] Exchange files (if any) committed alongside the Version when required.
-
-## Verify checklist
-
-- [ ] `ls --new` shows the migration before apply (or expected status).
-- [ ] `up` (or `up VersionName`) succeeds on a local/dev copy.
-- [ ] Spot-check admin / ORM / page that depends on the change.
-- [ ] If `down` is supported, `redo VersionName` once on a disposable copy.
-- [ ] Status in `ls` is `installed` after success.
+| Edit a migration already applied elsewhere | New migration |
+| Ids copied from a local DB | Resolve by `CODE`/`XML_ID` via helpers |
+| Plain `add*` that fails on a second copy | `save*` / `*IfNotExists` |
+| `add*IfNotExists` where fields must change | `save*` |
+| Commit builder output unread | Review generated arrays and files |
+| Business logic in migrations | Module services; migration only calls them |
 
 ## Review focus
 
-- Destructive deletes without filters or backups.
-- Reliance on environment-specific IDs.
-- Missing module checks before using custom classes.
-- Silent failures (`Result` ignored, no `outError` / `return false`).
-- Schema drift: `addIfNotExists` where an update (`save*`) was required.
+- Destructive deletes without filters (`deleteOptions` without `NAME`, mass `down`).
+- Ignored `Result` / missing `outError` + `return false`.
+- Custom module classes used without `Loader::includeModule`.
+- Config without explicit `migration_dir` + `migration_table`.
+
+## Before finishing
+
+- [ ] File created by `add` or a builder; `namespace Sprint\Migration`, class = file name, `$description` set.
+- [ ] `up()` is idempotent or safe to run once per copy; `down()` implemented or explained.
+- [ ] `ls --new` lists it; `up <Version>` passes on a local copy; `ls` shows `installed`.
+- [ ] With `down()`: `redo <Version>` once on a disposable copy.
+- [ ] Exchange files (if any) committed with the version.

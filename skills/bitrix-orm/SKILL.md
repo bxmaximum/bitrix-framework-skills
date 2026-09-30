@@ -1,56 +1,24 @@
 ---
 name: bitrix-orm
-description: D7 ORM tablets, ConditionTree queries, Objectify, batch/merge/deleteByFilter writes. Use for entity design, reads, and persistence.
+description: 'D7 ORM — DataManager tablets, fields and relations, query()/ConditionTree, objects and collections, batch/merge/deleteByFilter writes, ORM events and cache. Use when designing entities or reading and writing data via ORM.'
 ---
 
 # Bitrix D7 ORM
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-Progressive disclosure: open **only** the rule files that match the task. Do not read every `rules/*.md`.
+| Task | Read |
+| --- | --- |
+| Tablet, field types, ArrayField, data modifiers, relations, UF | `rules/tablet-map.md` |
+| `query()`, filters, runtime fields, DISTINCT, pagination | `rules/reading.md` |
+| Collections: save, remove, relations, find/filter, keys | `rules/collections.md` |
+| add/update/delete, batch, atomic increments, merge, deleteByFilter | `rules/writing.md` |
+| ORM events, query cache, user input in queries | `rules/events-cache-security.md` |
 
-## How to use
+## Invariants
 
-1. Identify the layer the task touches.
-2. Open the matching `rules/*.md` below.
-3. Prefer framework-native Bitrix patterns over custom abstractions.
-
-
-## Choose a rule file
-
-### When to read `rules/tablet-map.md`
-
-Read `rules/tablet-map.md` (`Tablet map`) when the task involves:
-
-- Naming: `DataManager` vs `*Table`
-- Tablet Skeleton
-- Field Types
-- Relations
-- User Fields (UF)
-
-### When to read `rules/reading.md`
-
-Read `rules/reading.md` (`Reading / filters`) when the task involves:
-
-- Reading Data
-- Collections and Annotations
-
-### When to read `rules/writing.md`
-
-Read `rules/writing.md` (`Writing / batch / upsert`) when the task involves:
-
-- Writing
-
-### When to read `rules/events-cache-security.md`
-
-Read `rules/events-cache-security.md` (`Events, cache, security`) when the task involves:
-
-- Events
-- Caching
-- Security: User Input in Queries
-- Checklist
-
-## Checklist
-
-- [ ] Opened only the rule file(s) needed for this task.
-- [ ] Followed DI / `/local/` / security canons from `AGENTS.md`.
+- Namespace `Bitrix\Main\ORM\*`. `Bitrix\Main\Entity\*` is a legacy alias list (`main/include/compatibility.php`): don't write it in new code or mix both in one file.
+- Build queries with `XxxTable::query()`, never `new Query(XxxTable::getEntity())`: `query()` honours the tablet's `getQueryClass()`.
+- `add`/`update`/`delete`/`save()` run events and `cleanCache()`. `MergeTrait::merge()` and `deleteByFilter()` fire no events; raw SQL also leaves the cache stale.
+- A collection has no `delete()`; `remove()` only detaches in memory.
+- Never pass request data into `select`, `order`, `group`, `runtime` or `ExpressionField` without a whitelist.

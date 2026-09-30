@@ -1,56 +1,59 @@
 ---
 name: bitrix-extensions
-description: Covers Bitrix JS/CSS extensions — /local/js/ structure, bundle.config.js, config.php, Extension::load, @bitrix/cli build, CoreJS imports. Applied when adding frontend code to modules, components, or admin pages. Key terms — extension, bundle, Extension::load, bundle.config.js, config.php, CoreJS.
+description: 'Bitrix JS/CSS extensions — ID-to-path mapping, config.php, bundle.config.js, lang phrases, Extension::load, Runtime.loadExtension, @bitrix/cli build. Use when adding, building or loading frontend code in /local or a module.'
 ---
 
-# Bitrix JS/CSS Extensions
+# Bitrix JS/CSS extensions
 
-Baseline: **main 23.0+**. Extensions organize JavaScript and CSS into bundles loaded by the kernel.
+Baseline: main 23.0+ · Verified: main 26.800.0, ui 26.687.0
 
-## Location
+## ID → directory
 
-- System: `/bitrix/js/<module>/<extension>/`
-- User: `/local/js/<module>/<extension>/`
-- Module package (copied on install): `/local/modules/<module>/install/js/<module>/<extension>/` → deployed under `/bitrix/js/...` (or keep runtime sources in `/local/js/`)
+Every dot of the ID is a directory level (`Extension::getPath()`): `vendor.module.editor` → `js/vendor/module/editor/`, searched in `/local/js/` first, then `/bitrix/js/`. At least 2 segments, each `[a-z0-9_-]`. A dotted directory (`/local/js/vendor.module/editor/`) cannot be loaded by ID.
 
-`/local/` takes precedence over `/bitrix/`.
+| Code | Where |
+| --- | --- |
+| Project | `/local/js/vendor/module/editor/` → ID `vendor.module.editor` |
+| Distributed module `vendor.module` | `install/js/vendor/module/editor/`, copied to `/local/js/` on install |
+| Kernel | `/bitrix/js/<module>/<ext>/` (`ui.buttons`) — never edit; a same-path copy in `/local/js/` shadows it and stops getting updates |
 
-## Structure
+```php
+public function InstallFiles(): void
+{
+    CopyDirFiles(__DIR__ . '/js', \Bitrix\Main\Application::getDocumentRoot() . '/local/js', true, true); // 4th arg = recursive
+}
+
+public function UnInstallFiles(): void
+{
+    DeleteDirFilesEx('/local/js/vendor/module'); // DeleteDirFiles() is flat, leaves nested dirs
+}
+```
+
+## Layout
 
 ```
-/local/js/vendor.module/myextension/
-├── src/              # ES6 source files
-├── dist/             # Built bundles (ES5)
-├── bundle.config.js  # Build configuration
-├── config.php        # Extension manifest
-├── lang/             # Optional localization
-└── test/             # Optional tests
+/local/js/vendor/module/editor/
+├── src/index.js         # ES6+ entry
+├── dist/                # built bundles — commit and deploy
+├── lang/ru/config.php   # optional $MESS phrases
+├── bundle.config.js     # deploy too: server reads `namespace` from it
+└── config.php
 ```
 
-Required: `src`, `dist`, `bundle.config.js`, `config.php`.
-
-Scaffold with `@bitrix/cli`: `bitrix create` (in extension directory).
-
-## bundle.config.js
+Scaffold: `bitrix create`; build: `bitrix build` in the extension dir (`@bitrix/cli`).
 
 ```javascript
 module.exports = {
-    input: './src/app.js',
-    output: './dist/app.bundle.js',
-    namespace: 'BX.Vendor.Module.MyExtension',
-    treeshake: true,
-    adjustConfigPhp: true,
+    input: './src/index.js',
+    output: './dist/editor.bundle.js',
+    namespace: 'BX.Vendor.Module.Editor',
+    browserslist: true,
 };
 ```
 
-Import CSS in the entry file: `import './style.css';`
-
-Import CoreJS extensions:
-
-```javascript
-import { Loader } from 'main.loader';
-import 'main.date';
-```
+- CSS: `import './style.css';` in the entry → `dist/editor.bundle.css`.
+- Imports: `import { Loc, Runtime } from 'main.core';`, legacy CoreJS 1.0 `import 'main.date';`.
+- The build rewrites `config.php` (`js`, `css`, `rel` from imports) unless `adjustConfigPhp: false`.
 
 ## config.php
 
@@ -59,53 +62,47 @@ import 'main.date';
 if (!defined('B_PROLOG_INCLUDED') || B_PROLOG_INCLUDED !== true) { die(); }
 
 return [
-    'js' => './dist/app.bundle.js',
-    'css' => './dist/app.bundle.css',
+    'js' => './dist/editor.bundle.js',
+    'css' => './dist/editor.bundle.css',
     'rel' => ['main.core', 'ui.buttons'],
     'skip_core' => false,
+    'settings' => ['maxItems' => 50],
 ];
+```
+
+Other keys: `lang_additional` (computed phrases), `oninit` (callable, gets and returns the config), `controllerEntrypoint` (JS function for `renderExtension()`, see `bitrix-controllers`).
+
+Settings in JS: `Extension.getSettings('vendor.module.editor').get('maxItems', 20)` (`main.core`).
+
+## Phrases
+
+If `lang/` exists, the kernel loads `lang/<LANGUAGE_ID>/config.php` with the extension (no `lang` key needed) and exposes it to JS: `Loc.getMessage('VENDOR_EDITOR_TITLE')`. Phrases share one global `BX.message` — prefix codes with vendor + extension.
+
+```php
+<?php
+$MESS['VENDOR_EDITOR_TITLE'] = 'Editor';
 ```
 
 ## Loading
 
-PHP:
-
 ```php
-\Bitrix\Main\UI\Extension::load('vendor.module.myextension');
+\Bitrix\Main\UI\Extension::load(['vendor.module.editor', 'ui.buttons']); // unknown ID = silent no-op
 ```
 
-JavaScript:
-
 ```javascript
-BX.Runtime.loadExtension('vendor.module.myextension').then(() => {
-    // BX.Vendor.Module.MyExtension is available
+import { Runtime } from 'main.core';
+
+Runtime.loadExtension('vendor.module.editor').then(({ Editor }) => {
+    new Editor().render();
 });
 ```
 
-In component templates — load before inline scripts that use the extension.
-
-## Build
-
-From extension directory (with `@bitrix/cli` installed):
-
-```bash
-npx bitrix build
-```
-
-`dist/` bundles are committed and deployed. Source lives in `src/`.
-
-## Controller Integration
-
-`renderExtension` is a method on `\Bitrix\Main\Engine\Controller` (not on `\Bitrix\Main\UI\Extension`):
-
-```php
-return $this->renderExtension('vendor.module.myextension', ['items' => $items]);
-```
+`Runtime.loadExtension(...ids)` resolves with the merged exports of the requested extensions (from their `namespace`), after JS/CSS/phrases/settings are on the page.
 
 ## Checklist
 
-- [ ] Extension ID follows `module.extension` naming.
-- [ ] `config.php` lists all dependencies in `rel`.
-- [ ] Bundles rebuilt after `src/` changes.
-- [ ] No direct `<script src="/local/js/...">` — use `Extension::load`.
-- [ ] Localization in `lang/` with `BX.message` for JS strings.
+- [ ] Directory path equals the ID with dots → `/`; module extensions prefixed `vendor.module.`.
+- [ ] Load only by ID (`Extension::load()`, `rel`, `Runtime.loadExtension()`); no `<script src>` / `Asset::addJs()` to any `/local/js/…` or `/bitrix/js/…` file — updates move files (ui 26.675 moved `ui.actionpanel` into `dist/`).
+- [ ] `dist/` rebuilt after `src/` changes; `bundle.config.js` deployed with it.
+- [ ] Every dependency in `rel`.
+- [ ] UI strings in `lang/<lang>/config.php`, read via `Loc.getMessage()`.

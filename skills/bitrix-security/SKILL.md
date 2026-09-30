@@ -1,51 +1,24 @@
 ---
 name: bitrix-security
-description: CSRF, XSS, SQLi, SSRF, JWT/JWK, access rights, encryption. Use when handling input or auditing security.
+description: 'Bitrix security patterns — CSRF, XSS and link sanitizing, open redirects, SQL injection in ORM/ExpressionField, SSRF and local-file reads, uploads, rights checks, JWT, encrypted fields. Use when handling user input or auditing code.'
 ---
 
-# Security in Bitrix
+# Security
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-Progressive disclosure: open **only** the rule files that match the task. Do not read every `rules/*.md`.
+General defaults (no superglobals, keep default prefilters, escape output) live in `bitrix-framework`.
 
-## How to use
+| Task | Read |
+| --- | --- |
+| CSRF, escaping, HTML sanitizing, link and redirect targets, raw-HTML sinks | `rules/csrf-xss.md` |
+| SQL injection (raw, ORM, `ExpressionField`), SSRF, local files, uploads, stored settings | `rules/sql-ssrf.md` |
+| Rights checks, `#[ActionAccess]`, REST scopes, JWT/JWK, encryption, 2FA | `rules/jwt-crypto-access.md` |
 
-1. Identify the layer the task touches.
-2. Open the matching `rules/*.md` below.
-3. Prefer framework-native Bitrix patterns over custom abstractions.
+## Invariants
 
-
-## Choose a rule file
-
-### When to read `rules/csrf-xss.md`
-
-Read `rules/csrf-xss.md` (`CSRF and XSS`) when the task involves:
-
-- CSRF
-- XSS and HTML Sanitization
-- CSRF Details
-
-### When to read `rules/sql-ssrf.md`
-
-Read `rules/sql-ssrf.md` (`SQL injection and SSRF`) when the task involves:
-
-- SSRF
-- SQL Injections
-
-### When to read `rules/jwt-crypto-access.md`
-
-Read `rules/jwt-crypto-access.md` (`JWT, crypto, access, cookies`) when the task involves:
-
-- JWT / JWK
-- Access Rights
-- `#[ActionAccess]` / `AccessCheckControllerInterface`
-- Secure Cookies
-- Value Encryption
-- Miscellaneous
-- Checklist
-
-## Checklist
-
-- [ ] Opened only the rule file(s) needed for this task.
-- [ ] Followed DI / `/local/` / security canons from `AGENTS.md`.
+- Untrusted: request data, and also DB-stored settings, imports, REST payloads. The type and owner of an entity come from its DB record, never from the request.
+- Whitelist whatever becomes SQL structure (field names, operators, functions, `order` keys), whatever its source.
+- Escape for the output context: HTML `htmlspecialcharsbx()`, JS `Json::encode()`, URLs through a scheme allow-list.
+- User input never goes unchecked into `CFile::MakeFileArray()`, `file_get_contents()`, `unserialize()`, redirect targets.
+- `Authentication`/`Csrf` filters don't authorize: check rights on the object in every action.

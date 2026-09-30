@@ -1,11 +1,6 @@
-# CLI and config
+# CLI and configs
 
-## Resolve module path
-
-The module may be installed in **either** place:
-
-1. `/local/modules/sprint.migration/` — prefer this if `include.php` exists there
-2. `/bitrix/modules/sprint.migration/` — fallback
+## Module path
 
 ```bash
 # from document root
@@ -14,109 +9,65 @@ if [ -f local/modules/sprint.migration/tools/migrate.php ]; then
 else
   MIGRATE=bitrix/modules/sprint.migration/tools/migrate.php
 fi
-
 php "$MIGRATE" <command> [args] [options]
 ```
 
-In docs below, **`{migrate}`** = that `tools/migrate.php` path.
-Optional thin wrapper in project root (e.g. `bin/migrate`) that sets
-`DOCUMENT_ROOT` and requires `{module}/tools/migrate.php`.
+CLI SAPI only; it boots Bitrix through `prolog_before.php` (sets `DOCUMENT_ROOT` from its own path if empty) and installs the module if its files exist but it is not registered. Symfony: `php bin/console sprint:migration` when the bundle is registered.
 
-Symfony: `php bin/console sprint:migration` when the SprintMigration bundle /
-console command is registered.
+## Commands
 
-CLI refuses non-CLI SAPI. It bootstraps Bitrix via `prolog_before.php`.
-
-## Essential commands
-
-Full list: module files `commands.txt` (RU) / `commands-en.txt` under `{module}/`.
+Full list: `{module}/commands-en.txt`.
 
 | Command | Purpose |
 | --- | --- |
-| `add [desc] [name]` | Scaffold blank migration (`--desc`, `--name`) |
+| `add [desc] [name]` | Blank migration (`--desc=`, `--name=`) |
 | `ls` | List (`--new`, `--installed`, `--search=`, `--tag=`) |
-| `up` / `up [version]` | Apply all new or one version (`--search=`, `--add-tag=`) |
-| `down` / `down [version]` | Rollback |
-| `redo [version]` | `down` then `up` for one version |
-| `run [builder]` | Interactive/export builder (admin-oriented; CLI supported) |
-| `mark [version\|new\|installed\|unknown] --as=installed\|new` | Change status **without** running code |
-| `delete …` | Remove migration records/files (destructive — confirm intent) |
-| `config` | Show active config; `--config=[name]` switches config |
-
-Examples (after resolving `$MIGRATE` / `{migrate}`):
+| `up` | Apply all new (`--search=`, `--tag=`, `--add-tag=`) |
+| `up <version>` | Apply one |
+| `down <version>` | Roll back one |
+| `down` | **DANGER:** rolls back every installed migration (optionally filtered by `--search=`/`--tag=`) |
+| `redo <version>` | `down` then `up` |
+| `run <builder>` | Run a builder (`rules/helpers-builders.md`) |
+| `mark <version\|new\|installed\|unknown> --as=installed\|new` | Change status without running code |
+| `delete <version\|new\|installed\|unknown>` | **DANGER:** deletes migration files/records |
+| `config`, `--config=<name>` | Show / switch config |
 
 ```bash
 php "$MIGRATE" add "Add news iblock" NewsIblock
 php "$MIGRATE" ls --new
 php "$MIGRATE" up
-php "$MIGRATE" up Version20240722144938
-php "$MIGRATE" down Version20240722144938
-php "$MIGRATE" redo Version20240722144938
-php "$MIGRATE" mark Version20240722144938 --as=installed
+php "$MIGRATE" down Version20260720113800   # always name the version
 php "$MIGRATE" --config=shop up
 ```
 
-Prefer **`add`** (or admin builders) over inventing filenames by hand. Hand-copied
-classes often break timestamp/name validation.
-
 ## Version naming
 
-- Must be a valid PHP class name: `^[a-zA-Z_][a-zA-Z0-9_]*$`.
-- Must contain a timestamp matching config `version_timestamp_format`
-  (default `YmdHis`, pattern like `20\d{12}`).
-- Default template: `#NAME##TIMESTAMP#` → e.g. `Version20260720113800` or
-  `NewsIblock20260720113800`.
-- Class name **equals** file basename without `.php`.
-- Namespace: `Sprint\Migration`.
+- Valid PHP class name; class name = file name; namespace `Sprint\Migration`.
+- Contains a timestamp in `version_timestamp_format` (default `YmdHis`).
+- Template `version_name_template` = `#NAME##TIMESTAMP#` → `Version20260720113800`, `NewsIblock20260720113800`.
 
 ## Configs
 
-Default config is built-in (empty overrides → module defaults).
+The module reads `migrations.<name>.php` from `local/php_interface` (or `bitrix/php_interface` without it) plus dirs returned by handlers of module event `OnSearchConfigFiles`. The file returns an array. `migrations.cfg.php` replaces the default `cfg` config.
 
-Additional configs: files in php_interface (`local/php_interface` if that
-directory exists, else `bitrix/php_interface`):
-
-```
-{php_interface}/migrations.<name>.php
-```
-
-Must `return` an array. Typical keys:
+`migration_dir` and `migration_table` are **not** derived from `<name>`. A file without them shares the default dir and table with `cfg`. Always set both:
 
 ```php
 <?php
-
 return [
     'title' => 'Shop migrations',
-    // path relative to docroot unless migration_dir_absolute is set
-    'migration_dir' => '/local/php_interface/migrations.shop',
+    'migration_dir' => '/local/php_interface/migrations.shop',   // from docroot unless migration_dir_absolute
     'migration_table' => 'sprint_migration_shop',
-    'version_prefix' => 'Version',
-    'exchange_dir' => '/local/php_interface/migrations.shop',
-    // 'console_user' => 'admin' | false | 'login:someuser',
-    // 'migration_extend_class' => 'Version',
-    // 'version_builders' => [...],
+    // 'exchange_dir' => … (default = migration_dir)
+    // 'console_user' => 'admin' | 'login:deploy' | false,
+    // 'version_builders' => [...], 'migration_extend_class' => 'Version',
 ];
 ```
 
-Use `/bitrix/php_interface/...` in `migration_dir` / `exchange_dir` when the
-project has no `local/php_interface`.
+The admin "create config" button writes exactly these two keys. The module options page only creates/deletes config files; it stores no config values.
 
-Custom config directories can also be registered via module event
-`OnSearchConfigFiles` (returns a directory path with `migrations.*.php` files).
+## Console user
 
-Show / switch: `config`, `--config=[name]`.
-
-## Console user and events
-
-Defaults (unless overridden):
-
-- `console_user` = `admin` (migrations run as that user in CLI).
-- `console_auth_events_disable` = `true` (auth events skipped in console).
-
-Set `console_user` to `false` to run without authorizing a user when the change
-must not depend on admin context.
-
-## Admin UI
-
-Module admin page can create migrations, run builders, and apply `up`/`down`.
-Same files and status table as CLI. Prefer CLI in automation scripts.
+- `console_user` (default `admin`): `admin` = first active user of the admin group, `login:<login>` = that user, `false` = no authorization.
+- `console_auth_events_disable` (default `true`) skips auth event handlers in CLI.
+- Admin UI and CLI share files and the versions table; automation uses CLI.

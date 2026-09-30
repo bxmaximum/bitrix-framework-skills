@@ -1,53 +1,25 @@
 ---
 name: bitrix-components
-description: "Bitrix components: class.php, templates, cache, SEF, Controllerable AJAX. Use when building or editing components."
+description: 'Bitrix components — class.php, params, template overrides, result_modifier/component_epilog, result cache, paged lists, SEF, Controllerable AJAX. Use when building, overriding or caching components in /local.'
 ---
 
-# Bitrix Components
+# Bitrix components
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-Progressive disclosure: open **only** the rule files that match the task. Do not read every `rules/*.md`.
+| Task | Read |
+| --- | --- |
+| Placement, scaffold, `class.php`, params, `.description.php`, `.parameters.php` | `rules/structure.md` |
+| Template search order and overrides, `template.php`, `result_modifier.php`, `component_epilog.php` | `rules/template.md` |
+| Result cache, paged list, complex SEF, AJAX actions | `rules/cache-sef-ajax.md` |
+| `PageNavigation`, pager templates | `bitrix-cms-basics` |
+| Grid, filter, toolbar in templates | `bitrix-ui` |
 
-## How to use
+## Invariants
 
-1. Identify the layer the task touches.
-2. Open the matching `rules/*.md` below.
-3. Prefer framework-native Bitrix patterns over custom abstractions.
-
-
-## Choose a rule file
-
-### When to read `rules/structure.md`
-
-Read `rules/structure.md` (`Placement and structure`) when the task involves:
-
-- Where to Place
-- Folder Structure
-- `class.php` — Minimum
-- Usage
-- `$arParams` and `$arResult`
-- `.description.php`
-- `.parameters.php`
-
-### When to read `rules/template.md`
-
-Read `rules/template.md` (`Templates and epilog`) when the task involves:
-
-- Template
-- `result_modifier.php`
-- `component_epilog.php`
-
-### When to read `rules/cache-sef-ajax.md`
-
-Read `rules/cache-sef-ajax.md` (`Cache, SEF, AJAX`) when the task involves:
-
-- Caching Details
-- SEF (Search-Friendly URLs)
-- Controllerable and AJAX
-- Checklist
-
-## Checklist
-
-- [ ] Opened only the rule file(s) needed for this task.
-- [ ] Followed DI / `/local/` / security canons from `AGENTS.md`.
+- Own components in `/local/components/<vendor>/`; kernel components are changed only by copying their template to `/local/templates/<site>/components/…`.
+- Logic in `class.php` and services; templates only render `$arResult`, escaping output.
+- `onPrepareComponentParams()` casts every param; `~KEY` is the raw value.
+- Everything that changes output is in the cache key (user groups, page number, filter).
+- Nested components get `$component` as the 4th `IncludeComponent()` argument.
+- AJAX through `Controllerable` actions with prefilters and signed parameters.

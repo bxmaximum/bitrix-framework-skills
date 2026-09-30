@@ -2,127 +2,91 @@
 
 ## Properties
 
-### Basic Types
-
 ```php
-(new \CIBlockProperty)->Add([
+use Bitrix\Iblock\PropertyTable;
+
+$property = new \CIBlockProperty();
+$propId = $property->Add([
     'IBLOCK_ID'     => $iblockId,
-    'NAME'          => 'Author',
-    'CODE'          => 'AUTHOR',      // required! ORM won't see it without CODE
-    'PROPERTY_TYPE' => 'S',            // S-string, N-number, L-list, F-file, E-element, G-section
+    'NAME'          => 'Source',
+    'CODE'          => 'SOURCE',                  // required: ORM skips properties without CODE
+    'PROPERTY_TYPE' => PropertyTable::TYPE_LIST,  // S, N, F, L, E (element), G (section)
     'MULTIPLE'      => 'N',
 ]);
-```
+if (!$propId) { throw new \RuntimeException($property->LAST_ERROR); }
 
-### List (`L`)
-
-```php
-$propId = (new \CIBlockProperty)->Add([
-    'IBLOCK_ID' => $iblockId, 'NAME' => 'Source', 'CODE' => 'SOURCE',
-    'PROPERTY_TYPE' => 'L', 'MULTIPLE' => 'N',
+$enumId = (new \CIBlockPropertyEnum())->Add([
+    'PROPERTY_ID' => $propId, 'VALUE' => 'Reuters', 'XML_ID' => 'reuters', 'SORT' => 10,
 ]);
-
-$enum = new \CIBlockPropertyEnum();
-$enum->Add(['PROPERTY_ID' => $propId, 'VALUE' => 'Reuters', 'XML_ID' => 'reuters', 'SORT' => 10]);
 ```
 
-### User Types (`USER_TYPE`)
+User types (`PROPERTY_TYPE` + `USER_TYPE`, constants on `PropertyTable`):
 
-- `USER_TYPE = 'HTML'`, `PROPERTY_TYPE = 'S'` — HTML editor.
-- `USER_TYPE = 'directory'`, `PROPERTY_TYPE = 'S'` + `USER_TYPE_SETTINGS = ['TABLE_NAME' => 'b_<hl_table>']` — value from Highload block, `UF_XML_ID` is stored.
-- `USER_TYPE = 'DateTime'`, `PROPERTY_TYPE = 'S'` — date-time.
-
-**Highload blocks** (dictionaries, directory properties): use skill `bitrix-highloadblock`. ORM entities come from HL `compileEntity` (not iblock `IblockTable::compileEntity`).
+- `S` + `USER_TYPE_HTML` — HTML editor; `S` + `USER_TYPE_DATE` / `USER_TYPE_DATETIME` — date.
+- `E` + `USER_TYPE_SKU` — SKU link (`bitrix-catalog`).
+- `S` + `USER_TYPE_DIRECTORY` (`directory`) — HL dictionary. `USER_TYPE_SETTINGS => ['TABLE_NAME' => $hl['TABLE_NAME']]` must equal the HL block's `TABLE_NAME` exactly (`b_hlbd_*` only for blocks created from the property UI). Stores `UF_XML_ID` (string); multiplicity via property `MULTIPLE`. The type class lives in module `highloadblock` → `bitrix-highloadblock` `rules/relations-directory.md`.
+- Custom property types: keep `USER_TYPE_SETTINGS` an array of scalars. **Since iblock 26.0.100** `PropertyTable` reads `USER_TYPE_SETTINGS_LIST` with `allowed_classes => false`: stored objects come back as `__PHP_Incomplete_Class` (classic `CIBlockProperty*` already did this). Build DTOs after reading.
 
 ## Sections via ORM
 
 ```php
-$sectionClass = \Bitrix\Iblock\Model\Section::compileEntityByIblock('News');
+use Bitrix\Iblock\Model\Section;
+
+$sectionClass = Section::compileEntityByIblock('News'); // '\Bitrix\Iblock\Section{ID}Table'
 
 $parent = $sectionClass::createObject()
     ->setIblockId($iblockId)
     ->setName('Events')
     ->setCode('events')
-    ->set('UF_MANAGER', 'John Doe') // UF fields via set('UF_*', ...)
-    ->setActive(true)
+    ->set('UF_MANAGER', 'John Doe')   // section UF via set('UF_*', …)
     ->save();
+if (!$parent->isSuccess()) { /* $parent->getErrorMessages() */ }
 
-$child = $sectionClass::createObject()
+$sectionClass::createObject()
     ->setIblockId($iblockId)
     ->setName('Exhibitions')
     ->setCode('exhibitions')
-    ->setIblockSectionId($parent->getObject()->getId())
+    ->setIblockSectionId($parent->getId())
     ->save();
-```
 
-Reading with parent:
-
-```php
 $section = $sectionClass::query()
-    ->setSelect(['*', 'PARENT_SECTION', 'UF_*'])
+    ->setSelect(['ID', 'NAME', 'PARENT_SECTION', 'UF_*'])
     ->where('CODE', 'exhibitions')
     ->fetchObject();
-
-$section->getParentSection()?->getName();
+$section?->getParentSection()?->getName();
 ```
 
-Deletion:
-
-- **`CIBlockSection::Delete($id)`** — recursively deletes sub-sections and elements, clears cache and search index.
-- `$section->delete()` — only deletes the section itself (children will become orphaned). Use with caution.
+Delete with `CIBlockSection::Delete($id)` (cascades). ORM `delete()` orphans children — see `rules/orm-entities.md`.
 
 ## Elements via ORM
 
-### Creation
-
 ```php
-$elementClass = \Bitrix\Iblock\Elements\ElementNewsTable::class;
+use Bitrix\Iblock\Elements\ElementNewsTable;
+use Bitrix\Iblock\ORM\PropertyValue;
 
-$element = $elementClass::createObject()
+$element = ElementNewsTable::createObject()
     ->setName('Security Update')
     ->setCode('security-update')
     ->setActive(true)
-    ->setIblockSectionId($parentSectionId)
-    ->set('AUTHOR', 'Jane Smith')  // string
-    ->set('SOURCE', $enumId);       // list — ID of value from CIBlockPropertyEnum
-
-$result = $element->save();
-if (!$result->isSuccess()) { /* errors */ }
-```
-
-### Multiple Properties
-
-```php
-$element
-    ->addTo('TAGS', 'security')
+    ->setIblockSectionId($sectionId)                        // also syncs SECTIONS
+    ->set('AUTHOR', 'Jane Smith')                           // S
+    ->set('SOURCE', $enumId)                                // L: enum value ID
+    ->set('RELATED', $otherElementId)                       // E: element ID
+    ->set('PHOTO', new PropertyValue($fileId, 'Main photo')) // F: file ID (+ description)
+    ->addTo('TAGS', 'security')                             // multiple
     ->addTo('TAGS', '2026');
 
-$element->removeAll('TAGS');      // clear all
-$element->removeAllBy('TAGS', 'security');
+$result = $element->save();
+if (!$result->isSuccess()) { /* $result->getErrorMessages() */ }
+
+$element->removeFrom('TAGS', 'security'); // by value
+$element->removeAll('TAGS');
 ```
 
-### File Properties
+- Scalars work for any property; `PropertyValue($value, $description)` only when a description is needed.
+- Files: save first, `$fileId = \CFile::SaveFile(\CFile::MakeFileArray($path), 'iblock')`; set the ID.
+- `addTo()` skips duplicates for `L/E/G/F`, allows them for `S/N`.
 
-ORM requires `PropertyValue` — it contains file `ID` + description.
+## Symbolic code (`CODE`)
 
-```php
-use Bitrix\Iblock\ORM\PropertyValue;
-
-$fileId = \CFile::SaveFile(
-    \CFile::MakeFileArray($_SERVER['DOCUMENT_ROOT'] . '/upload/img.png'),
-    'iblock',
-);
-
-\CFile::ResizeImage($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL, true);
-
-$element
-    ->set('PHOTO',   new PropertyValue($fileId, 'Main Photo'))
-    ->addTo('GALLERY', new PropertyValue($otherId, 'Second Shot'));
-```
-
-### Element Relations (`E`, `G`)
-
-```php
-$element->set('RELATED_ARTICLE', $otherElementId);
-$element->set('MANUFACTURER', $sectionId);
-```
+ORM does not generate `CODE`. `(new \CIBlockElement())->generateMnemonicCode($name, $iblockId)` (same on `CIBlockSection`; `null` when transliteration is off) uses the iblock `CODE` field settings and `CUtil::translit`. **Since main 26.800** a name ending in punctuation keeps a trailing separator (`Скидка 10%` → `skidka_10_`). Existing codes don't change, but new ones differ. If codes must stay stable: `rtrim($code, '_')` (your `TRANS_OTHER`), then check uniqueness.

@@ -1,52 +1,23 @@
 ---
 name: bitrix-iblocks
-description: Iblock types/elements/sections, ORM compileEntity, properties, SEO templates. Use for content iblock work.
+description: 'Iblocks — CIBlock/CIBlockProperty setup, compiled element and section ORM classes (API_CODE), property values, rights, SEO templates. Use when creating iblocks or reading/writing elements, sections and properties.'
 ---
 
-# Information Blocks (`iblock`)
+# Information blocks (`iblock`)
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: iblock 26.0.100, main 26.800.0
 
-Progressive disclosure: open **only** the rule files that match the task. Do not read every `rules/*.md`.
+| Task | Read |
+| --- | --- |
+| IDs, ORM vs classic API, create iblock, storage version, rights | `rules/basics.md` |
+| Compiled element/section classes, property value model, ORM side effects | `rules/orm-entities.md` |
+| Properties (list, directory, custom types), section and element writes, CODE | `rules/properties-sections-elements.md` |
+| Selections, property filters, SEO values, performance | `rules/query-seo-perf.md` |
 
-## How to use
+## Invariants
 
-1. Identify the layer the task touches.
-2. Open the matching `rules/*.md` below.
-3. Prefer framework-native Bitrix patterns over custom abstractions.
-
-
-## Choose a rule file
-
-### When to read `rules/basics.md`
-
-Read `rules/basics.md` (`Hierarchy, IDs, API boundary`) when the task involves:
-
-- Hierarchy
-- Key Identifiers
-- Where ORM / Classic API Boundary Lies
-- Compiling ORM Classes
-- Creating an Iblock Programmatically
-- Rights and Public API
-
-### When to read `rules/properties-sections-elements.md`
-
-Read `rules/properties-sections-elements.md` (`Properties, sections, elements`) when the task involves:
-
-- Properties
-- Sections via ORM
-- Elements via ORM
-
-### When to read `rules/query-seo-perf.md`
-
-Read `rules/query-seo-perf.md` (`Selections, SEO, performance`) when the task involves:
-
-- Selections and Filters
-- SEO Templates
-- Checklist
-- Performance
-
-## Checklist
-
-- [ ] Opened only the rule file(s) needed for this task.
-- [ ] Followed DI / `/local/` / security canons from `AGENTS.md`.
+- `Loader::includeModule('iblock')`. Property-aware ORM needs the iblock `API_CODE`: use `Element{ApiCode}Table` and `Model\Section::compileEntityByIblock()`, never `ElementTable` writes (always fail).
+- Structure (type, iblock, property) via `CIBlockType`/`CIBlock`/`CIBlockProperty`. Elements/sections via compiled ORM, or `CIBlockElement`/`CIBlockSection` when you need search index, SEO recalculation, rights, workflow or auto `CODE`.
+- ORM ignores iblock rights: check them yourself, or call `CIBlockElement::GetList` with `CHECK_PERMISSIONS = 'Y'` set server-side.
+- Iblock, property and enum IDs differ per environment: resolve by `CODE`/`API_CODE`/`XML_ID`.
+- Directory (HL) properties → `bitrix-highloadblock`; prices, SKU, stock → `bitrix-catalog`.

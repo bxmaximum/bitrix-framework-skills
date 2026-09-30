@@ -1,192 +1,128 @@
 ---
 name: bitrix-caching
-description: Covers caching in Bitrix — Cache (unmanaged), ManagedCache, TaggedCache, ORM auto-cache, component cache via startResultCache/endResultCache, Composite Site, cache engine configuration (files, memcached, redis) in .settings.php. Applied when optimizing performance, invalidating by tags and events, setting TTL, cache warm-up, and debugging cache hits. Key terms — cache, invalidate, TaggedCache, ManagedCache, startResultCache, cacheDir, clean.
+description: 'Bitrix caching — Data\Cache, ManagedCache, TaggedCache, ORM query cache, component result cache, cache engine config (files, Redis, Memcached). Use when caching data or HTML, choosing TTL and keys, or invalidating by tags.'
 ---
 
-# Caching in Bitrix
+# Caching
 
-## Cache Levels
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-1. **Unmanaged Cache** (`Bitrix\Main\Data\Cache`) — with TTL, key, and path. Cleared automatically by TTL and manually.
-2. **Managed Cache** (`ManagedCache`) — lives until explicit invalidation, convenient for "rarely changing" data.
-3. **Tagged Cache** (`TaggedCache`) — keys are grouped by tags; invalidating one tag clears all associated entries.
-4. **ORM Cache** — automatic: `isCacheable()` in the tablet + `['cache' => ['ttl' => ...]]` in `getList`.
-5. **Component Cache** — via `startResultCache()` / `endResultCache()` and parameters `CACHE_TYPE`, `CACHE_TIME`, `CACHE_GROUPS`.
-6. **Composite Cache** — HTML cache of the entire page (`Bitrix\Main\Composite\Engine`).
+| Level | API | Invalidation |
+| --- | --- | --- |
+| Data cache | `Data\Cache` (`initCache`/`startDataCache`) | TTL, `cleanDir($dir)`, tags |
+| Managed cache | `Application::getInstance()->getManagedCache()` | `clean()` / `cleanDir()` |
+| Tags | `Application::getInstance()->getTaggedCache()` | `clearByTag($tag)` |
+| ORM query cache | `setCacheTtl()` / `'cache' => ['ttl' => …]` | automatic on ORM writes (`bitrix-orm`) |
+| Component result | `$this->startResultCache()` | `CACHE_TIME`, tags, `clearResultCache()` |
+| Whole page | Composite | `bitrix-performance` |
 
-## Configuration in `.settings.php`
+## Engine config (`.settings.php`)
 
 ```php
 'cache' => [
     'value' => [
-        'type' => [
-            // 'class_name' => \Bitrix\Main\Data\CacheEngineRedis::class, // one of these
-            'type' => 'redis',     // files|memcache|redis|apc|xcache|none
-            'host' => '127.0.0.1',
-            'port' => 6379,
-            'serializer' => \Redis::SERIALIZER_IGBINARY,
-        ],
-        'sid' => 'PROJECT_',       // key prefix
-        'cache_flags' => [
-            'config_options' => 3600,
-            'site_template' => 3600,
-            'iblock_include' => 3600,
-        ],
+        'type' => 'redis',                               // files | redis | memcached | memcache | apcu
+        'redis' => ['host' => '127.0.0.1', 'port' => 6379],
+        'serializer' => \Redis::SERIALIZER_IGBINARY,
+        'sid' => 'site1',                                // key prefix: unique per site copy on a shared server
     ],
     'readonly' => false,
 ],
+'cache_flags' => [                                       // separate top-level section
+    'value' => [
+        'config_options' => 3600,                        // b_option cache TTL
+        'vendor_module_post_max_ttl' => 600,             // ORM TTL clamp per table (0 disables)
+    ],
+],
 ```
 
-Different sections (`config_options`, `menu`, `site_template`, etc.) define TTL for internal kernel caches.
+- Custom engine: `'type' => ['class_name' => MyEngine::class, 'extension' => 'redis']`. Several servers: `'servers' => [['host' => …, 'port' => …]]`.
+- An unknown `type` string (typo, wrong case) silently means "no cache", without a warning. A missing custom class or an unavailable engine (no extension, server down) falls back to "no cache" with only an `E_USER_WARNING`.
 
-## Unmanaged Cache Template
+## Data cache + tags
 
 ```php
-$cache = \Bitrix\Main\Data\Cache::createInstance();
-$ttl = 3600;
-$cacheId = 'posts_list_' . md5(serialize($filter));
-$cacheDir = '/vendor_blog/posts';
+use Bitrix\Main\Application;
+use Bitrix\Main\Data\Cache;
 
-if ($cache->initCache($ttl, $cacheId, $cacheDir))
+$cache = Cache::createInstance();
+$cacheDir = '/vendor_blog/posts';
+$cacheId = 'list_' . md5(serialize([$filter, LANGUAGE_ID]));
+
+if ($cache->initCache(3600, $cacheId, $cacheDir))
 {
     $data = $cache->getVars();
 }
 elseif ($cache->startDataCache())
 {
-    $data = PostTable::getList([
-        'filter' => $filter,
-        'select' => ['ID', 'TITLE'],
-    ])->fetchAll();
+    $tagged = Application::getInstance()->getTaggedCache();
+    $tagged->startTagCache($cacheDir);                   // same dir as the data cache
+    $data = PostTable::query()->setSelect(['ID', 'TITLE'])->setFilter($filter)->fetchAll();
 
-    // If conditions are not met — stop writing cache:
-    if (empty($data))
+    if ($data === [])
     {
+        $tagged->abortTagCache();
         $cache->abortDataCache();
     }
     else
     {
+        $tagged->registerTag('vendor_blog_posts');
+        $tagged->endTagCache();
         $cache->endDataCache($data);
     }
 }
+
+Application::getInstance()->getTaggedCache()->clearByTag('vendor_blog_posts'); // in the write path / ORM OnAfter* handler
 ```
 
-- `cacheId` — unique key, includes all variables affecting the result.
-- `cacheDir` — cache "folder"; convenient to clear by directory `$cache->cleanDir($cacheDir)`.
+- `clearByTag()` deletes every cache **dir** registered under the tag, so tag data caches with their own `$cacheDir`.
+- Key = everything that changes the result (filter, language, site, user groups). Never read `$_SESSION`/`$USER` inside the cached block without putting it in the key.
+- Tags are your own names. There are no automatic `ORM_<TABLE>` tags; ORM cache lives in managed-cache dirs `orm_<table>` and is cleared by `XxxTable::cleanCache()`.
 
-## Managed Cache
+## Managed cache
 
 ```php
-$managed = \Bitrix\Main\Application::getInstance()->getManagedCache();
-
-if ($managed->read(86400, $cacheId, 'posts'))
+$managed = Application::getInstance()->getManagedCache();
+if ($managed->read(86400, 'rates', 'vendor_rates'))
 {
-    $data = $managed->get($cacheId);
+    $rates = $managed->get('rates');
 }
 else
 {
-    $data = $this->fetchExpensive();
-    $managed->setImmediate($cacheId, $data); // or set() — write at the end of request
+    $rates = $this->loadRates();
+    $managed->set('rates', $rates);          // setImmediate() writes now, set() at the end of the hit
 }
-
-// Invalidation:
-$managed->clean($cacheId, 'posts');
-$managed->cleanDir('posts');
+$managed->cleanDir('vendor_rates');
 ```
 
-## Tags
+`set()`/`setImmediate()` are no-ops for an id that was not `read()` first.
+
+## Component cache
 
 ```php
-use Bitrix\Main\Application;
-
-$taggedCache = Application::getInstance()->getTaggedCache();
-
-$taggedCache->startTagCache('/vendor_blog/posts');
-$taggedCache->registerTag('posts_list');
-$taggedCache->registerTag('post_42');
-$taggedCache->endTagCache();
-
-// Tag invalidation — clears all entries registered under this tag:
-$taggedCache->clearByTag('posts_list');
-```
-
-Use your own tag names for HTML/component caches. There are **no** automatic TaggedCache tags like `ORM_<TABLE_NAME>`.
-
-## ORM Query Cache
-
-```php
-PostTable::getList([
-    'select' => ['*'],
-    'filter' => ['=ACTIVE' => 'Y'],
-    'cache'  => [
-        'ttl' => 3600,
-        'cache_joins' => true, // cache JOIN queries
-    ],
-]);
-```
-
-ORM auto-cache is stored under ManagedCache directories `orm_<table_name>` (see `Entity::getCacheDir()`). Invalidate via:
-
-```php
-PostTable::cleanCache();           // DataManager / Table
-PostTable::getEntity()->cleanCache(); // Entity — ManagedCache::cleanDir('orm_...')
-```
-
-Writes that change cacheable rows also call `cleanCache()` from the ORM layer. To clear related TaggedCache HTML, register and invalidate **your own** tags in event handlers — do not invent `ORM_*` tag names.
-
-## Component Cache
-
-In `class.php` / `component.php`:
-
-```php
-if ($this->startResultCache(false, [
-    $USER->IsAuthorized(),
-    $arParams['SECTION_ID'],
-]))
+if ($this->startResultCache(false, [$userGroupsKey]))  // CACHE_TIME from params; extra key parts
 {
-    $this->arResult['ITEMS'] = $this->fetchItems();
+    $this->arResult['ITEMS'] = $this->loadItems();
+    if (!$this->arResult['ITEMS'])
+    {
+        $this->abortResultCache();
+    }
+    else
+    {
+        Application::getInstance()->getTaggedCache()->registerTag('vendor_blog_posts');
+    }
+    $this->setResultCacheKeys(['TITLE']);              // arResult keys kept for component_epilog.php
     $this->includeComponentTemplate();
 }
 ```
 
-Component parameters controlling cache:
-
-- `CACHE_TYPE`: `A` (autocache), `Y`, `N`.
-- `CACHE_TIME`: TTL in seconds.
-- `CACHE_GROUPS`: `Y` — key depends on user groups.
-
-## Composite Cache
-
-Enable and configure Composite Site in Admin → Settings → Composite Site (or programmatically via `Bitrix\Main\Composite\Engine`). There is no separate "compression module" requirement for composite.
-
-Consider composite constraints: dynamic blocks are marked via `$APPLICATION->SetPageProperty('composite_frame_mode', 'Y')` / `setFrameMode`, personal data should not be in the static part, AJAX components are fetched with a separate request.
-
-### Composite zones and NGINX
-
-- Static zone — full page HTML cache.
-- Dynamic zone (`data-dynamic`) — refreshed via AJAX on each hit.
-- Autocomposite vs manual composite — configure in Admin → Composite settings.
-- NGINX can serve static composite files directly; configure composite pool path (BitrixVM: *Configure nginx to use composite cache*).
-
-For ORM/SQL optimization see skill `bitrix-performance`.
-
-## Invalidation by Events
-
-Typical scheme: `OnAfterUpdate`/`OnAfter*` handler in the tablet calls `$taggedCache->clearByTag(...)` for your tags, and/or `Table::cleanCache()` for ORM query cache. Use new ORM events via `EventResult` instead of `$GLOBALS['USER_FIELD_MANAGER']->...`.
-
-## Antipatterns
-
-- Caching "live" data (balances, stock levels) with high TTL without invalidation.
-- Using global `$_SESSION`/`$USER` inside the cache key instead of explicit variables.
-- One shared `cacheDir` for all modules — hard to clear selectively.
-- Missing `abortDataCache()` for empty/error results.
-- Enabling composite without testing dynamic blocks.
-- Assuming TaggedCache tags `ORM_<TABLE>` exist — use `cleanCache()` / `orm_*` ManagedCache dirs instead.
+- Params: `CACHE_TYPE` (`A` follows the global switch, `Y`, `N`), `CACHE_TIME`. The key already includes site, language, template, all params and the user TZ offset; `CACHE_GROUPS` is only a convention: add user groups to the extra key yourself.
+- The component opens a tag scope for its cache path only when `BX_COMP_MANAGED_CACHE` is defined.
 
 ## Checklist
 
-- [ ] Cache level selected: short-lived → unmanaged; rarely changing and critical → managed + tags.
-- [ ] Cache key includes all parameters affecting the result (filters, language, permissions).
-- [ ] Cache invalidation is automated via tags/events, not manual `cleanDir('/')`.
-- [ ] ORM query cache cleared via `Table::cleanCache()` / `Entity::cleanCache()`, not fictional `ORM_*` tags.
-- [ ] Component cache accounts for user groups where important.
-- [ ] Production environment uses Redis/Memcached instead of file cache.
+- [ ] Cache key covers every input; empty/error results call `abort*Cache()`.
+- [ ] Each tag is cleared in the code path that changes the data.
+- [ ] Tag scope uses the same dir as the data cache.
+- [ ] ORM cache cleared via `cleanCache()` after raw SQL writes.
+- [ ] Production uses Redis/Memcached, `sid` unique per site copy.

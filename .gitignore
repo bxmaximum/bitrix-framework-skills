@@ -17,3 +17,6 @@
 .anthropic
 .llama
 .palm
+
+# verify-skills kernel index cache
+tools/.cache/

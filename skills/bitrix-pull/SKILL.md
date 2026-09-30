@@ -1,131 +1,91 @@
 ---
 name: bitrix-pull
-description: Covers Pull module — sending realtime events to users/channels from PHP, JS subscription overview, watch tags, when to use Pull vs Messenger vs agents, link to BitrixVue. Applied for live UI updates, notifications, collaborative screens. Key terms — pull, Bitrix\Pull\Event, CPullWatch, CPullChannel, BX.PULL.subscribe, extendWatch, queue server, push.
+description: 'Pull module realtime events — Bitrix\Pull\Event::add, CPullWatch tags, BX.PULL.subscribe callbacks, mobile push via Push::add. Use for live UI updates, counters, notifications or collaborative screens driven from PHP.'
 ---
 
 # Realtime Pull (`pull`)
 
-`pull` delivers **short realtime commands** to browsers/mobile via a queue server (WebSocket / long polling / JSON-RPC). Baseline: main **23.0+**. Requires the Pull/queue server to be enabled (`CPullOptions::GetQueueServerStatus()`); otherwise events are dropped after buffering logic.
+Baseline: main 23.0+ · Verified: pull 26.100.0, main 26.800.0
 
-```php
-\Bitrix\Main\Loader::includeModule('pull');
-```
-
-## Pull vs Messenger vs Agents
+`pull` delivers short commands to browsers and the mobile app through the push server. Needs a configured server (`CPullOptions::GetQueueServerStatus()`); mobile push also `CPullOptions::GetPushStatus()`.
 
 | Mechanism | Use for |
 | --- | --- |
-| **Pull** | Instant UI sync (“row updated”, counters, presence-like hints) |
-| **Messenger** (`bitrix-background-jobs`) | Reliable async **work** with retries/queues (**Since 25.100.300**, alpha) |
-| **Agents / cron** | Periodic batch jobs, cleanup, polling external systems |
+| Pull | Instant UI signal: "row 42 changed", counters |
+| Messenger / agents (`bitrix-background-jobs`) | Durable work with retries; emit Pull from the worker when the UI must refresh |
 
-Do not use Pull as a job queue. Do not use Messenger to push browser paint updates — emit Pull from the worker when the UI must refresh.
-
-## Send to User(s) from PHP
-
-Primary API: `Bitrix\Pull\Event::add($recipient, array $parameters, $channelType = \CPullChannel::TYPE_PRIVATE)`.
-
-Required in `$parameters`: `module_id`, and either `command` (+ optional `params`) or push payload fields.
+## Send from PHP
 
 ```php
-<?php declare(strict_types=1);
+\Bitrix\Main\Loader::includeModule('pull');
 
-use Bitrix\Main\Loader;
-use Bitrix\Pull\Event;
-
-Loader::includeModule('pull');
-
-Event::add($userId, [
-    'module_id' => 'vendor.module',
-    'command' => 'item.updated',
-    'params' => [
-        'id' => $itemId,
-        'title' => $title,
-    ],
-    // 'expiry' => 86400, // optional; default applied in Event::prepareParameters
+$ok = \Bitrix\Pull\Event::add([$userId, $otherUserId], [
+    'module_id' => 'vendor.module',   // lower-cased by the kernel
+    'command' => 'itemUpdated',
+    'params' => ['id' => $itemId],   // IDs and flags only; load data via AJAX afterwards
+    // 'expiry' => 86400,            // seconds, default
 ]);
-
-// Multiple users:
-Event::add([1, 2, 3], [
-    'module_id' => 'vendor.module',
-    'command' => 'list.refresh',
-    'params' => [],
-]);
+if (!$ok) {
+    $error = \Bitrix\Pull\Event::getLastError();
+}
 ```
 
-- Recipients: user IDs, channel IDs (32-char strings), or `Bitrix\Pull\Model\Channel` instances.
-- Channel types: `\CPullChannel::TYPE_PRIVATE` (default), `TYPE_SHARED`, etc.
-- Sending is deferred via `Application::addBackgroundJob` / `Event::send` on epilog — usually you only call `add()`.
-- Legacy wrappers: `CPullStack`, `Bitrix\Pull\Push::add` (push notifications path).
+- Recipients: user ID(s), 32-char channel IDs or `Bitrix\Pull\Model\Channel`; 3rd arg `\CPullChannel::TYPE_PRIVATE` (default) / `TYPE_SHARED`.
+- Per-user params: `'user_params' => [$userId => ['unread' => 3]]` (merged into `params` for that user), `'dictionary' => [...]` (merged for all). Result is reliable **since pull 26.100**; before it a falsy result for these keys is not a failure — check `getLastError()`.
+- Invalid UTF-8 anywhere in the payload → `false` (`EVENT_BAD_ENCODING`).
+- Delivery is queued and sent by a background job at the end of the hit. Long-running CLI worker: call `\Bitrix\Pull\Event::send()` right after `add()`.
 
-On failure, inspect `Event::getLastError()`.
-
-## Shared Tags (`CPullWatch`)
-
-Subscribe users to a **tag**, then broadcast to everyone watching that tag:
+## Tags (`CPullWatch`)
 
 ```php
-<?php declare(strict_types=1);
-
-use Bitrix\Main\Loader;
-
-Loader::includeModule('pull');
-
-\CPullWatch::Add($userId, 'VENDOR_ITEM_' . $itemId);
-
-\CPullWatch::AddToStack('VENDOR_ITEM_' . $itemId, [
+\CPullWatch::Add($userId, 'VENDOR_ITEM_' . $itemId);          // when rendering the page
+\CPullWatch::AddToStack('VENDOR_ITEM_' . $itemId, [           // later, to all watchers
     'module_id' => 'vendor.module',
-    'command' => 'item.updated',
+    'command' => 'itemUpdated',
     'params' => ['id' => $itemId],
 ]);
 ```
 
-- `CPullWatch::Extend($userId, $tags)` — refresh subscriptions (also used from pull controllers/JS).
-- Tag messages still go through `Event::add` under the hood.
+- `Add()` is written at `OnAfterEpilog` for the **current** user; for another user or outside a web hit pass 3rd arg `true` (immediate).
+- A watch lives ~30 min; the page keeps it alive with `BX.PULL.extendWatch(tag)`.
+- `AddToStack()` accepts an array of tags and `skip_users`.
 
-## JS Subscription Overview
+## Subscribe in JS
 
-Client global: `BX.PULL` (`PullClient`, extension `pull.client` / product core load). Subscribe:
+Add `pull.client` to `rel` (`import { PULL } from 'pull.client'`, global `BX.PULL`). `moduleId` must be lower-case.
 
 ```javascript
-const unsubscribe = BX.PULL.subscribe({
+// With command: (params, extra, command, info)
+const off = BX.PULL.subscribe({
     moduleId: 'vendor.module',
-    command: 'item.updated', // optional; omit to get all module commands
-    callback: (params, extra, command) => {
-        // update UI
-    },
+    command: 'itemUpdated',
+    callback: (params, extra, command) => reload(params.id),
 });
 
-// Watch tag (pairs with CPullWatch):
+// Without command: one object for every module command
+BX.PULL.subscribe({
+    moduleId: 'vendor.module',
+    callback: (data) => { /* data.command, data.params, data.extra */ },
+});
+
 BX.PULL.extendWatch('VENDOR_ITEM_' + itemId);
+off(); // unsubscribe
 ```
 
-`subscribe` returns an unsubscribe function. Alternative: `attachCommandHandler` with an object exposing `getModuleId()` and command methods.
+- Handler object: `BX.PULL.attachCommandHandler({ getModuleId: () => 'vendor.module', handleItemUpdated(params, extra) {} })` — method `handle` + command with capital first letter, or `getMap()`.
+- Vue: `this.$Bitrix.PullClient.get().subscribe(...)` in `mounted`, call the returned function in `unmounted` (`bitrix-vue`).
+- Never use pull's global `protobuf`: since pull 26.100 it is a minimal build (`load`, `parse`, `Root`, `Type` gone). Bundle your own protobufjs without assigning `globalThis.protobuf` — pull reads `globalThis.protobuf.roots['push-server']`.
 
-In BitrixVue apps (`bitrix-vue`), subscribe in `mounted` / setup and unsubscribe on unmount; keep `moduleId`/`command` identical to PHP `Event::add`.
+## Mobile push
 
-Queue helper extension: `pull.queuemanager` wraps `BX.PULL.subscribe` + `extendWatch` for list/grid sync patterns.
+`\Bitrix\Pull\Push::add($users, ['module_id' => 'vendor.module', 'push' => ['message' => 'Text', 'params' => [...]]])` — kernel entry point for push (drops `command`/`params`); or add `push` / `pushParamsCallback` to `Event::add()` to send both. `CPullStack` is legacy.
 
-## Push (Mobile)
-
-Optional `push` / `pushParamsCallback` keys on `Event::add` enqueue mobile push via `CPushManager` when push is enabled (`CPullOptions::GetPushStatus()`). Treat as a separate channel from browser Pull commands.
-
-## Operational Notes
-
-- Parameters must be UTF-8; invalid encoding is rejected.
-- Keep payloads small (IDs + flags); fetch heavy data via AJAX/REST after the event.
-- Shared channel / guest modes depend on Pull options — verify before designing guest UX.
-- Module may expose REST helpers (`Bitrix\Pull\Rest`, controller `config` for watch extend) when `restIntegration` is enabled in pull `.settings.php`.
+Badge refresh: `Push::add($userId, ['module_id' => 'pull', 'push' => ['badge' => 'Y']])`. `CPushManager::sendBadges()` was removed in pull 26.0 (fatal) and `MobileCounter::send()` is a no-op; the `Push::add()` call works on all versions.
 
 ## Checklist
 
-- [ ] `pull` module loaded; queue server enabled in environment.
-- [ ] Events use stable `module_id` + `command` names shared with JS.
-- [ ] Recipients are user IDs or valid channels; tags use `CPullWatch` consistently.
-- [ ] UI handlers unsubscribe / avoid leaks in SPA/Vue.
-- [ ] Pull not used as a durable job queue (use Messenger/agents).
-- [ ] Large data loaded on demand after the signal.
-
-## Related skills
-
-`bitrix-background-jobs`, `bitrix-vue`, `bitrix-extensions`, `bitrix-controllers`, `bitrix-rest`.
+- [ ] `module_id` / `command` identical (lower-case module) in PHP and JS.
+- [ ] Payload small, UTF-8; heavy data fetched on demand.
+- [ ] Tags: `CPullWatch::Add` on render + `extendWatch` in JS.
+- [ ] Subscriptions removed on unmount / destroy.
+- [ ] Pull never used as a job queue.

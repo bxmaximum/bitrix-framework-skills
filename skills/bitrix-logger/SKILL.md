@@ -1,234 +1,107 @@
 ---
 name: bitrix-logger
-description: Covers PSR-3 logging in Bitrix — Bitrix\Main\Diag\Logger, FileLogger, SysLogger, NullLogger, LogFormatter, loggers section in .settings.php, named kernel loggers (main.Default, main.HttpClient, main.GeoIpManager, main.EventLog.*), integration with Monolog and third-party PSR-3 loggers. Applied when configuring module logs, debugging integrations, gathering errors from specific kernel components and log rotation. Key terms — Logger, FileLogger, SysLogger, LogFormatter, PSR-3, Monolog, loggers config, log level.
+description: 'PSR-3 logging in Bitrix — Diag\FileLogger/SysLogger/EventLogger, LogFormatter, JsonLinesFormatter, loggers section, LoggerFactory + LoggerRegistry, named kernel loggers (main.HttpClient…), Monolog. Use when adding or configuring logs.'
 ---
 
-# Logging in Bitrix (PSR-3)
+# Logging (PSR-3)
 
-Bitrix follows the PSR-3 standard. In code, inject `\Psr\Log\LoggerInterface`, and in `.settings.php`, configure the specific implementation. Direct calls to `AddMessage2Log` are legacy; in new code, write via DI logger.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-## Built-in Implementations
+Code depends on `Psr\Log\LoggerInterface`; the implementation is chosen in `.settings.php` `loggers`. `AddMessage2Log()` — compat only.
 
-All are in the `\Bitrix\Main\Diag\` namespace:
+## Implementations (`Bitrix\Main\Diag\`)
 
-| Class | Purpose |
+| Class | Notes |
 | --- | --- |
-| `Logger` | Abstract base class; `Logger::create('id', $params)` creates a logger via factory |
-| `FileLogger` | Into a file, with auto-rotation when `$maxLogSize` is exceeded (default 1 MB) |
-| `SysLogger` | Into system `syslog` via `openlog`/`syslog` |
-| `EventLogger` | Into `b_event_log` table (Admin Panel → Event Log) |
-| `LogFormatter` | Default formatter: interpolates `{placeholder}`, renders exceptions and stacks |
-| `JsonLinesFormatter` | From 25.300.0; one JSON line per entry, convenient for ELK/Loki |
+| `FileLogger(string $fileName, ?int $maxSize = null)` | default max 1 MB, then renamed to `<file>.old`; `0` = no rotation |
+| `SysLogger(string $prefix = '', int $flags = LOG_ODELAY, int $facility = LOG_USER)` | system syslog |
+| `EventLogger(?string $module, ?string $auditType, ?callable $callback)` | `b_event_log` (*Event log* in admin) — low volume only |
+| `LogFormatter($showArguments = false, $argMaxChars = 30)` | default; placeholders `{date}` `{host}` `{level}` `{delimiter}` `{exception}` `{trace}` + context keys |
+| `JsonLinesFormatter` (**Since main 25.300**; older: `LogFormatter`) | writes only `$context` as one JSON line — the message text is dropped, put it into context |
 
-Levels are constants of `\Psr\Log\LogLevel::*` (`emergency`, `alert`, `critical`, `error`, `warning`, `notice`, `info`, `debug`).
+`level` and `formatter` settings apply only to `Bitrix\Main\Diag\Logger` subclasses, not to Monolog.
 
-## Service with Logger (DI — Recommended)
+## Get a logger
+
+**Since main 26.250\*** — `LoggerFactory` + `LoggerRegistry`:
 
 ```php
-<?php declare(strict_types=1);
+use Bitrix\Main\Diag\LoggerFactory;
+use Bitrix\Main\Diag\LoggerRegistry;
 
-namespace Vendor\Module\Application\Service;
-
-use Psr\Log\LoggerInterface;
-use Psr\Log\NullLogger;
-
-final class PostService
-{
-    public function __construct(
-        private readonly LoggerInterface $logger = new NullLogger(),
-    ) {}
-
-    public function publish(int $postId): void
-    {
-        try
-        {
-            // ...
-            $this->logger->info('Post {id} published', ['id' => $postId]);
-        }
-        catch (\Throwable $e)
-        {
-            $this->logger->error('Publish failed for post {id}: {exception}', [
-                'id' => $postId,
-                'exception' => $e,
-            ]);
-            throw $e;
-        }
-    }
-}
+$logger = (new LoggerFactory())->createById('vendor.module.sync'); // NullLogger unless the id is enabled
+(new LoggerRegistry())->enable('vendor.module.sync');               // option loggers:logger_is_enabled_<id> = Y
+$logger = (new LoggerFactory())->createById('vendor.module.sync', [], false); // skip the registry check
 ```
 
-Registration in `/local/modules/vendor.module/.settings.php`:
+- Enabled id without a `loggers` entry → default logger (`LOG_FILENAME` constant) or `NullLogger`.
+- Kernel ids created this way stay silent until enabled: `main.Messenger.Receiver`, `main.Messenger.Requeue`, `main.config.feature`, `bizproc.imbot`, …
+- `Logger::create($id, $params)` — deprecated since main 26.300, the only API before 26.250; returns `null` if `$id` is not configured: `$logger = Logger::create('id') ?? new NullLogger();`.
+
+Inject into a service (module `.settings.php`):
+
+```php
+\Vendor\Module\Public\Service\SyncService::class => [
+    'className' => \Vendor\Module\Public\Service\SyncService::class,
+    'constructorParams' => static fn () => [(new \Bitrix\Main\Diag\LoggerFactory())->createById('vendor.module.sync')],
+],
+```
+
+## `loggers` section
+
+Put it into `/local/.settings_extra.php`: closures do not survive kernel rewrites of the main file (`bitrix-settings`).
 
 ```php
 'services' => [
     'value' => [
-        \Vendor\Module\Application\Service\PostService::class => [
-            'constructor' => static fn (): \Vendor\Module\Application\Service\PostService =>
-                new \Vendor\Module\Application\Service\PostService(
-                    new \Bitrix\Main\Diag\FileLogger('/var/log/bitrix/post-service.log'),
-                ),
+        'vendor.formatter.json' => ['className' => \Bitrix\Main\Diag\JsonLinesFormatter::class],
+    ],
+],
+'loggers' => [
+    'value' => [
+        'vendor.module.sync' => [
+            'constructor' => static fn () => new \Bitrix\Main\Diag\FileLogger('/var/log/site/sync.log', 10 * 1024 * 1024),
+            'level' => \Psr\Log\LogLevel::INFO,     // threshold
+            'formatter' => 'vendor.formatter.json', // service id
+        ],
+        'main.HttpClient' => [
+            'constructor' => static function (\Bitrix\Main\Web\Http\DebugInterface $debug, \Psr\Http\Message\RequestInterface $request) {
+                $debug->setDebugLevel(\Bitrix\Main\Web\HttpDebug::ALL);
+                return new \Bitrix\Main\Diag\FileLogger('/var/log/site/http.log');
+            },
         ],
     ],
     'readonly' => true,
 ],
 ```
 
-## PSR-3 Placeholders
+Entry forms: `constructor` closure (gets the factory `$params`) or `className` + `constructorParams` (array or closure returning one).
 
-Message is a template with `{key}`, values are taken from `$context`:
+## Kernel logger ids
 
-```php
-$logger->warning('User {userId} tried {action} on post {postId}', [
-    'userId' => $uid, 'action' => 'delete', 'postId' => $pid,
-]);
-```
-
-Special keys understood by `LogFormatter`:
-
-- `{date}` — current time (interpolated automatically).
-- `{host}` — HTTP_HOST (automatic).
-- `{delimiter}` — entry separator (automatic).
-- `{exception}` — `\Throwable` object → formats class, message, stack trace.
-- `{trace}` — manual stack trace: `Diag\Helper::getBackTrace(6, DEBUG_BACKTRACE_IGNORE_ARGS, 3)`.
-
-Enable arguments in stack trace:
-
-```php
-$logger->setFormatter(new \Bitrix\Main\Diag\LogFormatter(showArguments: true, argMaxChars: 120));
-```
-
-## Configuration via `.settings.php` — `loggers` section
-
-Allows overriding loggers for named kernel points (`main.HttpClient`, `main.Default`, `main.GeoIpManager`) and your own identifiers.
-
-```php
-return [
-    'services' => [
-        'value' => [
-            'formatter.withArgs' => [
-                'className' => \Bitrix\Main\Diag\LogFormatter::class,
-                'constructorParams' => [true],
-            ],
-        ],
-        'readonly' => true,
-    ],
-    'loggers' => [
-        'value' => [
-            'main.Default' => [
-                'constructor' => static fn () => new \Bitrix\Main\Diag\FileLogger(
-                    '/var/log/bitrix/app.log', 10 * 1024 * 1024,
-                ),
-                'level'     => \Psr\Log\LogLevel::INFO,
-                'formatter' => 'formatter.withArgs',
-            ],
-
-            'main.HttpClient' => [
-                'constructor' => static function (
-                    \Bitrix\Main\Web\Http\DebugInterface $debug,
-                    \Psr\Http\Message\RequestInterface $request,
-                ) {
-                    $debug->setDebugLevel(\Bitrix\Main\Web\HttpDebug::ALL);
-                    return new \Bitrix\Main\Diag\FileLogger(
-                        '/var/log/bitrix/http-' . spl_object_hash($request) . '.log',
-                    );
-                },
-                'level' => \Psr\Log\LogLevel::DEBUG,
-            ],
-
-            'vendor.module.myLogger' => [
-                'constructor' => static fn () => new \Bitrix\Main\Diag\FileLogger(
-                    '/var/log/bitrix/vendor.module.log',
-                ),
-                'level' => \Psr\Log\LogLevel::DEBUG,
-            ],
-        ],
-        'readonly' => true,
-    ],
-];
-```
-
-### Important
-
-- `constructor` closures must be in `.settings.php` / `.settings_extra.php` — the file **is not edited** by Admin Panel, closures are not serialized.
-- `level` — threshold level; logger ignores messages below this.
-- `formatter` — key from `services` section.
-- Retrieving logger in code:
-
-    ```php
-    $logger = \Bitrix\Main\Diag\Logger::create('vendor.module.myLogger');
-    $logger = \Bitrix\Main\Diag\Logger::create('vendor.module.myLogger', [$this, $extraArg]);
-    ```
-
-## Named Kernel Points
-
-| ID | Used In | Factory Parameters |
+| Id | Used by | Closure params |
 | --- | --- | --- |
-| `main.Default` | `AddMessage2Log`, general default | `LOG_FILENAME`, `$showArgs` |
-| `main.HttpClient` | `Bitrix\Main\Web\HttpClient` (including legacy and PSR-18) | `DebugInterface $debug`, `RequestInterface $request` |
-| `main.GeoIpManager` | `Bitrix\Main\Service\GeoIp\Manager` | — |
-| `main.EventLog.SysLogger` | `CEventLog` → syslog path | — |
-| `main.EventLog.FileLogger` | `CEventLog` → file path | `$path`, `$maxSize` |
+| `main.Default` | `AddMessage2Log()`, default logger | `$logFileName`, `$showArgs` |
+| `main.HttpClient` | `HttpClient` / PSR-18 handlers | `DebugInterface $debug`, `RequestInterface $request` |
+| `main.GeoIpManager` | GeoIP manager | — |
+| `main.EventLog.SysLogger`, `main.EventLog.FileLogger` | `CEventLog` backends | —, `$path, $maxSize` |
 
-There are **no** named loggers `main.Mail` or `main.Engine`. Prefer `constructor` closures for `FileLogger` (see examples above) over `className`/`settings` arrays.
+No `main.Mail` or `main.Engine` ids exist.
 
-Configuring these loggers redirects all kernel calls — convenient for auditing external calls (see example in `bitrix-http-client`).
-
-## LoggerAware + Factory
-
-For classes that should be supplied with a logger "by identifier":
+## Writing
 
 ```php
-final class Indexer implements \Psr\Log\LoggerAwareInterface
-{
-    use \Psr\Log\LoggerAwareTrait;
-
-    public function run(): void
-    {
-        $this->ensureLogger()->info('Indexing started');
-    }
-
-    private function ensureLogger(): \Psr\Log\LoggerInterface
-    {
-        if ($this->logger === null)
-        {
-            $this->setLogger(\Bitrix\Main\Diag\Logger::create('vendor.module.indexer', [$this]));
-        }
-        return $this->logger;
-    }
-}
+$this->logger->error('Sync of order {orderId} failed: {exception}', ['orderId' => $id, 'exception' => $e]);
 ```
 
-## Monolog via Composer
-
-```bash
-composer require monolog/monolog
-```
-
-Integration into `.settings.php`:
-
-```php
-'loggers' => [
-    'value' => [
-        'vendor.module.external' => [
-            'constructor' => static function () {
-                $log = new \Monolog\Logger('vendor.module');
-                $log->pushHandler(new \Monolog\Handler\StreamHandler('/var/log/bitrix/monolog.log'));
-                return $log;
-            },
-            'level' => \Psr\Log\LogLevel::DEBUG,
-        ],
-    ],
-],
-```
+- Placeholders `{key}` from context; `exception` renders class, message and trace.
+- Stack trace without exception: `'trace' => \Bitrix\Main\Diag\Helper::getBackTrace(6, DEBUG_BACKTRACE_IGNORE_ARGS)`.
+- Monolog (`composer require monolog/monolog`): return a `Monolog\Logger` from the `constructor` closure; set its level/formatter in Monolog.
 
 ## Checklist
 
-- [ ] PSR-3 standard followed (placeholders, context, exception key).
-- [ ] Loggers are configured via `.settings.php` rather than hardcoded in services.
-- [ ] Threshold `level` is set for each environment.
-- [ ] Loggers for external integrations (`HttpClient`) are redirected to separate files for audit.
-- [ ] For heavy load, `JsonLinesFormatter` is used for external collectors.
-- [ ] Logs are stored outside `DOCUMENT_ROOT` or protected by `.htaccess`.
-- [ ] Sensitive data (passwords, tokens) are stripped from context before logging.
-
-Link `exception_handling.log` in `.settings.php` with named loggers for unified error tracking. See skill `bitrix-settings`.
+- [ ] Services receive `LoggerInterface` (default `NullLogger`), no `new FileLogger()` inside business code.
+- [ ] Logger ids prefixed with the module id; enabled via `LoggerRegistry` where `LoggerFactory` is used.
+- [ ] Log files outside `DOCUMENT_ROOT`, rotation size set.
+- [ ] No passwords, tokens or personal data in messages or context.
+- [ ] `JsonLinesFormatter` callers put the message into context.

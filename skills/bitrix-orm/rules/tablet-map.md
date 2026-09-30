@@ -1,21 +1,16 @@
 # Tablet map
 
-## Naming: `DataManager` vs `*Table`
+## Naming and location
 
-- `\Bitrix\Main\ORM\Data\DataManager` — **base class** for all tablets (do not put business entities directly on it).
-- Concrete tablets are named `SomethingTable` and extend `DataManager` (`PostTable`).
-- The name **without** `Table` is reserved for the entity object class (`Post` / generated `EO_Post`).
-
-All project tablets live in `/local/modules/<m>/lib/Model/`.
-
-Generation:
+- `SomethingTable extends \Bitrix\Main\ORM\Data\DataManager`; the name without `Table` is the object class (`Post`, generated `EO_Post`, `EO_Post_Collection`).
+- Project convention: `lib/Model/`. `make:tablet` builds the map from an **existing** DB table (needs `perfmon`) and defaults to `Vendor\Module\Tablet`:
 
 ```bash
-php bitrix/bitrix.php make:tablet my_post vendor.module
-php bitrix/bitrix.php orm:annotate -m vendor.module  # IDE annotations
+php bitrix/bitrix.php make:tablet vendor_module_post vendor.module --namespace 'Vendor\Module\Model'
+php bitrix/bitrix.php orm:annotate -m vendor.module     # EO_* classes for the IDE
 ```
 
-## Tablet Skeleton
+## Skeleton
 
 ```php
 <?php declare(strict_types=1);
@@ -24,8 +19,8 @@ namespace Vendor\Module\Model;
 
 use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\ORM\Fields;
-use Bitrix\Main\ORM\Fields\Validators;
-use Bitrix\Main\Localization\Loc;
+use Bitrix\Main\Type\DateTime;
+use Bitrix\Main\UserTable;
 
 final class PostTable extends DataManager
 {
@@ -36,80 +31,73 @@ final class PostTable extends DataManager
 
     public static function getUfId(): string
     {
-        return 'VENDOR_MODULE_POST'; // if user fields are present
-    }
-
-    public static function isCacheable(): bool
-    {
-        return true;
+        return 'VENDOR_MODULE_POST';   // only if the entity has user fields
     }
 
     public static function getMap(): array
     {
         return [
-            (new Fields\IntegerField('ID'))
-                ->configurePrimary()
-                ->configureAutocomplete(),
-
-            (new Fields\StringField('TITLE'))
-                ->configureRequired()
-                ->configureSize(255)
-                ->addValidator(new Validators\LengthValidator(null, 255)),
-
-            (new Fields\TextField('BODY'))
-                ->configureNullable(),
-
-            (new Fields\BooleanField('ACTIVE'))
-                ->configureValues('N', 'Y')
-                ->configureDefaultValue('Y'),
-
-            (new Fields\DatetimeField('CREATED_AT'))
-                ->configureRequired()
-                ->configureDefaultValue(fn () => new \Bitrix\Main\Type\DateTime()),
-
-            (new Fields\IntegerField('AUTHOR_ID'))
-                ->configureRequired(),
-
-            (new Fields\Relations\Reference(
-                'AUTHOR',
-                \Bitrix\Main\UserTable::class,
-                ['=this.AUTHOR_ID' => 'ref.ID'],
-            ))->configureJoinType('LEFT'),
+            (new Fields\IntegerField('ID'))->configurePrimary()->configureAutocomplete(),
+            (new Fields\StringField('TITLE'))->configureRequired()->configureSize(255)
+                ->addValidator(new Fields\Validators\LengthValidator(null, 255)),
+            (new Fields\TextField('BODY'))->configureNullable(),
+            (new Fields\BooleanField('ACTIVE'))->configureValues('N', 'Y')->configureDefaultValue('Y'),
+            (new Fields\DatetimeField('CREATED_AT'))->configureDefaultValue(static fn () => new DateTime()),
+            (new Fields\ArrayField('SETTINGS'))->configureNullable(),                     // JSON
+            (new Fields\IntegerField('AUTHOR_ID'))->configureRequired(),
+            (new Fields\Relations\Reference('AUTHOR', UserTable::class, ['=this.AUTHOR_ID' => 'ref.ID']))
+                ->configureJoinType('LEFT'),
         ];
     }
 }
 ```
 
-**Configuration methods instead of arrays**: `configureRequired`, `configurePrimary`, `configureAutocomplete`, `configureNullable`, `configureSize`, `configureDefaultValue`, `configureColumnName`, `configureTitle`. The old format with array `['primary' => true, 'required' => true]` still works, but prefer fluent API in new code.
+Fluent `configure*()` over the legacy array format (`['primary' => true]`).
 
-## Field Types
+## Field types
 
-- `IntegerField`, `FloatField`, `DecimalField` — numeric.
-- `StringField`, `TextField` — strings/texts.
-- `BooleanField` — `configureValues('N', 'Y')` stores Y/N.
-- `DateField`, `DatetimeField` — return `Bitrix\Main\Type\Date`/`DateTime`.
-- `EnumField` — `configureValues(['draft', 'published'])`.
-- `ArrayField` — array, with its own serializer.
-- `CryptoField`, `SecretField` — built-in encryption (see `bitrix-security`).
-- `ExpressionField('FULL_NAME', 'CONCAT(%s, " ", %s)', ['NAME', 'LAST_NAME'])` — computed field.
+- `IntegerField`, `FloatField`, `DecimalField`, `StringField`, `TextField`, `BooleanField` (`configureValues('N', 'Y')`), `EnumField` (`configureValues([...])`).
+- `DateField` / `DatetimeField` → `Type\Date` / `Type\DateTime` (`bitrix-datetime`).
+- `ExpressionField('FULL_NAME', 'CONCAT(%s, " ", %s)', ['NAME', 'LAST_NAME'])` — computed.
+- `CryptoField` — encrypted at rest (`bitrix-security`).
+- `ArrayField` stores **JSON** by default; keep it. For a legacy PHP-serialized column never decode objects:
+
+```php
+(new Fields\ArrayField('PARAMS'))
+    ->configureSerializationPhp()
+    ->configureUnserializeCallback(static fn ($v) => unserialize((string)$v, ['allowed_classes' => false]));
+```
+
+## Per-field data modifiers
+
+There is no tablet-level `fetchDataModification()`. Modifiers live on fields:
+
+```php
+(new Fields\StringField('PHONE'))
+    ->addSaveDataModifier(static fn ($value) => preg_replace('/\D+/', '', (string)$value))
+    ->addFetchDataModifier(static fn ($value, $query, array $row, string $alias) => '+' . $value);
+```
+
+Fetch modifiers run after DB type conversion. Array format: `'fetch_data_modification' => fn () => [$callable]`.
 
 ## Relations
 
 ```php
-(new Fields\Relations\Reference('AUTHOR', UserTable::class, ['=this.AUTHOR_ID' => 'ref.ID']))
+(new Fields\Relations\OneToMany('COMMENTS', CommentTable::class, 'POST'))   // 'POST' = Reference in CommentTable
     ->configureJoinType('LEFT'),
-
-(new Fields\Relations\OneToMany('COMMENTS', CommentTable::class, 'POST'))
-    ->configureJoinType('LEFT'),
-
 (new Fields\Relations\ManyToMany('TAGS', TagTable::class))
     ->configureTableName('vendor_module_post_tag')
     ->configureLocalPrimary('ID', 'POST_ID')
     ->configureRemotePrimary('ID', 'TAG_ID'),
+new Fields\Relations\Reference(
+    'GROUP',
+    GroupTable::class,
+    \Bitrix\Main\ORM\Query\Join::on('this.GROUP_ID', 'ref.ID')->where('ref.ACTIVE', 'Y'),
+),
 ```
 
-## User Fields (UF)
+`Join::on()` returns a `ConditionTree`; compare two columns with `new \Bitrix\Main\ORM\Query\Filter\Expressions\ColumnExpression('this.CODE')`.
 
-Prefer `getUfId(): string` on the tablet. When non-null, UF fields are attached automatically and usable in `select` / `filter`; on objects use `get('UF_FIELD')` / `set('UF_FIELD', $v)`.
+## User fields
 
-`Bitrix\Main\Entity\UField` exists but is **deprecated** (`main/include/deprecated/ufield.php`) — do not use it in new code; rely on `getUfId()` + the user field manager.
+`getUfId()` attaches `UF_*` to select/filter and objects (`get('UF_X')`, `set('UF_X', $v)`). `Bitrix\Main\Entity\UField` is deprecated.

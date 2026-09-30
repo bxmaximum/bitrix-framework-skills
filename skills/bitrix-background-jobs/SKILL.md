@@ -1,44 +1,25 @@
 ---
 name: bitrix-background-jobs
-description: CAgent, addBackgroundJob, Messenger brokers/queues. Use for deferred and async processing.
+description: 'Deferred and async work in Bitrix — CAgent agents and cron, Application::addBackgroundJob, Messenger queues (messages, receivers, brokers, messenger:consume). Use when moving work out of the request or scheduling it.'
 ---
 
-# Background Tasks in Bitrix
+# Background jobs
 
-Baseline: **main 23.0+**. Features newer than baseline are marked **Since**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-Progressive disclosure: open **only** the rule files that match the task. Do not read every `rules/*.md`.
+| Task | Read |
+| --- | --- |
+| Periodic or delayed task, agents on cron, long agents | `rules/agents.md` |
+| Short tail work after the response | `rules/background-job.md` |
+| Queue: message, receiver, dispatch, retries | `rules/messenger.md` |
+| Queue config, brokers, `messenger:consume`, kernel queues | `rules/messenger-config.md` |
 
-## How to use
+Pick: schedule → agent (on cron); seconds of work after the response → `addBackgroundJob`; retries, volume, parallel workers → Messenger (**Since main 25.100.300**, alpha); one-off long migration → console command (`bitrix-console-commands`).
 
-1. Identify the layer the task touches.
-2. Open the matching `rules/*.md` below.
-3. Prefer framework-native Bitrix patterns over custom abstractions.
+## Invariants
 
-
-## Choose a rule file
-
-### When to read `rules/agents.md`
-
-Read `rules/agents.md` (`CAgent agents`) when the task involves:
-
-- Agents (`CAgent`)
-
-### When to read `rules/background-job.md`
-
-Read `rules/background-job.md` (`Application::addBackgroundJob`) when the task involves:
-
-- `Application::addBackgroundJob()`
-
-### When to read `rules/messenger.md`
-
-Read `rules/messenger.md` (`Messenger queues`) when the task involves:
-
-- Messenger (Message Queues)
-- When to Choose What
-- Checklist
-
-## Checklist
-
-- [ ] Opened only the rule file(s) needed for this task.
-- [ ] Followed DI / `/local/` / security canons from `AGENTS.md`.
+- Background code has no user context: agents and receivers set `global $USER = null`; no `$_SESSION`/cookies. Pass user/site IDs explicitly.
+- On hits, agents, `web`-mode Messenger and `addBackgroundJob()` run after the response is sent, after `OnAfterEpilog` and `session_write_close()`, with the DB pool forced to master.
+- Keep job code thin: resolve a service via `ServiceLocator::getInstance()->get()` and call it (no constructor DI in agents — `bitrix-framework`).
+- Jobs must be idempotent: agents can run twice in parallel, messages can be redelivered.
+- Log failures through a PSR-3 logger (`bitrix-logger`); remove your agents on module uninstall.

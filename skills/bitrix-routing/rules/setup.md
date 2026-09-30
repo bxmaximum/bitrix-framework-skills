@@ -1,48 +1,41 @@
-# Enable routing and module wiring
+# Enable routing, wire module routes
 
-## Enabling New Routing
+## Web server
 
-### Web server
+Send requests for non-existent files to `routing_index.php`.
 
-Route non-existent files to `routing_index.php`:
-
-**Apache** (`.htaccess`):
+Apache (`.htaccess`, replaces the stock `urlrewrite.php` rule):
 
 ```apache
+RewriteCond %{REQUEST_FILENAME} !-f
+RewriteCond %{REQUEST_FILENAME} !-l
+RewriteCond %{REQUEST_FILENAME} !-d
 RewriteCond %{REQUEST_FILENAME} !/bitrix/routing_index.php$
 RewriteRule ^(.*)$ /bitrix/routing_index.php [L]
 ```
 
-**Nginx**:
+Nginx: `try_files $uri $uri/ /bitrix/routing_index.php;`
 
-```nginx
-try_files $uri $uri/ /bitrix/routing_index.php;
-```
+## `routing` section
 
-### Global `.settings.php` only
-
-In `/local/.settings.php` (or `/bitrix/.settings.php`):
+Global config only. Module `.settings.php` `routing` is not read.
 
 ```php
 'routing' => [
     'value' => [
-        'config' => ['web.php'], // basename only — searched in /local/routes/ and /bitrix/routes/
+        'config' => ['web.php'], // basenames, looked up in /local/routes/ and /bitrix/routes/
     ],
     'readonly' => true,
 ],
 ```
 
-How the kernel loads files (`Application::initializeRouter`):
+Put it into `/local/.settings_extra.php`: the extra file replaces whole top-level sections, and a `/local/` copy replaces `/bitrix/.settings_extra.php`. `/local/.settings.php` replaces `/bitrix/.settings.php` entirely (`bitrix-settings`).
 
-1. For each name in `routing.config`, look for `/local/routes/<name>` **and** `/bitrix/routes/<name>` (both may be included).
-2. Then append system `/bitrix/routes/web_bitrix.php` if present.
-3. Each file must `return` a `callable(RoutingConfigurator $routes): void`.
+Load order (`Application::initializeRouter()`): for each basename, `/local/routes/<name>` and `/bitrix/routes/<name>` (both if both exist). Then system files: those listed in `/bitrix/routes/.settings.php` (**Since main 26.250\***), or `/bitrix/routes/web_bitrix.php` on older kernels. Each file returns `callable(RoutingConfigurator $routes): void`. `/bitrix/routes/` belongs to the system.
 
-> **User routes belong only in `/local/routes/`.** `/bitrix/routes/` is reserved for the system.
+## Module routes
 
-### Module routes — require pattern
-
-A `routing` section in **module** `.settings.php` is **not** read by the router. Keep module files under `/local/modules/<id>/routes/` and include them from `/local/routes/web.php`:
+Keep them in the module and `require` them from `/local/routes/web.php`:
 
 ```php
 <?php declare(strict_types=1);
@@ -50,12 +43,14 @@ A `routing` section in **module** `.settings.php` is **not** read by the router.
 use Bitrix\Main\Routing\RoutingConfigurator;
 
 return function (RoutingConfigurator $routes): void {
-    $moduleRoutes = $_SERVER['DOCUMENT_ROOT']
-        . '/local/modules/vendor.module/routes/web.php';
-    if (is_file($moduleRoutes)) {
+    $moduleRoutes = $_SERVER['DOCUMENT_ROOT'] . '/local/modules/vendor.module/routes/web.php';
+    if (is_file($moduleRoutes))
+    {
         (require $moduleRoutes)($routes);
     }
 
-    // project-level routes…
+    // project routes…
 };
 ```
+
+After editing a `require`d file, `touch` the listed file (`/local/routes/web.php`): the compiled-route cache key includes only the mtimes of the listed files (`rules/matching-legacy.md`).

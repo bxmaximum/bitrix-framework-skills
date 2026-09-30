@@ -1,104 +1,67 @@
-# Writing / batch / upsert
+# Writing
 
-## Writing
-
-### Decision guide (write)
-
-| Need | Prefer |
+| Need | Use |
 | --- | --- |
-| One row, array data | `add()` / `update()` / `delete()` |
-| Object state / relations | `EntityObject::save()` / collection `save()` |
-| Many homogeneous rows | `addMulti()` / `updateMulti()` |
-| Mass delete by filter (no per-row lifecycle) | `DeleteByFilterTrait::deleteByFilter()` with a **narrow** filter |
-| Upsert: update on conflict | `MergeTrait::merge()` or `AddMergeTrait` |
-| Upsert: ignore duplicate | `AddInsertIgnoreTrait` / `InsertIgnoreByDefaultTrait` |
+| One row from an array | `add()` / `update()` / `delete()` |
+| Object state, relations | `EntityObject::save()`, collection `save()` |
+| Many homogeneous rows | `addMulti($rows, $ignoreEvents = false)` / `updateMulti($primaries, $data, $ignoreEvents = false)` |
+| Counter without read-modify-write | `update()` with `SqlExpression` |
+| Mass delete, no per-row lifecycle | `DeleteByFilterTrait::deleteByFilter()` with a narrow filter |
+| Upsert: update on conflict | `MergeTrait::merge()`, `AddMergeTrait::addMerge()` |
+| Upsert: keep existing row | `AddInsertIgnoreTrait::addInsertIgnore()` |
 
-Rules:
-
-- Batch methods are not a substitute for Objectify when relations/state matter.
-- Empty filter for `deleteByFilter()` is forbidden (not a truncate).
-- `addMerge` / `addInsertIgnore` often skip normal events — use only when that is an intentional contract.
-- `ignoreEvents` on multi-write is an explicit trade-off, not a default speed hack.
-- Prefer ORM write APIs that already call `cleanCache()`; do not assume cache clears after raw SQL.
-
-### Arrays
+## Arrays and objects
 
 ```php
-$add = PostTable::add(['TITLE' => 'Hi', 'AUTHOR_ID' => 1]);
+$add = PostTable::add(['TITLE' => 'Hi', 'AUTHOR_ID' => $userId]);
 if (!$add->isSuccess())
 {
-    $this->addErrors($add->getErrors());
-    return;
+    return $add;                        // pass errors up (bitrix-result-and-errors)
 }
-$id = $add->getId();
+$id = $add->getId();                    // array for a composite primary key
 
-PostTable::update($id, ['TITLE' => 'Hello']);
-PostTable::delete($id);
-```
+$upd = PostTable::update($id, ['TITLE' => 'Hello']);
+$changed = $upd->getAffectedRowsCount();
+PostTable::delete($id);                 // composite: delete(['POST_ID' => 1, 'TAG_ID' => 2])
 
-### Objects
-
-```php
 $post = PostTable::createObject();
-$post->setTitle('Title')
-     ->setBody('Body')
-     ->setAuthorId($currentUserId);
+$post->setTitle('Title')->setAuthorId($userId);
+$result = $post->save();
 
-$save = $post->save();
-if (!$save->isSuccess()) { /* ... */ }
-
-$loaded = PostTable::getByPrimary(10)->fetchObject();
-$loaded->setTitle('Updated');
-$loaded->save();
-$loaded->delete();
+PostTable::updateMulti([100, 101], ['ACTIVE' => 'N']);
 ```
 
-Collections:
+`ignoreEvents = true` on multi-writes is a deliberate trade-off, not a speed default.
+
+## Atomic increment
 
 ```php
-$collection = PostTable::query()->whereIn('ID', [1, 2])->fetchCollection();
-foreach ($collection as $post)
-{
-    $post->setActive(false);
-}
-$collection->save();
+use Bitrix\Main\DB\SqlExpression;
+
+PostTable::update($id, ['VIEWS' => new SqlExpression('?# + ?i', 'VIEWS', 1)]);
 ```
 
-### Batch
+Placeholders: `bitrix-database`.
 
-```php
-PostTable::addMulti([
-    ['TITLE' => 'A', 'AUTHOR_ID' => 1],
-    ['TITLE' => 'B', 'AUTHOR_ID' => 1],
-]);
-
-PostTable::updateMulti(
-    [['ID' => 100], ['ID' => 101]],
-    ['ACTIVE' => 'N'],
-);
-```
-
-### Mass delete (`DeleteByFilterTrait`)
+## `deleteByFilter`
 
 ```php
 use Bitrix\Main\ORM\Data\DataManager;
 use Bitrix\Main\ORM\Data\Internal\DeleteByFilterTrait;
-use Bitrix\Main\ORM\Query\Query;
 
 final class ArchivedPostTable extends DataManager
 {
     use DeleteByFilterTrait;
-    // getTableName / getMap …
 }
 
-ArchivedPostTable::deleteByFilter(
-    Query::filter()
-        ->where('AUTHOR_ID', $authorId)
-        ->where('ACTIVE', 'N')
-);
+ArchivedPostTable::deleteByFilter(['=AUTHOR_ID' => $authorId, '=ACTIVE' => 'N']);
 ```
 
-### Merge / InsertIgnore
+- An empty filter throws `ArgumentException` (truncate via the connection, deliberately).
+- No events, no UF cleanup; `cleanCache()` is called.
+- `ConditionTree` argument (`Query::filter()->where(...)`) **Since main 26.250\***; older kernels take arrays only.
+
+## Merge / insert-ignore
 
 ```php
 use Bitrix\Main\ORM\Data\Internal\MergeTrait;
@@ -108,21 +71,18 @@ final class PortalLinkTable extends DataManager
 {
     use MergeTrait;
 }
-
 PortalLinkTable::merge(
-    ['PORTAL_ID' => $portalId, 'EXTERNAL_ID' => $externalId, 'TITLE' => $title],
-    ['TITLE' => $title],
-);
+    ['PORTAL_ID' => $portalId, 'EXTERNAL_ID' => $externalId, 'TITLE' => $title],   // insert
+    ['TITLE' => $title],                                                          // update on duplicate
+);                                                                                // 3rd arg: unique columns, default PK
 
 final class SyncMarkerTable extends DataManager
 {
-    use AddInsertIgnoreTrait;
+    use AddInsertIgnoreTrait;          // Since main 26.250*
 }
-
-SyncMarkerTable::addInsertIgnore([
-    'ENTITY_ID' => $entityId,
-    'MARKER' => $marker,
-]);
+$added = SyncMarkerTable::addInsertIgnore(['ENTITY_ID' => $entityId, 'MARKER' => $marker]);
 ```
 
-Conflict semantics: **ignore** = keep existing row; **merge** = update existing row. Do not treat them as one generic “upsert”.
+- `merge()` (baseline) is raw SQL: no events, returns nothing, then `cleanCache()`.
+- `AddStrategy\Trait\*` (**Since main 26.250\***): `addMerge()`/`addMergeMulti()`, `addInsertIgnore()`/`addInsertIgnoreMulti()` return `AddResult`; `MergeByDefaultTrait` / `InsertIgnoreByDefaultTrait` switch plain `add()`/`addMulti()` to that strategy. They run the normal add pipeline: `OnBeforeAdd`/`OnAdd`/`OnAfterAdd` fire even when the row was ignored or merged (the kernel docblocks saying "never fired" are stale); for an ignored row `getId()` is re-read by the unique fields. Fallback: `merge()` or `SqlHelper::prepareMerge()`.
+- Ignore keeps the existing row, merge updates it: pick deliberately.

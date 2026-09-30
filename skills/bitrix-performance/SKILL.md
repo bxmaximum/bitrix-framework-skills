@@ -1,60 +1,76 @@
 ---
 name: bitrix-performance
-description: Covers Bitrix performance — composite site, query optimization, replication/clustering, sharding, hot/cold sessions. Applied for high-load optimization beyond basic caching. Key terms — composite, NGINX, replication, sharding, query optimization.
+description: 'Bitrix high-load tuning — Composite (dynamic areas, createFrame, StaticArea), query optimization, read replicas via the cluster module. Use when a page or query is slow or when enabling composite.'
 ---
 
-# Performance Optimization
+# Performance
 
-Baseline: **main 23.0+**. Complements skills `bitrix-caching`, `bitrix-sessions`, and `bitrix-database`.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-## Composite Site
+Caching itself: `bitrix-caching`. SQL profiling: `bitrix-database` (SqlTracker). Sessions: `bitrix-sessions`.
 
-Technology caching static HTML while loading dynamic blocks via AJAX. Kernel entry points: `\Bitrix\Main\Composite\Engine`, `\Bitrix\Main\Composite\Responder`.
+## Composite
 
-1. Mark dynamic zones: `<div data-dynamic="true">...</div>` or frame mode APIs.
-2. Enable in Admin → Settings → Composite Site (Autocomposite or Composite mode).
-3. Configure NGINX to serve composite cache pool directly.
-4. Clear component cache before enabling.
+Static HTML of the page is served from the composite cache (NGINX can serve it directly); dynamic areas are fetched by a follow-up request. Enable in Settings → Composite site. Kernel: `Bitrix\Main\Composite\Engine`, `Page`, `StaticArea`, `BufferArea`.
 
-Modes:
-- **Autocomposite** — kernel auto-detects static/dynamic.
-- **Composite** — manual zone configuration.
+In a component template (`$this` is `CBitrixComponentTemplate`):
 
-NGINX: point `try_files` to the composite cache pool directory (BitrixVM: *Configure nginx to use composite cache*).
+```php
+$this->setFrameMode(true);                 // template is composite-compatible
 
-Do not put personalized data in static zone (cart, user name, permissions).
+$frame = $this->createFrame()->begin('Loading…');  // stub shown in the cached HTML
+echo htmlspecialcharsbx($arResult['USER_NAME']);   // dynamic content
+$frame->end();
+```
 
-## Query Optimization
+Long stub markup: `begin()` → dynamic content → `beginStub()` → stub HTML → `end()`.
 
-- Limit ORM `select` fields.
-- Use indexes matching `filter`/`order` columns.
-- Avoid N+1 — `fetchCollection()` with relations.
-- Batch operations instead of per-row updates.
-- Enable ORM query cache where appropriate.
-- Use `SqlTracker` in dev to find slow queries (skill `bitrix-database`).
+Outside components (site template header, `init.php` helpers):
 
-## Replication and Clustering
+```php
+use Bitrix\Main\Composite\StaticArea;
 
-- MySQL master-slave for read scaling.
-- Extra connections via `.settings.php` `connections` and `\Bitrix\Main\Data\ConnectionPool` (`Application::getConnectionPool()` / `Application::getConnection('name')`).
-- Read-only analytics queries → separate connection.
+$area = new StaticArea('vendor_cart_counter');
+$area->setStub('<span>0</span>');
+$area->startDynamicArea();
+echo (int)$basketCount;
+$area->finishDynamicArea();
+```
 
-## Sharding
+- Per-component switch without code: params `COMPOSITE_FRAME_MODE` (`A`/`Y`/`N`) and `COMPOSITE_FRAME_TYPE` (`AUTO`, `STATIC`, `DYNAMIC_WITH_STUB`, `DYNAMIC_WITHOUT_STUB`).
+- Exclude a page: `\Bitrix\Main\Composite\Page::getInstance()->markNonCacheable()`.
+- There is no `data-dynamic` attribute and no `composite_frame_mode` page property.
+- Never leave personal data (name, cart, rights, CSRF tokens) in the static part. Test every dynamic area as a guest and as a user.
 
-Horizontal partitioning for very large tables (enterprise scenarios). Kernel support varies by edition.
+## Queries
 
-## Hot/Cold Sessions
+- Select only needed fields; index columns used in `filter`/`order`.
+- No N+1: `fetchCollection()` + `fill()`, or relations in `select` (`bitrix-orm`).
+- Batch writes (`addMulti`, `updateMulti`) instead of per-row loops.
+- ORM query cache for repeated reads; tagged data cache for assembled results.
 
-Related to separated session mode (`bitrix-sessions`):
+## Read replicas
 
-- Hot data (kernel `$_SESSION['BX']`) → encrypted cookies.
-- Cold data → Redis/DB backend.
-- Reduces storage round-trips on every hit.
+With the `cluster` module, `SELECT`s from `query()` may go to a slave. Pin read-after-write to the master:
+
+```php
+$pool = \Bitrix\Main\Application::getInstance()->getConnectionPool();
+$pool->useMasterOnly(true);
+try
+{
+    $row = OrderTable::getById($id)->fetch();
+}
+finally
+{
+    $pool->useMasterOnly(false);
+}
+```
+
+Extra DBs (analytics, reports): a named connection in `connections` (`bitrix-database`).
 
 ## Checklist
 
-- [ ] Composite tested with all dynamic blocks (cart, auth, personal).
-- [ ] NGINX composite cache configured in production.
-- [ ] Slow queries identified and indexed.
-- [ ] Session backend matches load (Redis for high-traffic).
-- [ ] File cache replaced with Redis/Memcached in production.
+- [ ] Every composite dynamic area checked as guest and as logged-in user.
+- [ ] NGINX serves the composite cache in production.
+- [ ] Slow queries found with SqlTracker and indexed.
+- [ ] Cache and sessions on Redis/Memcached, not files, under load.

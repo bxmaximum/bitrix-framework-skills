@@ -1,93 +1,56 @@
 ---
 name: bitrix-result-and-errors
-description: Covers Bitrix unified operation results — Bitrix\Main\Result, Error, ErrorCollection, typed descendants (AddResult, UpdateResult, DeleteResult, EventResult), difference between Result and exceptions, returning errors from controllers via addError and combining service errors. Applied when designing service APIs and use cases, returning errors from module methods and controllers without throwing exceptions. Key terms — Result, Error, ErrorCollection, isSuccess, getErrors, AddResult, UpdateResult, addError.
+description: 'Bitrix\Main\Result, Error, ErrorCollection, ORM AddResult/UpdateResult/DeleteResult, EventResult; Result vs exceptions, error codes, errors in controllers. Use when designing service APIs or passing errors across module boundaries.'
 ---
 
-# Result and Errors in Bitrix
+# Result and Error
 
-Baseline: **main 23.0+**.
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-## Philosophy
+## Contract
 
-- **User Errors → `Result` + `Error`**. Validation, business rules, "entity not found," "insufficient permissions."
-- **Program Errors → Exceptions**. Connection failure, missing mandatory module, broken configuration.
-- One method — one clear contract: either it always returns `Result` (and doesn't throw "normal" exceptions), or it guaranteed returns a value and throws `\Throwable` in exceptional cases.
+- Expected failures (validation, business rule, not found, no rights) → `Result` with `Error`s.
+- Broken state or contract (module missing, DB down, misconfiguration, bug) → exception.
+- One method, one contract: always a `Result`, or a value plus exceptions for the exceptional case. Never `bool`/`null`/`-1`/`['error' => …]`.
 
 ## `Bitrix\Main\Result`
 
-Base object:
-
 ```php
-$result = new \Bitrix\Main\Result();
+use Bitrix\Main\Error;
+use Bitrix\Main\Result;
 
-if ($titleEmpty)
+$result = new Result();
+if ($title === '')
 {
-    $result->addError(new \Bitrix\Main\Error('Title required', 'POST_TITLE_EMPTY'));
+    return $result->addError(new Error('Title required', 'BLOG_POST_TITLE_EMPTY', ['field' => 'title']));
 }
 
-if (!$result->isSuccess()) { return $result; }
-
-$result->setData(['id' => $id]);
-return $result;
+return $result->setData(['id' => $id]);
 ```
 
-API:
+- `isSuccess()`, `addError(Error)`, `addErrors(Error[])`, `getErrors()`, `getError()` (first or `null`), `getErrorMessages()`, `getErrorCollection()`, `setData(array)`, `getData()`. Setters return `$this`.
+- `setData()` silently drops `SqlExpression` values.
 
-- `isSuccess(): bool`
-- `getErrors(): Error[]`
-- `getErrorMessages(): string[]`
-- `getErrorCollection(): ErrorCollection`
-- `addError(Error $e): self`
-- `addErrors(array $errors): self`
-- `setData(array $data): self`
-- `getData(): array`
+## `Error` and codes
 
-## `Bitrix\Main\Error`
+`new Error($message, $code = 0, $customData = null)`. JSON form: `{"message", "code", "customData"}`.
 
-```php
-new \Bitrix\Main\Error(
-    message: 'Title required',
-    code: 'POST_TITLE_EMPTY',
-    customData: ['field' => 'title'],
-);
-```
+- Codes are stable and machine-readable: module + entity + reason (`BLOG_POST_NOT_FOUND`), kept in constants. Clients branch on the code, not the text.
+- Messages via `Loc::getMessage('BLOG_ERROR_POST_TITLE_EMPTY')`.
+- `ErrorCollection`: `new ErrorCollection([$error])`, `setError()`, `add([...])`, `getErrorByCode('CODE')`, iterable, `isEmpty()`, `toArray()`.
 
-The error code should be **stable and machine-readable** — clients should rely on it, not the text.
+## Typed result
 
-## `ErrorCollection`
+Give callers getters instead of `getData()['post']`:
 
 ```php
-$errors = new \Bitrix\Main\ErrorCollection();
-$errors->setError(new \Bitrix\Main\Error('...', 'CODE_A'));
-$errors->add([new \Bitrix\Main\Error('...', 'CODE_B')]);
-
-foreach ($errors as $error) { /* ... */ }
-
-$errors->getErrorByCode('CODE_A');
-```
-
-`Controller` already contains `protected ErrorCollection $errorCollection` — it is used by `$this->addError(...)` and `$this->addErrors(...)`.
-
-## Typed `Result` for Service
-
-Instead of `setData(['post' => $post])`, it's easier to inherit and provide normal getters:
-
-```php
-<?php declare(strict_types=1);
-
-namespace Vendor\Blog\Application\Result;
-
-use Bitrix\Main\Result;
-use Vendor\Blog\Domain\Model\Post;
-
-final class CreatePostResult extends Result
+final class CreatePostResult extends \Bitrix\Main\Result
 {
     private ?Post $post = null;
 
     public function setPost(Post $post): self
     {
         $this->post = $post;
-        $this->setData(['post' => $post]);
         return $this;
     }
 
@@ -98,115 +61,47 @@ final class CreatePostResult extends Result
 }
 ```
 
-Usage:
+## ORM results (`Bitrix\Main\ORM\Data\*`)
+
+- `AddResult`: `getId()`, `getPrimary()`, `getObject()`.
+- `UpdateResult`: `getId()`, `getPrimary()`, `getAffectedRowsCount()`.
+- `DeleteResult`: no methods of its own (no affected-rows count).
+- `Bitrix\Main\Entity\*Result` are compat aliases. Write `ORM\Data\*`.
+- A failed ORM result whose errors nobody read (`isSuccess()` / `getErrors()`) raises `E_USER_WARNING` on destruct. Always check it and return it, or copy its errors up.
 
 ```php
-public function create(CreatePostRequest $request): CreatePostResult
-{
-    $result = new CreatePostResult();
-
-    $validation = $this->validator->validate($request);
-    if (!$validation->isSuccess())
-    {
-        foreach ($validation->getErrors() as $error)
-        {
-            $result->addError(new \Bitrix\Main\Error($error->getMessage(), $error->getCode()));
-        }
-        return $result;
-    }
-
-    $post = $this->repository->save(Post::fromRequest($request));
-    return $result->setPost($post);
-}
-```
-
-## Specialized ORM Results
-
-- `AddResult` — `getId()`.
-- `UpdateResult` — `getAffectedRowsCount()`, `getPrimary()`.
-- `DeleteResult` — `getAffectedRowsCount()`.
-
-They inherit from `Result` and work with the same API. Example:
-
-```php
-$add = PostTable::add(['TITLE' => 'Hi', 'AUTHOR_ID' => 1]);
+$add = PostTable::add(['TITLE' => $title]);
 if (!$add->isSuccess())
 {
-    $this->logger->warning('Add post failed', ['errors' => $add->getErrorMessages()]);
-    return $add; // proxy upwards
+    return (new Result())->addErrors($add->getErrors());
 }
 $id = $add->getId();
 ```
 
-## `EventResult`
+## Other result types
 
-Handlers of `\Bitrix\Main\Event` return `\Bitrix\Main\EventResult` with type `EventResult::SUCCESS`, `EventResult::ERROR`, or `EventResult::UNDEFINED` (not a drop-in for service `Result`). Details: skill `bitrix-events`.
+- `EventResult` (`SUCCESS`, `ERROR`, `UNDEFINED`) is a handler's answer, not a service result: `bitrix-events`.
+- `ValidationResult` (`bitrix-validation`) extends `Result`: add its errors to the service result.
 
-Attribute / `ValidationService` checks yield `\Bitrix\Main\Validation\ValidationResult` (also `isSuccess()` + errors) — skill `bitrix-validation`. Merge those errors into a service `Result` when crossing the module boundary.
+## Controllers
 
-## Returning Errors in Controller
+`$this->addErrors($result->getErrors()); return null;` gives `{"status":"error","data":null,"errors":[…]}`. Envelope details: `bitrix-controllers`.
 
-```php
-public function createAction(CreatePostRequest $request): array
-{
-    // Wire CreatePostRequest via ValidationParameter in getAutoWiredParameters()
-    // (AutoWire Parameter, not a PHP attribute) — see bitrix-validation.
-    $result = $this->postService->create($request);
+## Exceptions at the boundary
 
-    if (!$result->isSuccess())
-    {
-        $this->addErrors($result->getErrors());
-        return [];
-    }
-
-    return ['id' => $result->getPost()->getId()];
-}
-```
-
-The front-end will receive the following structure:
-
-```json
-{
-    "status": "error",
-    "errors": [
-        { "message": "Title required", "code": "POST_TITLE_EMPTY", "customData": { "field": "title" } }
-    ]
-}
-```
-
-## Code Conventions
-
-- Module prefix + entity + reason: `BLOG_POST_NOT_FOUND`, `BLOG_POST_TITLE_EMPTY`.
-- Do not use `"1"`, `"ERROR"`, `""` — it doesn't allow the client to react.
-- Translated texts — via `Loc::getMessage('BLOG_ERROR_POST_TITLE_EMPTY')`, code — via constant.
-
-## When to use Exceptions?
-
-- Invalid system state: "module not installed," "database not responding," "service misconfigured."
-- Developer contract violation: `InvalidArgumentException`, `LogicException`, `TypeError`.
-- Inside domain operations where "error = bug." For example, `Money::divide()` with zero.
-
-Exceptions are caught at the module/controller boundary and turned into `Result` + log:
+Catch at the module/controller edge, log, return a generic error:
 
 ```php
 try
 {
-    return $this->service->operation($dto);
+    return $this->service->run($dto);
 }
 catch (\Bitrix\Main\SystemException $e)
 {
-    $this->logger->error('Operation failed', ['exception' => $e]);
-    $result = new \Bitrix\Main\Result();
-    $result->addError(new \Bitrix\Main\Error('Internal error', 'INTERNAL_ERROR'));
-    return $result;
+    $this->logger->error('Run failed', ['exception' => $e]);
+    return (new Result())->addError(new Error('Internal error', 'VENDOR_INTERNAL_ERROR'));
 }
 ```
 
-## Antipatterns
-
-- Returning `bool`/`null`/`-1` from a service instead of `Result`.
-- Throwing `\Exception('Post not found')` for a routine situation — that's not an exception.
-- Swallowing `catch (\Throwable $e) {}` without logging.
-- Error in the form of an array `['error' => 'msg']` — unify using `Result`.
-
-Controller JSON error format: `{"status":"error","errors":[{"message":"...","code":"..."}]}`. See skill `bitrix-controllers`.
+- Never swallow `\Throwable` without logging.
+- Developer mistakes (`InvalidArgumentException`, `LogicException`, `TypeError`) and "can't happen" domain states (division by zero in a money type) stay exceptions.

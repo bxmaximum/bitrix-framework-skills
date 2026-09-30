@@ -1,68 +1,77 @@
-# CAgent agents
+# Agents (`CAgent`)
 
-## Agents (`CAgent`)
+## Register
 
 ```php
 \CAgent::AddAgent(
-    name: \Vendor\Module\Cli\Agent\QueueAgent::class . '::run();',
+    name: \Vendor\Module\Infrastructure\Agent\SyncAgent::class . '::run();',
     module: 'vendor.module',
-    period: 'N',        // 'Y' — periodic (always by interval), 'N' — shift next_exec
-    interval: 300,      // seconds
-    datecheck: '',
-    active: 'Y',
-    next_exec: '',
-    sort: 100,
-    existError: true,
+    period: 'N',          // see "Periodic or not"
+    interval: 300,        // seconds
+    next_exec: (new \Bitrix\Main\Type\DateTime())->add('+5 minutes')->toString(), // '' = now
+    existError: false,    // default true: existing agent → false + ThrowException
 );
 ```
 
-Agent method:
+- `name` is PHP code executed with `eval`; the agent is identified by it (plus `user_id`). Pass arguments inside the string: `"::run('s2', {$offset});"` — cast/escape them.
+- `datecheck` argument is ignored by the kernel.
+- `make:agent Sync -m vendor.module` (**Since main 25.900**) → `Vendor\Module\Infrastructure\Agent\SyncAgent` with `run()` returning `__METHOD__ . '();'`.
+- Uninstall: `\CAgent::RemoveModuleAgents('vendor.module')` (also done by `ModuleManager::unRegisterModule()`).
+
+## Agent method
 
 ```php
-namespace Vendor\Module\Cli\Agent;
-
-final class QueueAgent
+final class SyncAgent
 {
-    public static function run(): string
+    public static function run(int $offset = 0): string
     {
-        \Bitrix\Main\Loader::includeModule('vendor.module');
-        \Bitrix\Main\DI\ServiceLocator::getInstance()
-            ->get(\Vendor\Module\Application\Service\QueueProcessor::class)
-            ->processBatch(limit: 100);
+        $next = ServiceLocator::getInstance()->get(SyncService::class)->syncBatch($offset, 100);
 
-        return self::class . '::run();'; // important: return string for re-registration
+        return $next === null
+            ? self::class . '::run();'                    // done: back to the start next period
+            : self::class . '::run(' . $next . ');';      // continue from $next
     }
 }
 ```
 
-### Rules
+- Return the next call string to keep the agent; return `''` or `null` to delete it.
+- Exception → logged, agent stays locked and is retried after the lock expires (10 min).
+- The kernel loads the agent's `module` before running; time zone is disabled (`CTimeZone::Disable()`); `$USER` is `null`; global `$pPERIOD` may be reassigned to change the next interval.
 
-- An agent works either on hits or via cron (Admin Panel → Agent Settings).
-- For heavy agents **always** enable cron — otherwise they block user hits.
-- An agent running longer than 10 minutes is blocked by the kernel.
-- Periodic (`period = 'Y'`) vs non-periodic (`period = 'N'`) agents differ in how `next_exec` is calculated.
-- In module's `DoUninstall`: `CAgent::RemoveModuleAgents('vendor.module')`.
-- Do not keep state in statics between calls — the process may change.
-- Combine `addBackgroundJob` for immediate post-response work with `CAgent` for scheduled retries.
+## Periodic or not
 
-### Multisite
+- `period: 'N'` — `NEXT_EXEC = now + interval` after each run.
+- `period: 'Y'` — `NEXT_EXEC = previous planned time + interval` (catches up after downtime).
+- With cron split (below) the flag also decides **where** it runs.
 
-Agents are shared across the whole installation: stored in one database, executed from one common list, with no filtering by site. An agent does not run per site and gets no user/site context.
+## Long agents run twice
 
-- Never rely on `SITE_ID` (or any current-site/user context) inside an agent function.
-- If the logic is site-specific, pass the site ID explicitly in the agent call: `\Vendor\Module\Cli\Agent\SyncAgent::class . "::run('s2');"` — one registered agent per site if needed.
-- When moving agents to cron, do **not** create identical cron jobs per site — cron runs the shared agent list and cannot inject a site context.
+A run selects due agents and sets `DATE_CHECK = now + 600 s`; it stops starting new ones after 570 s. An agent still running after 10 min becomes selectable again and runs **in parallel**. Nothing kills it.
 
-### One-time task for "in 5 minutes"
+- Split work into steps (return the call string with an offset, as above).
+- Guard critical sections: `Application::getConnection()->lock('vendor_sync', 0)` / `unlock()` (`bitrix-database`).
+- Hours of work → Messenger or a console command.
+
+## Hits vs cron
+
+On hits, agents run as a low-priority background job after the response (option `main:check_agents` = `Y`). They don't delay the page but hold the PHP worker; with low traffic they are late.
+
+Partial cron — hits run `period: 'Y'` agents, cron runs `period: 'N'`:
 
 ```php
-\CAgent::AddAgent(
-    \Vendor\Module\Cli\Agent\SendEmailAgent::class . "::run({$userId});",
-    'vendor.module',
-    'N',
-    60,
-    '',
-    'Y',
-    (new \Bitrix\Main\Type\DateTime())->add('+5 minutes')->toString(),
-);
+\Bitrix\Main\Config\Option::set('main', 'agents_use_crontab', 'Y');
+// crontab: */5 * * * * php -f /var/www/site/bitrix/modules/main/tools/cron_events.php
 ```
+
+All agents on cron:
+
+1. `Option::set('main', 'agents_use_crontab', 'N')` and `Option::set('main', 'check_agents', 'N')` (hits stop running agents).
+2. In `dbconn.php`: `if (!(defined('CHK_EVENT') && CHK_EVENT === true)) { define('BX_CRONTAB_SUPPORT', true); }`
+3. Own `php_interface/cron_events.php`: set `$_SERVER['DOCUMENT_ROOT']`, `define('NO_KEEP_STATISTIC', true)`, `define('NOT_CHECK_PERMISSIONS', true)`, `define('CHK_EVENT', true)`, include `prolog_before.php`, `@set_time_limit(0)`, call `CAgent::CheckAgents()`, then `define('BX_CRONTAB_SUPPORT', true)`, `define('BX_CRONTAB', true)`, `CEvent::CheckEvents()` (mail queue, `bitrix-mail`).
+4. Cron it every 1–5 min; remove the job for `tools/cron_events.php` to avoid double runs.
+
+Check stored value (not default): `Option::get('main', 'agents_use_crontab', 'Z')` → `Z` means unset.
+
+## Multisite
+
+Agents are global: one list, no `SITE_ID`, no current site. Pass the site in the call string (`"::run('s2');"`), one agent per site if needed; never one cron job per site.

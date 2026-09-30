@@ -1,82 +1,67 @@
-# Location, thin controller, autowire
+# Files, action names, autowire
 
-## Location and Naming
+## Files and action names
 
-- Files: `/local/modules/<vendor>.<module>/lib/Infrastructure/Controller/<Name>.php`.
-- Namespace (default): `\Vendor\Module\Infrastructure\Controller\<Name>`.
-- Public URL for AJAX: `/bitrix/services/main/ajax.php?action=vendor:module.<name>.<action>`.
-- URL can be rewritten by a route (see `bitrix-routing`).
-
-Namespace configuration — in `/local/modules/vendor.module/.settings.php`:
+Module `.settings.php` (`/local/modules/vendor.module/.settings.php`):
 
 ```php
 'controllers' => [
     'value' => [
         'defaultNamespace' => '\\Vendor\\Module\\Infrastructure\\Controller',
         'namespaces' => [
-            '\\Vendor\\Module\\Infrastructure\\Controller\\Web' => 'web',
+            '\\Vendor\\Module\\Infrastructure\\Controller\\Web' => 'web', // alias segment
         ],
-        'restIntegration' => ['enabled' => true], // for REST
+        'restIntegration' => ['enabled' => true], // only for the REST scope
     ],
     'readonly' => true,
 ],
 ```
 
-Access to `Web\PostController::getAction` → `?action=vendor:module.web.post.get`.
+- `lib/Infrastructure/Controller/Post.php` → action `vendor:module.Post.create` (`Post::createAction`), URL `/bitrix/services/main/ajax.php?action=vendor:module.Post.create`.
+- `Web\Post::getAction` → `vendor:module.web.Post.get`. No `Controller` suffix is added or stripped.
+- Case: if the controller segment starts lower-case, the resolver lower-cases the whole default-namespace path, and the loader then looks for `lib/infrastructure/controller/post.php`. With PascalCase files that works on macOS and returns "action not found" on Linux. Kernel: `Engine/Resolver.php` `buildControllerClassName()`, `Loader::autoLoad()`.
 
-## Minimal Controller
+## Minimal controller
 
-`ControllerBuilder` builds the controller with `Request` only (`newInstance($request)`). Do **not** put custom services in the controller constructor — inject them via **action method parameters** (autowire). Avoid manual `new Service()` / ServiceLocator lookups inside actions when autowire works.
-
-Keep `*Action()` as **orchestration only**: accept input → call application service → map `Result` / errors → return data or response helper. No fat business logic, heavy transforms, or hidden side effects in the controller.
-
-Prefer **PHP 8 attributes** for filters. Use `configureActions()` only for compatibility or cases attributes cannot express.
+The engine builds controllers with `Request` only (`ControllerBuilder`). No constructor DI.
 
 ```php
 <?php declare(strict_types=1);
 
 namespace Vendor\Module\Infrastructure\Controller;
 
-use Bitrix\Main\Engine\Controller;
 use Bitrix\Main\Engine\ActionFilter;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\Authentication;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\HttpMethod;
 use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\DisablePrefilters;
+use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\HttpMethod;
+use Bitrix\Main\Engine\Controller;
 use Bitrix\Main\Engine\CurrentUser;
 use Bitrix\Main\Error;
 use Vendor\Module\Application\Service\PostService;
 
 final class Post extends Controller
 {
-    #[HttpMethod([HttpMethod::METHOD_GET])]
-    #[DisablePrefilters([ActionFilter\Csrf::class])]
-    public function getAction(int $id, PostService $postService): array
+    #[HttpMethod([ActionFilter\HttpMethod::METHOD_GET])]
+    #[DisablePrefilters([ActionFilter\Csrf::class])] // read-only; Authentication stays
+    public function getAction(int $id, PostService $posts): ?array
     {
-        $post = $postService->find($id);
+        $post = $posts->find($id);
         if ($post === null)
         {
-            $this->addError(new Error('Not found', 'POST_NOT_FOUND'));
-            return [];
+            $this->addError(new Error('Post not found', 'POST_NOT_FOUND'));
+            return null;
         }
 
         return ['post' => $post];
     }
 
-    #[Authentication]
-    #[HttpMethod([HttpMethod::METHOD_POST])]
-    public function createAction(
-        string $title,
-        string $body,
-        PostService $postService,
-        CurrentUser $currentUser,
-    ): array
+    #[HttpMethod([ActionFilter\HttpMethod::METHOD_POST])] // defaults keep Authentication + Csrf
+    public function createAction(string $title, PostService $posts, CurrentUser $user): ?array
     {
-        $result = $postService->create($title, $body, (int)$currentUser->getId());
-
+        $result = $posts->create($title, (int)$user->getId());
         if (!$result->isSuccess())
         {
             $this->addErrors($result->getErrors());
-            return [];
+            return null;
         }
 
         return $result->getData();
@@ -84,58 +69,52 @@ final class Post extends Controller
 }
 ```
 
-### `JsonController`
+Attributes need main 26.250\*; the same config for older kernels: `rules/filters.md` → `configureActions()`. `JsonController` = `Controller` + `ContentType([JSON])` prefilter.
 
-`Bitrix\Main\Engine\JsonController` extends `Controller` and adds `ContentType([JSON])` to default prefilters. Use it for JSON-body APIs; otherwise prefer plain `Controller`.
+Lifecycle: `__construct(Request)` → `init()` (builds the filter config; call `parent::init()` first) → `processBeforeAction()` → prefilters → action → postfilters, `processAfterAction()` → response. `processBeforeAction()` runs before `Authentication`/`Csrf`: never put side effects or rights-dependent code there. Keep logic out of these hooks. Component controllers (`class.php` implementing `Controllerable`) get `onPrepareComponentParams()` for AJAX actions, never `executeComponent()` (`bitrix-components`).
 
-## Action Parameter Autowiring
+## Action parameters (`Engine\AutoWire\Binder`)
 
-Action parameters are collected by the engine in the following order:
+Class-typed parameter, first match wins:
 
-1. **Scalar types** (`int`, `string`, `bool`, `float`, `array`) → from `GET`/`POST`/`FILES`.
-2. **Service objects** → from `ServiceLocator` by name/type.
-3. **`HttpRequest`, `Session`, `CurrentUser`** → from context.
-4. **Request DTO** via `Bitrix\Main\Validation\Engine\AutoWire\ValidationParameter` in `getAutoWiredParameters()` → mapping + validation (see `bitrix-validation`). This is an AutoWire `Parameter` subclass, **not** a PHP attribute.
-5. **ORM objects**, if the action accepts `EntityObject` — loaded by `id`.
+1. Controller `getPrimaryAutoWiredParameter()` / `getAutoWiredParameters()` and the global ones: `PageNavigation` (id `nav`), `JsonPayload`, `CurrentUser`. Subclasses match too.
+2. Backed enum → `tryFrom()` of the request value with the parameter's name.
+3. The parameter's default value.
+4. `ServiceLocator::get(FQCN)`, but only when `class_exists()`. An interface type is never resolved, even if registered. Type-hint the concrete class.
 
-Missing mandatory parameter → automatic error.
+Scalars and `array`: POST form, then query string, by name (header `BX-AJAX-QB` → from the `bx_data` JSON), then the default value. Not from `$_FILES`; not from a JSON body unless the `ContentType([JSON])` prefilter ran (`JsonController`), which adds the body's top-level keys as a last source. Otherwise take `JsonPayload $payload` and read `$payload->getData()`. Missing or wrong type → `BinderArgumentException` → error response. Union types are rejected.
 
-For a cohesive input set (validation, nested structure, pagination), prefer a Request DTO over a long list of scalars.
+Not injectable: `HttpRequest` (error) → `$this->getRequest()`; `Session` (the locator builds a new object, not the app session) → `Application::getInstance()->getSession()`. `HttpRequest` and `Route` are injected only into closure routes (`bitrix-routing`). Validated request DTO: `ValidationParameter` (`bitrix-validation`).
 
-### Current user
+### Loading an entity by id
 
-- Prefer `CurrentUser $user` in the action signature, or `$this->getCurrentUser()`.
-- Do **not** use global `$USER` inside new controller code.
+There is no built-in ORM binding. Declare one; a closure with a second argument receives the request value `<paramName>Id`:
 
-## Controller Lifecycle
+```php
+public function getAutoWiredParameters(): array
+{
+    return [
+        new \Bitrix\Main\Engine\AutoWire\Parameter(
+            Post::class, // PostTable::getObjectClass()
+            fn (string $className, $id) => PostTable::getById((int)$id)->fetchObject(),
+        ),
+    ];
+}
 
-1. Constructor — engine passes `Request` only (`ControllerBuilder`). No ServiceLocator DI for custom services.
-2. `init()` — called from the constructor; load modules if needed (`parent::init()` first when overriding). Prefer action-parameter autowire over resolving services in `init()`.
-3. Prefilters run.
-4. Action method executes.
-5. Postfilters run.
-6. Response is serialized.
-
-Do not hide action logic in `init()`, `__construct()`, `processBeforeAction()`, or `processAfterAction()`.
-
-`executeComponent()` in component controllers does **not** run during AJAX actions — use `onPrepareComponentParams()` for shared setup.
-
-## Additional Autowire Types
-
-- `Bitrix\Main\Engine\CurrentUser` — current user context.
-- `Bitrix\Main\Engine\JsonPayload` — raw JSON body.
-- `Bitrix\Main\UI\PageNavigation` — pagination from request.
-
-Custom DTO autowiring via `getAutoWiredParameters()`.
-
-## Front-end Call
-
-```js
-BX.ajax.runAction('vendor:module.post.create', {
-    data: { title: 'Title', body: 'Body' },
-}).then((response) => {
-    console.log(response.data);
-});
+public function viewAction(Post $post): array { /* request key: postId */ }
 ```
 
-For REST — `BX.rest.callMethod('vendor.module.post.create', {...})`.
+`null` from the closure → error, unless the parameter is nullable. Check rights on the loaded object; take its type/owner from the record, never from the request (`bitrix-security`).
+
+## PageNavigation
+
+`PageNavigation $nav` is built from the query key `nav`: sizes 1–50 (other `size` → default 20), no record count, `page-all` ignored, page not clamped. Pass `$nav->getOffset()`/`getLimit()` to the service, then `$nav->setRecordCount($total)`. Another id, other sizes or two lists → `new PageNavigation('my-nav')` yourself. Don't type-hint `ReversePageNavigation`/`AdminPageNavigation`: the global factory returns the base class → `TypeError`.
+
+## Front-end call
+
+```js
+BX.ajax.runAction('vendor:module.Post.list', {
+    data: { sectionId: 5 },
+    navigation: { page: 3, size: 20 }, // → ?nav=page-3-size-20
+}).then((response) => response.data, (response) => response.errors);
+```

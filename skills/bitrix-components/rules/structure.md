@@ -1,47 +1,37 @@
 # Placement and structure
 
-Component = a widget that fetches data via module API and transforms it into HTML. For entire sections (catalog, personal area), prefer a controller + routes; complex SEF components when visual-editor tree integration is required.
+A component fetches data through module APIs/services and renders it. Whole sections (catalog, personal area): prefer controller + routes (`bitrix-routing`); complex SEF components when the visual editor must manage the section.
 
-## Where to Place
+## Where
 
-- System: `/bitrix/components/bitrix/` — **do not touch**.
-- User: `/local/components/<vendor>/<name>/`.
-- Component Name: `<vendor>:<name>` (`vendor:catalog.list`). The namespace folder is yours; other vendors' components should not go there.
+- Own: `/local/components/<vendor>/<name>/`, called as `vendor:name` (`vendor:catalog.list`). Never put yours into `bitrix/` or another vendor's namespace; never edit `/bitrix/components/`.
+- Kernel/partner component, other markup: override the template (`rules/template.md`), not the component.
+- Module-shipped: `install/components/<vendor>/<name>/`, copied on install (`bitrix-modules`).
 
-Quick scaffold:
+Scaffold (`bitrix-console-commands`):
 
 ```bash
-php bitrix/bitrix.php make:component Vendor:Catalog.List --local
-php bitrix/bitrix.php make:component Vendor:Catalog.List --module=vendor.catalog
+php bitrix/bitrix.php make:component vendor:catalog.list --no-module              # /local/components/vendor/catalog.list
+php bitrix/bitrix.php make:component vendor:catalog.list --module=vendor.catalog  # /local/modules/vendor.catalog/install/components/…
 ```
 
-## Folder Structure
+Without `--no-module` the component goes into a module's `install/components/` — the module defaults to the first name segment (`catalog`). `--local` only matters for the `bitrix` namespace.
+
+## Folder
 
 ```
 /local/components/vendor/catalog.list/
-├── class.php              # logic (CBitrixComponent)
-├── .description.php       # name/icon/place in visual editor tree
-├── .parameters.php        # parameters description for admin panel
-├── ajax.php               # optional: lightweight AJAX controller
-├── lang/en/
-│   ├── class.php
-│   ├── .description.php
-│   ├── .parameters.php
-│   └── component_epilog.php
-└── templates/
-    ├── .default/
-    │   ├── template.php
-    │   ├── result_modifier.php
-    │   ├── component_epilog.php
-    │   ├── style.css
-    │   ├── script.js
-    │   ├── .description.php
-    │   ├── .parameters.php
-    │   └── lang/en/template.php
-    └── <other_template>/
+├── class.php              # CBitrixComponent subclass
+├── .description.php       # name, place in the visual editor tree
+├── .parameters.php        # parameter form
+├── lang/<lang>/class.php, .description.php, .parameters.php
+└── templates/.default/
+    ├── template.php, result_modifier.php, component_epilog.php
+    ├── style.css, script.js
+    └── lang/<lang>/template.php
 ```
 
-## `class.php` — Minimum
+## `class.php`
 
 ```php
 <?php declare(strict_types=1);
@@ -53,7 +43,7 @@ final class VendorCatalogListComponent extends \CBitrixComponent
     public function onPrepareComponentParams($arParams): array
     {
         $arParams['IBLOCK_ID'] = (int)($arParams['IBLOCK_ID'] ?? 0);
-        $arParams['COUNT']     = max(1, (int)($arParams['COUNT'] ?? 20));
+        $arParams['COUNT'] = max(1, (int)($arParams['COUNT'] ?? 20));
         $arParams['CACHE_TIME'] = (int)($arParams['CACHE_TIME'] ?? 3600);
 
         return $arParams;
@@ -61,51 +51,35 @@ final class VendorCatalogListComponent extends \CBitrixComponent
 
     public function executeComponent(): void
     {
-        if (!\Bitrix\Main\Loader::includeModule('iblock'))
-        {
-            ShowError('Module iblock is not installed');
-            return;
-        }
-
         if ($this->startResultCache(false, [$GLOBALS['USER']->GetUserGroupArray()]))
         {
-            $this->arResult['ITEMS'] = $this->fetchItems();
-            $this->setResultCacheKeys(['ITEMS', 'SECTION_NAME']);
+            $this->arResult['ITEMS'] = \Bitrix\Main\DI\ServiceLocator::getInstance()
+                ->get(\Vendor\Catalog\ItemReader::class)
+                ->list($this->arParams['IBLOCK_ID'], $this->arParams['COUNT']);
+            $this->setResultCacheKeys(['ITEMS']);
             $this->includeComponentTemplate();
         }
-    }
-
-    private function fetchItems(): array
-    {
-        // data reading
-        return [];
     }
 }
 ```
 
-## Usage
+## Call
 
 ```php
-$APPLICATION->IncludeComponent(
-    'vendor:catalog.list',
-    '.default',
-    [
-        'IBLOCK_ID' => 12,
-        'COUNT'     => 10,
-        'CACHE_TIME' => 3600,
-        'CACHE_TYPE' => 'A',
-    ],
-    /* parent */ $component ?? false,
-);
+$APPLICATION->IncludeComponent('vendor:catalog.list', '', [
+    'IBLOCK_ID' => 12,
+    'COUNT' => 10,
+    'CACHE_TYPE' => 'A',
+    'CACHE_TIME' => 3600,
+], $component ?? false);   // 4th arg inside another component's template
 ```
 
-In complex components **always** pass `$component` as the fourth parameter — this allows nested components to find templates in the parent's folder and cache epilogs.
+Inside a complex component's template always pass `$component`: nested templates are then searched in the parent template's folder and cached data is attached to the parent.
 
-## `$arParams` and `$arResult`
+## `$arParams` / `$arResult`
 
-- `$arParams` — input parameters. Values automatically go through `htmlspecialcharsEx`; raw source is available with `~` prefix: `$arParams['~NAME']`.
-- `$arResult` — template data. Initialized as `[]`.
-- Both are references to component fields. Do not reassign via `$arParams = &$other` and do not `unset($arParams)` — the link to the template will break.
+- `onPrepareComponentParams()` gets raw values; afterwards the kernel stores each raw value under `~KEY` and HTML-escapes strings in `KEY` (one level into arrays). Read `~KEY` for HTML/URLs you escape yourself.
+- `$arResult` starts as `[]`. Both are shared with the template by reference — never reassign or `unset()` them.
 
 ## `.description.php`
 
@@ -116,17 +90,12 @@ use Bitrix\Main\Localization\Loc;
 $arComponentDescription = [
     'NAME' => Loc::getMessage('VENDOR_CATALOG_LIST_NAME'),
     'DESCRIPTION' => Loc::getMessage('VENDOR_CATALOG_LIST_DESC'),
-    'ICON' => '/images/icon.gif',
-    'PATH' => [
-        'ID' => 'content',
-        'CHILD' => ['ID' => 'catalog', 'NAME' => 'Catalog'],
-    ],
+    'PATH' => ['ID' => 'vendor', 'NAME' => 'Vendor', 'CHILD' => ['ID' => 'catalog', 'NAME' => 'Catalog']],
     'CACHE_PATH' => 'Y',
-    'COMPLEX' => 'N',
 ];
 ```
 
-Without `PATH`, the component won't appear in the visual editor. Tree roots are reserved: `content`, `service`, `communication`, `e-store`, `utility`.
+Without `PATH` the component is hidden in the visual editor. Top-level IDs `content`, `service`, `communication`, `e-store`, `utility` are the kernel's sections.
 
 ## `.parameters.php`
 
@@ -135,26 +104,15 @@ Without `PATH`, the component won't appear in the visual editor. Tree roots are 
 use Bitrix\Main\Localization\Loc;
 
 $arComponentParameters = [
-    'GROUPS' => [
-        'SETTINGS' => ['NAME' => Loc::getMessage('SETTINGS'), 'SORT' => 100],
-    ],
+    'GROUPS' => ['SETTINGS' => ['NAME' => Loc::getMessage('VENDOR_GROUP_SETTINGS'), 'SORT' => 100]],
     'PARAMETERS' => [
-        'IBLOCK_ID' => [
-            'PARENT' => 'SETTINGS',
-            'NAME' => Loc::getMessage('IBLOCK_ID'),
-            'TYPE' => 'STRING',
-            'DEFAULT' => '',
-        ],
-        'COUNT' => [
-            'PARENT' => 'SETTINGS',
-            'NAME' => Loc::getMessage('COUNT'),
-            'TYPE' => 'STRING',
-            'DEFAULT' => '20',
-        ],
-        'SET_TITLE'  => [],  // special — enables title
-        'CACHE_TIME' => [],  // special — enables caching block
+        'IBLOCK_ID' => ['PARENT' => 'SETTINGS', 'NAME' => Loc::getMessage('VENDOR_IBLOCK_ID'), 'TYPE' => 'STRING'],
+        'SET_TITLE' => [],   // kernel-provided checkbox
+        'CACHE_TIME' => [],  // kernel-provided cache block
     ],
 ];
 ```
 
-`TYPE` types: `LIST`, `STRING`, `CHECKBOX`, `FILE`, `COLORPICKER`, `CUSTOM` (for custom JS widgets). Hints are `<PARAM>_TIP` constants in `lang/en/.parameters.php`.
+`TYPE`: `STRING`, `TEXT`, `LIST` (`VALUES`, `MULTIPLE`, `ADDITIONAL_VALUES`, `REFRESH`), `CHECKBOX`, `FILE`, `COLORPICKER`, `CUSTOM` (JS widget). Hints: `<PARAM>_TIP` phrases in `lang/<lang>/.parameters.php`.
+
+Related: UF render components (`BaseUfComponent`) — `bitrix-cms-basics`; page title/buttons/filter in Bitrix24-style pages — `Bitrix\UI\Toolbar\Facade\Toolbar` (`bitrix-ui`), shown by default inside `bitrix:ui.sidepanel.wrapper` (`HIDE_TOOLBAR` / `PLAIN_VIEW` hide it).

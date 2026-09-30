@@ -1,93 +1,48 @@
-# Matching, PublicPageController, site-guard
+# Matching, cache, site-guard, urlrewrite.php
 
-## Matching and safety
+## Matching
 
-- All files from `/local/routes/` and `/bitrix/routes/` merge into one `Router`. Matching is **first-match-wins** within the compiled set; order **inside one file** matters. Do not rely on order **across** files — each file must be self-correct.
-- Legacy `$arUrlRewrite` from `urlrewrite.php` is checked **before** modern routes. A conflicting rewrite means the modern route never runs — remove the legacy rule when migrating.
-- Compiled route regex is cached (`CompileCache` by file `mtime`). After edits that “don’t apply”, clear routing cache on the stand.
-- **Do not** use routing `->middleware()` for auth, CSRF, or authorization. Middleware runs early (before normal prolog/controller filters). Protect Engine controllers via ActionFilter/attributes (`bitrix-controllers`); protect `PublicPageController` targets inside the included PHP.
+- All route files feed one `Router`; the first route whose regex and method match wins. Order inside a file matters. Don't rely on order across files.
+- Entry `/bitrix/routing_index.php` (`rules/setup.md`): routes first, then `urlrewrite.php` rules as the fallback. Stock entry `/bitrix/urlrewrite.php`: its rules first, routes after (**Since main 26.250\***; older kernels reach no routes from it). A conflicting rule there shadows the route.
+- `->middleware()` callables run before the prolog and before controller filters. Not for auth, CSRF or rights.
 
-## PublicPageController (legacy bridge)
+## Compile cache
 
-Use `Bitrix\Main\Routing\Controllers\PublicPageController` only to include an existing public PHP page. Do not put new business logic behind it — new features go to Engine controllers.
-
-```php
-use Bitrix\Main\Routing\Controllers\PublicPageController;
-use Bitrix\Main\Routing\RoutingConfigurator;
-
-return function (RoutingConfigurator $routes): void {
-    $siteDir = '/'; // leading slash — path under document root
-    $sitePrefix = ltrim($siteDir, '/');
-
-    $routes
-        ->prefix($sitePrefix . 'docs')
-        ->group(function (RoutingConfigurator $routes) use ($siteDir) {
-            $routes->get('item/{id}/', new PublicPageController($siteDir . 'docs/item.php'))
-                ->where('id', '[0-9]+')
-                ->default('download', '0');
-
-            $routes->any('{any}', new PublicPageController($siteDir . 'docs/index.php'))
-                ->where('any', '.*');
-        });
-};
-```
-
-Caveats:
-
-- `PublicPageController` `include`s the file and ends the request (`die()`). Engine prolog/filters do **not** wrap it — the page must validate input, rights, CSRF itself.
-- Route parameters are copied into `$_GET` / `$_REQUEST`. Use `->default()` for flags the page reads from query.
-- `$siteDir` (with leading `/`) for file paths; `$sitePrefix` (no leading `/`) for `prefix()`.
+Compiled regexes are cached for a year in cache dir `routing` (`CompileCache`), keyed by the mtimes of the files listed in `routing.config`. Compiled data is stored by route position. After editing a `require`d module route file, `touch /local/routes/web.php` or clear the cache. Otherwise routes match stale regexes.
 
 ## Site-guard (multisite)
 
-If routes belong to one site only, guard at the start of the closure and `return` without registering when the current request site does not match. Without a guard, those routes register for every site.
+Routes register for every site unless the file returns early:
 
 ```php
+use Bitrix\Main\Context;
+use Bitrix\Main\Routing\RoutingConfigurator;
 use Bitrix\Main\SiteTable;
 
 return function (RoutingConfigurator $routes): void {
-    // Global/service routes (all sites) — register before guard
-    // $routes->any('.well-known/{any}', …);
+    // routes for all sites (e.g. .well-known) go above the guard
 
-    $request = \Bitrix\Main\Context::getCurrent()->getRequest();
-    $site = SiteTable::getByDomain($request->getHttpHost(), $request->getRequestUri())->fetch();
-    if (!$site || ($site['LID'] ?? '') !== 's1') {
+    $request = Context::getCurrent()->getRequest();
+    $site = SiteTable::getByDomain($request->getHttpHost(), $request->getRequestUri()); // array, not a Result
+    if (($site['LID'] ?? '') !== 's1')
+    {
         return;
     }
 
-    // site-specific routes…
+    // s1 routes…
 };
 ```
 
-Site-guard is not authorization — still check rights in the handler/controller.
+`getByDomain()` falls back to the default site. The guard selects routes; it doesn't authorize.
 
-## Migration from `urlrewrite.php`
+## Migrating from `urlrewrite.php`
 
-1. For **new** routes, use `/local/routes/web.php` — `urlrewrite.php` is no longer needed.
-2. Old `urlrewrite.php` can be left for legacy component SEF.
-3. Migration rule: entry
-
-    ```php
-    ['CONDITION' => '#^/catalog/section/(\d+)/?$#', 'RULE' => 'SECTION_ID=$1', 'PATH' => '/catalog/section.php']
-    ```
-
-    is replaced by
+1. New URLs go to `/local/routes/`, never to `urlrewrite.php`. Legacy SEF component rules may stay.
+2. Rule → route:
 
     ```php
-    $routes->get('/catalog/section/{id}', [Catalog::class, 'sectionAction'])->where('id', '\d+');
+    // ['CONDITION' => '#^/catalog/section/(\d+)/?$#', 'RULE' => 'SECTION_ID=$1', 'PATH' => '/catalog/section.php']
+    $routes->get('/catalog/section/{id}/', [Catalog::class, 'section'])->where('id', '\d+');
     ```
 
-4. Clear `urlrewrite` cache when migrating: `CUrlRewriter::ReIndexAll()`.
-
-## Checklist
-
-- [ ] Web server forwards to `routing_index.php`.
-- [ ] Global `routing.config` lists basenames; user files under `/local/routes/`.
-- [ ] Module route files are `require`d from `/local/routes/web.php` (not module `.settings.php` `routing`).
-- [ ] No conflicting `urlrewrite.php` rule for the same path.
-- [ ] Groups use fluent `->prefix()->name()->group(fn)`; narrow routes before catch-all.
-- [ ] State-changing routes use explicit verbs, not `any()`.
-- [ ] Parameters constrained with `->where(...)`; names unique for `router()->route()`.
-- [ ] Auth/CSRF via controller filters — not routing middleware.
-- [ ] `PublicPageController` only for legacy includes; page handles security itself.
-- [ ] Multisite: site-guard when routes are site-specific.
+3. Remove the old rule: `\Bitrix\Main\UrlRewriter::delete('s1', ['CONDITION' => '#^/catalog/section/(\d+)/?$#'])`. `UrlRewriter::reindexAll()` rebuilds rules from pages with SEF components, so it re-adds rules while such a page still exists.

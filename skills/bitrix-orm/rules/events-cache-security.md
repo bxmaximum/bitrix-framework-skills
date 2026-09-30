@@ -2,67 +2,86 @@
 
 ## Events
 
-In the tablet class:
+Nine types, constants `DataManager::EVENT_ON_*`: `OnBeforeAdd`, `OnAdd`, `OnAfterAdd`, `OnBeforeUpdate`, `OnUpdate`, `OnAfterUpdate`, `OnBeforeDelete`, `OnDelete`, `OnAfterDelete`.
+
+| Parameter | Add | Update | Delete |
+| --- | --- | --- | --- |
+| `fields` | yes | yes | no |
+| `object` | yes (clone in On/After) | yes (clone in On/After) | yes (clone) |
+| `primary` (+ legacy `id`) | After only | yes | yes |
+
+Only `OnBefore*` results are applied: `modifyFields()`, `unsetFields()`/`unsetField()` (Add/Update), `addError()` (all three). An error aborts the write.
+
+### In the tablet
+
+A static method named like the event (`onBeforeAdd`) runs for the namespaced event only:
 
 ```php
-public static function onBeforeAdd(\Bitrix\Main\ORM\Event $event): \Bitrix\Main\ORM\EventResult
+use Bitrix\Main\ORM\Event;
+use Bitrix\Main\ORM\EventResult;
+use Bitrix\Main\ORM\Fields\FieldError;
+
+public static function onBeforeAdd(Event $event): EventResult
 {
-    $result = new \Bitrix\Main\ORM\EventResult();
+    $result = new EventResult();
     $fields = $event->getParameter('fields');
 
-    if (empty($fields['TITLE']))
+    if (trim((string)($fields['TITLE'] ?? '')) === '')
     {
-        $result->addError(new \Bitrix\Main\ORM\EntityError('Title is required'));
+        $result->addError(new FieldError($event->getEntity()->getField('TITLE'), 'Title is required'));
+        return $result;
     }
 
-    // Modification:
-    $result->modifyFields(['TITLE' => strtoupper($fields['TITLE'])]);
+    $result->modifyFields(['TITLE' => trim($fields['TITLE'])]);
 
     return $result;
 }
 ```
 
-Events: `onBeforeAdd`, `onAfterAdd`, `onBeforeUpdate`, `onAfterUpdate`, `onBeforeDelete`, `onAfterDelete`.
-
-## Caching
+### From another module
 
 ```php
-'cache' => [
-    'ttl' => 3600,
-    'cache_joins' => true,
-]
+use Bitrix\Main\ORM\Data\DataManager;
+use Bitrix\Main\ORM\Event;
+use Bitrix\Main\ORM\EventManager;
+
+EventManager::getInstance()->addEventHandler(
+    PostTable::class,
+    DataManager::EVENT_ON_AFTER_UPDATE,
+    static function (Event $event): void { /* ... */ },
+);
+// persistent, on module install:
+EventManager::getInstance()->registerEventHandler(PostTable::class, DataManager::EVENT_ON_AFTER_UPDATE, 'vendor.other', OnPostUpdate::class, 'handle');
 ```
 
-- Tablet must return `true` from `isCacheable()` (default is `true` on `DataManager`).
-- On successful add/update/delete, ORM calls `DataManager::cleanCache()` → managed cache dir `orm_<tableName>` (e.g. `orm_vendor_module_post`). There are **no** fictional `ORM_*` tagged-cache tags for this — invalidation is by managed-cache directory.
-- TTL can be clamped via global `.settings.php` `cache_flags` keys `<table>_min_ttl` / `<table>_max_ttl` (see `Entity::getCacheTtl`). Details: skill `bitrix-caching`.
+- Event name `\Vendor\Module\Post::OnAfterUpdate`, module derived from the namespace (`vendor.module`). A legacy `PostOnAfterUpdate` event with fewer parameters is sent too. Unknown type → `ArgumentException`.
+- Highloadblock entities fire in module `''`: `bitrix-highloadblock`.
+
+## Query cache
 
 ```php
-PostTable::cleanCache(); // after external bulk SQL that bypasses ORM writes
+PostTable::query()->setSelect(['ID', 'TITLE'])->setCacheTtl(3600)->cacheJoins(true)->fetchAll();
+PostTable::cleanCache();              // after raw SQL that bypassed ORM writes
 ```
 
-## Security: User Input in Queries
+- `isCacheable()` defaults to `true`. Cache lives in managed-cache dir `orm_<table>`; ORM writes clean it. There are no `ORM_*` TaggedCache tags.
+- `.settings.php` `cache_flags`: `<table>_max_ttl`, `<table>_min_ttl` clamp TTL; `<table>_max_ttl => 0` disables it. Details: `bitrix-caching`.
 
-Field names in `select` / `order` and expressions in `ExpressionField` / `runtime` / `SqlExpression` are **not** safely escaped as identifiers. Never pass request parameters into them without a whitelist. Prefer bound filter values (`where`, `filter` values). Full patterns: skill `bitrix-security`.
+## User input in queries
+
+`select`, `order`, `group`, `runtime` and `ExpressionField` are not safe for input: whitelist names. Filter values are escaped, filter keys (field names) are not checked: whitelist them too.
 
 ```php
-// BAD: $order = $_GET['by'];
-// GOOD:
-$allowed = ['ID', 'CREATED_AT', 'TITLE'];
-$order = in_array($userBy, $allowed, true) ? $userBy : 'ID';
-PostTable::getList(['order' => [$order => 'DESC']]);
+$by = in_array($requestBy, ['ID', 'CREATED_AT', 'TITLE'], true) ? $requestBy : 'ID';
+PostTable::query()->setSelect(['ID'])->setOrder([$by => 'DESC'])->fetchAll();
 ```
 
-## Checklist
+Row-level access: keep the access filter a separate element so user keys or `'LOGIC' => 'OR'` cannot override it, and reuse it for the count:
 
-- [ ] Tablet class lives in `lib/Model/` and ends in `Table` (extends `DataManager`).
-- [ ] Primary keys are correctly defined (`configurePrimary`); fluent `configureXxx` for fields.
-- [ ] New reads use `query()` + `ConditionTree` (not `getList`/array filter by default).
-- [ ] Fetch shape matches need: objects for entity/relations; arrays for lists/aggregates.
-- [ ] Object fetch is not used for aggregation / `GROUP BY`.
-- [ ] Runtime fields registered as field objects; `disableDataDoubling()` only for 1:N filter duplication.
-- [ ] Writes: `save()` for object/relations; `add`/`update` for simple rows; multi for homogeneous batches.
-- [ ] `deleteByFilter` / merge / insert-ignore used only with intentional semantics and narrow filters.
-- [ ] Cache: `isCacheable` + `cleanCache` / `orm_*` dirs understood; no fictional `ORM_*` tags.
-- [ ] No user input in `select` / `order` / `ExpressionField` / `runtime` without whitelist.
-- [ ] UF via `getUfId()`, not deprecated `UField`; `orm:annotate` run for IDE.
+```php
+$filter = [$userFilter, $accessFilter];            // top-level elements are ANDed; never array_merge()
+$rows = PostTable::getList(['select' => ['ID'], 'filter' => $filter])->fetchAll();
+$total = PostTable::getCount($filter);
+```
+
+Full patterns: `bitrix-security`.

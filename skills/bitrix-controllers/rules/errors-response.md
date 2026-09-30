@@ -1,57 +1,56 @@
-# Errors, responses, scope
+# Errors, responses, rendering, scopes
 
 ## Errors
 
-- `$this->addError(new \Bitrix\Main\Error('msg', 'CODE', ['key' => 'value']));`
-- `$this->addErrors($result->getErrors());`
-- Never throw exceptions outward for ordinary user errors — use `Result` + `Error` (see `bitrix-result-and-errors`).
-- Response with errors automatically receives `status: 'error'` and `errors` array.
-- When returning success data from a service `Result`, prefer a narrow `getData()` contract — do not leak internal structures.
+- `$this->addError(new Error('Title required', 'POST_TITLE_EMPTY', ['field' => 'title']))` or `$this->addErrors($result->getErrors())`, then `return null`. Contract design: `bitrix-result-and-errors`.
+- Exceptions and PHP `Error`s thrown in the action, and binder failures, also end up as errors (message + code). Don't throw for expected failures.
+- `Bitrix\Main\Validation\ValidationException` thrown in the action → each of its errors is added (**Since main 26.250\***; older kernels have no `ValidationException`: `addErrors()` yourself).
 
-## Response Types
+## JSON envelope
 
-- `array` → JSON: `{ "status": "success", "data": [...] }`.
-- `null` → `{ "status": "success" }` without data.
-- `Bitrix\Main\HttpResponse` — custom response (headers, status, body).
-- `Bitrix\Main\Engine\Response\HtmlContent` — AJAX JSON with `html` + `assets` (extends `AjaxJson`).
-- `Bitrix\Main\Engine\Response\Json` / `Redirect` / `AjaxJson`.
-- `Bitrix\Main\Engine\Response\Render\View` / `Render\Component` / `Render\Extension` — HTML for HTTP routes (`renderView` / `renderComponent` / `renderExtension`).
-- `Bitrix\Main\Engine\Response\Component` — JSON component payload from `renderComponentAjax()` (not the same class as `Render\Component`).
-- `Bitrix\Main\Engine\Response\BFile` / `File` — file delivery (`BFile::createByFileId()` for `b_file`).
-- `Bitrix\Main\Engine\Response\ResizedImage` — resized image (`createByImageId($id, $w, $h)`); never take width/height raw from the request.
-- `Bitrix\Main\Engine\Response\Zip\Archive` — ZIP stream.
-- `Bitrix\Main\Engine\Response\OpenDesktopApp` / `OpenMobileApp` — deep-link into native Bitrix apps.
+Any result that is not an `HttpResponse` is wrapped in `AjaxJson`:
 
-Controller helpers:
-
-```php
-return $this->renderView('list', ['items' => $items]);
-// => /local/modules/vendor.module/views/list.php
-
-return $this->renderComponent('vendor:post.list', '.default', ['IBLOCK_ID' => 12]);
-
-return $this->renderExtension('vendor.post.list', ['items' => $items]);
-
-return $this->redirectTo('/posts/');
+```json
+{"status": "success", "data": {"id": 42}, "errors": []}
+{"status": "error", "data": null, "errors": [{"message": "Title required", "code": "POST_TITLE_EMPTY", "customData": {"field": "title"}}]}
 ```
 
-Prefer these helpers / typed responses over manual `header()` / `json_encode()` (see `bitrix-request-response`).
+`data` is always present: `null` return gives `"data": null`. On errors, `data` still holds whatever the action returned. `BX.ajax.runAction()` resolves only on `success`. Keys are sent as is; `$this->convertKeysToCamelCase($data)` for camelCase contracts.
 
-## Scope (AJAX / REST / CLI)
+## Response classes (`Bitrix\Main\Engine\Response\*`)
 
-- **AJAX**: `/bitrix/services/main/ajax.php?action=...` or `BX.ajax.runAction('...', {})`. Available when controller is declared and `controllers` exists in `.settings.php`.
-- **REST**: requires `restIntegration.enabled = true` + `rest` module.
-- **CLI**: possible with `ActionFilter\Scope` when calling controllers from commands.
+| Need | Return |
+| --- | --- |
+| Own status/headers/body | `Bitrix\Main\HttpResponse` |
+| Plain JSON without envelope | `Json` |
+| Envelope by hand (closure routes) | `AjaxJson::createSuccess($data)` / `createError(ErrorCollection)` |
+| Redirect | `$this->redirectTo($url)` / `Redirect` |
+| File from `b_file` | `BFile::createByFileId($id)`; resized: `ResizedImage::createByImageId($id, $w, $h)` (whitelist sizes) |
+| ZIP via nginx mod_zip | `Zip\Archive` |
+| Component HTML for AJAX | `$this->renderComponentAjax(...)` → `Component` (JSON with `html`, `assets`) |
+| Deep link to the Bitrix app | `OpenDesktopApp` / `OpenMobileApp` |
 
-Different scopes need different filter sets. CSRF does not apply to REST by default — add an explicit strategy.
+Details: `bitrix-request-response`.
 
-## Checklist
+## HTML from routed controllers (**Since main 25.700**)
 
-- [ ] Controller is thin: orchestration only; business logic in a service.
-- [ ] Filters use attributes by default; `configureActions` only when needed.
-- [ ] `getDefaultPreFilters()` extends parent when overridden.
-- [ ] Current user via `CurrentUser` / `getCurrentUser()`, not global `$USER`.
-- [ ] Dependencies via **action parameters**, not controller constructor.
-- [ ] Input via Request DTO + `ValidationParameter` in `getAutoWiredParameters()` when the contract is non-trivial.
-- [ ] Errors via `$this->addError` / `addErrors`, not exceptions for normal failures.
-- [ ] Return type explicit: `array`, `HttpResponse`, or `renderXxx` / `redirectTo`.
+`renderView()`, `renderComponent()`, `renderExtension()` return `Render\View|Component|Extension` (`HttpResponse`, page inside the site template; `withSiteTemplate: false` for a bare page).
+
+```php
+return $this->renderView('blog/index', ['posts' => $posts]);
+// → /local/modules/vendor.module/views/blog/index.php (then /bitrix/modules/…)
+return $this->renderComponent('bitrix:news.list', '', ['IBLOCK_ID' => 5]);
+return $this->renderExtension('vendor.blog.app', ['id' => $id]);
+```
+
+- `renderView()` path: the module id is the directory before `/lib/` in the controller's file path; `/local` is checked first. `.php` only (another extension → `SystemException`). A leading `/` means a path from DOCUMENT_ROOT; it must stay inside it.
+- The view is `$APPLICATION->IncludeFile()`d into the template: no header/footer includes, set the title with `$APPLICATION->SetTitle()`.
+- `renderExtension()` needs `controllerEntrypoint` (JS function name) in the extension's `config.php`; it renders in the browser, not SSR.
+- Recipe for moving a public page to a controller: `bitrix-routing` → `rules/public-pages.md`. Before 25.700 keep the page or use `PublicPageController`.
+
+## Scopes
+
+- `SCOPE_AJAX`: `/bitrix/services/main/ajax.php` and controllers reached by routes. `Csrf` runs only here.
+- `SCOPE_REST` (classic): `restIntegration.enabled` + `rest` module. Auth comes from the REST token, `Csrf` doesn't run: check rights in the action.
+- REST v3 (**Since rest 26.200\***): extend `Bitrix\Rest\V3\Controller\RestController`. An overridden `getDefaultPreFilters()` / `getDefaultPostFilters()` must merge `parent::`, which carries `IdempotencyFilter` (rest 26.600+). Details: `bitrix24-rest-api` → `rules/rest-v3.md`, `bitrix-rest`.
+- `SCOPE_CLI`: restrict actions with `ActionFilter\Scope(Scope::NOT_CLI)` etc.

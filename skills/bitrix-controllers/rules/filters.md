@@ -1,103 +1,39 @@
-# Filters and attributes
+# Filters
 
-## Default Prefilters
+## Defaults
 
-By default, actions get: `Authentication` + `HttpMethod([GET, POST])` + `Csrf`.
+`Controller::getDefaultPreFilters()` = `Authentication`, `HttpMethod([GET, POST])`, `Csrf`; `JsonController` adds `ContentType([JSON])`. When overriding, start from `parent::getDefaultPreFilters()` (REST v3 controllers depend on it). If the base list allows POST and lacks `Csrf`, a POST request gets `Csrf` added anyway. Only `-prefilters` / `#[DisablePrefilters]` really removes it.
 
-When overriding `getDefaultPreFilters()`, **extend** `parent::getDefaultPreFilters()` — do not rebuild the base protection from scratch without reason.
+Built-in `Bitrix\Main\Engine\ActionFilter\*`:
 
-## Action Filters
+- `Authentication($enableRedirect = false)`: 401 for guests.
+- `Csrf`: `sessid` param or `X-Bitrix-Csrf-Token` header. Runs only in `SCOPE_AJAX` (AJAX and routed controllers), on GET too.
+- `HttpMethod([...])`, `ContentType([...])`, `CloseSession` (parallel AJAX), `Cors`, `Scope(Scope::NOT_REST)`.
+- `Token`: signed entity token headers. Niche.
+- `AccessCheck`: via `#[ActionAccess]`, see below.
 
-Predefined filters:
+Missing a check? Write one `ActionFilter\Base` subclass (below) instead of copying checks into actions.
 
-- `ActionFilter\Authentication` — requires an authorized user (401 without redirect).
-- `ActionFilter\Csrf` — `sessid`/`X-Bitrix-Csrf-Token` check. **Limited to `SCOPE_AJAX`** (`listAllowedScopes()`); does not run for REST/CLI scopes.
-- `ActionFilter\HttpMethod([...])` — method restriction.
-- `ActionFilter\CloseSession` — closes session before action (parallel AJAX).
-- `ActionFilter\ContentType(['application/json'])` — allowed `Content-Type`.
-- `ActionFilter\Scope($scope)` — restricts call to a specific scope (ajax/rest/cli).
-- `ActionFilter\Cors` — CORS headers for cross-origin AJAX.
-- `ActionFilter\AccessCheck` / `#[ActionAccess]` — module ACL via `AccessibleController` (see below).
-- `ActionFilter\Token` — signed entity token in request headers (`X-Bitrix-Sign-Entity` / `X-Bitrix-Sign-Token` via `ActionFilter\Service\Token`). Niche; prefer CSRF + rights for ordinary AJAX.
+## Attributes (**Since main 26.250\***)
 
-If a built-in filter is missing, write a custom `ActionFilter\Base` — do not copy-paste checks into every action.
+`ActionFilter\Attribute\Rule\*`:
 
-## `#[ActionAccess]` (module ACL)
-
-When the module already has an `access` controller (`Bitrix\Main\Access\AccessibleController` / `BaseAccessController`), check the action with `#[ActionAccess]` instead of a hand-rolled rights filter.
-
-The controller **must** implement `Bitrix\Main\Engine\Contract\AccessCheckControllerInterface` and return the access controller from `getAccessController()`. Otherwise `AccessCheck` throws `SystemException`.
-
-Default strategy is `ItemIdFromRequestStrategy`: it reads a request key (default `id`) and calls `checkByItemId($action, $itemId)`. Override the key with `strategyArgs`.
-
-```php
-use Bitrix\Main\Access\AccessibleController;
-use Bitrix\Main\Engine\ActionFilter\Access\ItemIdFromRequestStrategy;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Access\ActionAccess;
-use Bitrix\Main\Engine\Contract\AccessCheckControllerInterface;
-use Bitrix\Main\Engine\CurrentUser;
-
-final class Post extends Controller implements AccessCheckControllerInterface
-{
-    public function getAccessController(): AccessibleController
-    {
-        return PostAccessController::getInstance((int)CurrentUser::get()->getId());
-    }
-
-    #[ActionAccess(
-        action: PostActionDictionary::VIEW, // string or UnitEnum (BackedEnum → value, else → name)
-        strategy: ItemIdFromRequestStrategy::class,
-        strategyArgs: ['itemIdRequestKey' => 'id'],
-    )]
-    public function getAction(int $id, PostService $postService): array
-    {
-        // ...
-    }
-}
-```
-
-`#[ActionAccess]` does **not** set HTTP 403 by default (`setHttpStatus` is only on `AccessCheck` itself, default `false`). The action is rejected with an engine error; set status yourself in a custom strategy/`AccessCheck` if the HTTP code matters.
-
-Custom strategies implement `AccessCheckStrategyInterface::create()` + `check()`. Do not use `#[ActionAccess]` unless the module actually has an access controller — for simple auth keep `Authentication` / a small `ActionFilter\Base`.
-
-## PHP 8 Attribute Filters (preferred)
+- `Authentication`, `HttpMethod`, `Csrf`, `ContentType`, `CloseSession`, `Cors`, `Scope`, `Token` append their filter (`+prefilters`). The last ctor arg `FilterType $type` removes it instead (`FilterType::DisablePrefilter`).
+- `EnablePrefilters([...])` / `DisablePrefilters([...FQCN])`, same for postfilters. `Prefilters([...])` / `Postfilters([...])` replace the defaults.
+- `#[HttpMethod]` without args = GET only. Its 2nd arg is `FilterType`, not a method. The docs example `HttpMethod(METHOD_GET, METHOD_POST)` is wrong.
+- Removal runs before append; removal matches by class (`is_a`).
 
 ```php
 use Bitrix\Main\Engine\ActionFilter;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\Prefilters;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\HttpMethod;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\Authentication;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\Csrf;
-use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\EnablePrefilters;
 use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\DisablePrefilters;
+use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\EnablePrefilters;
 
-final class Post extends Controller
-{
-    #[HttpMethod([HttpMethod::METHOD_GET])]
-    #[DisablePrefilters([ActionFilter\Csrf::class])]
-    public function listAction(): array { /* ... */ }
-
-    #[Authentication]
-    #[HttpMethod([HttpMethod::METHOD_POST])]
-    #[Csrf]
-    public function createAction(string $title): array { /* ... */ }
-
-    #[DisablePrefilters([ActionFilter\Authentication::class, ActionFilter\Csrf::class])]
-    #[EnablePrefilters([
-        new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_GET]),
-    ])]
-    public function publicPingAction(): array
-    {
-        return ['ok' => true];
-    }
-}
+#[DisablePrefilters([ActionFilter\Authentication::class, ActionFilter\Csrf::class])]
+#[EnablePrefilters([new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_GET])])]
+public function pingAction(): array { return ['ok' => true]; } // public, read-only
 ```
 
-Controller-level defaults via `getDefaultPreFilters()` / `getDefaultPostFilters()`. Use `#[EnablePrefilters]` / `#[DisablePrefilters]` to adjust inherited defaults per action.
-
-### `configureActions()` (compatibility)
-
-Use when attributes are insufficient or when patching legacy controllers:
+## `configureActions()` (any version)
 
 ```php
 public function configureActions(): array
@@ -111,4 +47,65 @@ public function configureActions(): array
 }
 ```
 
-Format keys: `prefilters` (replace), `+prefilters` (add), `-prefilters` (remove by FQCN), `postfilters`.
+Keys: `prefilters` / `postfilters` replace the defaults, `+…` appends, `-…` removes by FQCN. An action configured here must have no filter attributes.
+
+## `#[ActionAccess]` (**Since main 26.600\***)
+
+Use it when the module has an access controller (`Bitrix\Main\Access\AccessibleController`, e.g. `BaseAccessController`). The controller must implement `Engine\Contract\AccessCheckControllerInterface`, otherwise `SystemException`.
+
+```php
+use Bitrix\Main\Access\AccessibleController;
+use Bitrix\Main\Engine\ActionFilter\Attribute\Access\ActionAccess;
+use Bitrix\Main\Engine\Contract\AccessCheckControllerInterface;
+
+final class Post extends Controller implements AccessCheckControllerInterface
+{
+    public function getAccessController(): AccessibleController
+    {
+        return PostAccessController::getInstance((int)$this->getCurrentUser()?->getId());
+    }
+
+    #[ActionAccess(PostAction::Edit, strategyArgs: ['itemIdRequestKey' => 'id'])]
+    public function updateAction(int $id, string $title): ?array { /* ... */ }
+}
+```
+
+- `action`: string or enum (backed → value, pure → case name). The default strategy `ItemIdFromRequestStrategy` reads the request key (`id`) and calls `checkByItemId()`. Custom strategy: implement `AccessCheckStrategyInterface`.
+- No HTTP 403 by default (`AccessCheck` `setHttpStatus` is `false`), the response only gets the error.
+- Fallback before 26.600: a `Base` filter calling `$access->checkByItemId($action, $id)`.
+
+Lists: nest the row filter so user keys or `'LOGIC' => 'OR'` can't override it: `'filter' => [$userFilter, $access->getEntityFilter($action, PostTable::class) ?? []]`. Use the same filter for the list and for `count`.
+
+## Custom filter
+
+```php
+use Bitrix\Main\Context;
+use Bitrix\Main\Engine\ActionFilter;
+use Bitrix\Main\Engine\CurrentUser;
+use Bitrix\Main\Error;
+use Bitrix\Main\Event;
+use Bitrix\Main\EventResult;
+
+final class RequireGroup extends ActionFilter\Base
+{
+    public function __construct(private readonly int $groupId)
+    {
+        parent::__construct();
+    }
+
+    public function onBeforeAction(Event $event)
+    {
+        // getUserGroups() returns group IDs
+        if (!in_array($this->groupId, array_map('intval', CurrentUser::get()->getUserGroups()), true))
+        {
+            Context::getCurrent()->getResponse()->setStatus(403);
+            $this->addError(new Error('Access denied', 'ACCESS_DENIED'));
+
+            return new EventResult(EventResult::ERROR, null, null, $this);
+        }
+
+        return null;
+    }
+}
+// #[EnablePrefilters([new RequireGroup(5)])] or '+prefilters' => [new RequireGroup(5)]
+```

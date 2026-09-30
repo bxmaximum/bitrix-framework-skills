@@ -1,169 +1,94 @@
 ---
 name: bitrix-events
-description: Covers Bitrix event system — new model (Bitrix\Main\Event, EventResult, EventManager::addEventHandler, make:event, make:eventhandler) and old model (OnBefore*/OnAfter* hooks in CIBlock, CUser, CSale and other classic APIs). Applied when integrating modules, entity lifecycle hooks, publishing custom events and subscribing to events of other modules. Key terms — Event, EventManager, EventResult, OnBefore, OnAfter, handler, subscriber, addEventHandler.
+description: 'Bitrix events — D7 Event/EventResult/EventManager vs legacy ExecuteModuleEventEx hooks (OnBeforeUserAdd, &$arFields), make:event, make:eventhandler, handler registration. Use when publishing, handling or cancelling module events.'
 ---
 
-# Bitrix Events
+# Bitrix events
 
-There are **two event models**: new (OOP, `Event` + `EventResult`) and old (string code + handler returning bool/array). For new code — use the new model. The old model is used for compatibility with the kernel (`OnBeforeUserAdd`, `OnPageStart`, ...).
+Baseline: main 23.0+ · Verified: main 26.800.0
 
-## New Model — Publishing Your Event
+## Who dispatches decides the handler signature
 
-### 1. Create Event Class
+| Dispatcher (find it in the caller) | Examples | Handler receives | Result |
+| --- | --- | --- | --- |
+| `new Event(...)` + `->send()` | own events, `main:OnBeforeMailSend`, ORM tablet events | VERSION 2 (`registerEventHandler`, `addEventHandler`): the `Event` object. VERSION 1 (`*Compatible`): `...array_values($params)` | `$event->getResults()`; non-`EventResult` returns are wrapped as `UNDEFINED` |
+| `GetModuleEvents()` + `ExecuteModuleEventEx()` (legacy) | `main:OnBeforeUserAdd`, `OnAfterUserAdd`, `OnPageStart`, `OnEpilog`, `iblock:OnBeforeIBlockElementAdd` | raw args, whatever VERSION was registered — e.g. `array &$arFields` | caller-specific |
 
-```bash
-php bitrix/bitrix.php make:event PostCreated -m vendor.blog
-```
+- Legacy `OnBefore*`: cancel = `$APPLICATION->ThrowException('…'); return false;` (callers check `=== false`). Modify data through the reference `&$arFields`; a returned array (`['FIELDS' => …]`) is ignored.
+- ORM tablet / highload record events use `Bitrix\Main\ORM\EventManager` and `ORM\EventResult::modifyFields()` — see `bitrix-orm`; HL event names — `bitrix-highloadblock`.
 
-**Since main 25.900** for `make:*`. On older versions, scaffold the class manually.
+## Publish a D7 event
 
-File: `/local/modules/vendor.blog/lib/Public/Event/Post/PostCreatedEvent.php`.
+`php bitrix.php make:event PostCreated -m vendor.blog -C Post` (**Since main 25.900**; older: write the class) → `Vendor\Blog\Public\Event\Post\PostCreatedEvent` (without `-C`: `…\Public\Event\`). The generated class passes no params — add them:
 
 ```php
-<?php declare(strict_types=1);
-
 namespace Vendor\Blog\Public\Event\Post;
 
 use Bitrix\Main\Event;
 
 final class PostCreatedEvent extends Event
 {
-    public function __construct(
-        public readonly int $postId,
-        public readonly int $authorId,
-        public readonly string $title,
-    ) {
-        parent::__construct('vendor.blog', self::class, [
-            'postId'   => $this->postId,
-            'authorId' => $this->authorId,
-            'title'    => $this->title,
-        ]);
+    public function __construct(public readonly int $postId, public readonly int $authorId)
+    {
+        parent::__construct('vendor.blog', 'PostCreated', ['postId' => $postId, 'authorId' => $authorId]);
     }
 }
 ```
 
-### 2. Dispatch Event from Service
-
 ```php
-use Vendor\Blog\Public\Event\Post\PostCreatedEvent;
-
-$event = new PostCreatedEvent($post->getId(), $post->getAuthorId(), $post->getTitle());
+$event = new PostCreatedEvent($post->getId(), $post->getAuthorId());
 $event->send();
-
 foreach ($event->getResults() as $result)
 {
     if ($result->getType() === \Bitrix\Main\EventResult::ERROR)
     {
-        $this->logger->warning('Subscriber failed', ['errors' => $result->getParameters()]);
+        // caller decides: abort, log, collect errors
     }
 }
 ```
 
-### 3. Write Handler
+Cancel with a reason: return `new EventResult(EventResult::ERROR, ['error' => new Error('…', 'CODE')])` — only callers that read it honor it (mail events: `bitrix-mail`).
 
-```bash
-php bitrix/bitrix.php make:eventhandler NotifyAuthor \
-    --event-module=vendor.blog --handler-module=vendor.notify
-```
+## Handle it
 
-EventManager invokes handlers via `call_user_func_array` (class + method). Handlers are **not** created by `ServiceLocator` — do not rely on constructor DI. Resolve services inside the handler method.
+`php bitrix.php make:eventhandler PostCreated --event-module=vendor.blog -m vendor.notify` — `name` is the **event** name, `-m` is the handler module → `Vendor\Notify\Internals\Integration\Vendor\Blog\EventHandler\PostCreatedEventHandler::handle(PostCreatedEvent $event)`. Add the missing `use` for the event class.
 
 ```php
-<?php declare(strict_types=1);
-
-namespace Vendor\Notify\Internals\Integration\Blog\EventHandler;
-
-use Bitrix\Main\DI\ServiceLocator;
-use Bitrix\Main\Event;
-use Bitrix\Main\EventResult;
-use Vendor\Blog\Public\Event\Post\PostCreatedEvent;
-use Vendor\Notify\Application\Service\Notifier;
-
-final class NotifyAuthorHandler
+public static function handle(PostCreatedEvent $event): EventResult
 {
-    public static function handle(Event $event): EventResult
-    {
-        if (!$event instanceof PostCreatedEvent)
-        {
-            return new EventResult(EventResult::UNDEFINED);
-        }
+    $notifier = ServiceLocator::getInstance()->get(Notifier::class);
+    $result = $notifier->notifyAuthor($event->authorId);
 
-        /** @var Notifier $notifier */
-        $notifier = ServiceLocator::getInstance()->get(Notifier::class);
-        $result = $notifier->notifyAuthor($event->authorId, $event->title);
-
-        return new EventResult(
-            $result->isSuccess() ? EventResult::SUCCESS : EventResult::ERROR,
-            $result->getErrorMessages(),
-        );
-    }
+    return new EventResult($result->isSuccess() ? EventResult::SUCCESS : EventResult::ERROR, $result->getErrorMessages());
 }
 ```
 
-### 4. Register Handler in `install/index.php`
+Handlers are static callbacks, never built by the container: resolve services inside (`bitrix-framework`).
+
+## Register
+
+Persistent (module installer; unregister with the same args in `DoUninstall`):
 
 ```php
-\Bitrix\Main\EventManager::getInstance()->registerEventHandler(
-    fromModule: 'vendor.blog',
-    eventType: \Vendor\Blog\Public\Event\Post\PostCreatedEvent::class,
+EventManager::getInstance()->registerEventHandler(
+    fromModuleId: 'vendor.blog',
+    eventType: 'PostCreated',
     toModuleId: 'vendor.notify',
-    toClass: \Vendor\Notify\Internals\Integration\Blog\EventHandler\NotifyAuthorHandler::class,
+    toClass: PostCreatedEventHandler::class,
     toMethod: 'handle',
 );
 ```
 
-In `DoUninstall()` — **mandatory** `unRegisterEventHandler` with the same parameters.
-
-## Old Model (Compatibility)
-
-Old events have string names: `OnBeforeUserAdd`, `OnAfterUserAdd`, `OnEpilog`, `OnPageStart`. They pass an array/object of parameters and return:
-
-- `true`/nothing — continue;
-- `false` + `$APPLICATION->ThrowException(...)` — cancel action;
-- array with `'FIELDS' => [...]` — modify fields (for `OnBefore*`).
-
-Registering handlers accepting the **old** signature:
-
-```php
-EventManager::getInstance()->registerEventHandlerCompatible(
-    'main',
-    'OnAfterUserAdd',
-    'vendor.blog',
-    \Vendor\Blog\Internals\Integration\Main\EventHandler\OnAfterUserAddHandler::class,
-    'handle',
-);
-```
-
-The new `registerEventHandler` also works with old events but adapts them to the `Event $event` signature — parameters are retrieved via `$event->getParameter('fields')`, modification via `EventResult`.
-
-## Order and Chain of Handlers
-
-- Handlers run in ascending `$sort` order (default `100`).
-- `addEventHandler($fromModuleId, $eventType, $callback, $includeFile = false, $sort = 100)` — `$sort` is the **5th** parameter.
-- `registerEventHandler($fromModuleId, $eventType, $toModuleId, $toClass = '', $toMethod = '', $sort = 100, ...)` — `$sort` is the **6th** parameter.
-- The new API (`Event::send()`) collects results from all handlers — the chain is not interrupted even if one returns `ERROR`.
-- In the old API, a single `false` can interrupt the action (depends on the calling code in the kernel).
-
-## Dynamic Subscription in One Process
-
-For hooks that don't need to be stored in the DB (tests, one-time wrappers):
-
-```php
-EventManager::getInstance()->addEventHandler(
-    'main',
-    'OnAfterUserAdd',
-    fn (array $fields) => /* ... */,
-);
-```
-
-Such registration lives until the end of the request.
+- `registerEventHandlerCompatible()` (same args, VERSION 1): a D7 event then passes `...array_values($params)` instead of `Event`. For legacy `ExecuteModuleEventEx` events both calls deliver raw args; the kernel uses `*Compatible` for them by convention.
+- **Since main 26.600\***: declare handlers in `install/migrations/events.php` (`register()` = VERSION 2, `registerCompatible()` = VERSION 1) — `bitrix-modules`.
+- Per request only: `addEventHandler($fromModuleId, $eventType, $callback, $includeFile = false, $sort = 100)` (VERSION 2) / `addEventHandlerCompatible()` (VERSION 1), e.g. from `init.php`.
+- Order: ascending `$sort` (default 100) — 5th arg of `addEventHandler`, 6th of `registerEventHandler`.
+- `Event::send()` runs every handler even after an `ERROR`, but an exception thrown in a handler stops the chain and propagates to the caller.
 
 ## Checklist
 
-- [ ] Public event files — in `/lib/Public/Event/<Aggregate>/`.
-- [ ] Handlers of other modules' events — in `/lib/Internals/Integration/<OtherModule>/EventHandler/`.
-- [ ] Registration and unregistration of handlers as a pair in `DoInstall`/`DoUninstall`.
-- [ ] Custom events use `Bitrix\Main\Event` + `EventResult` instead of returning arrays.
-- [ ] Handler has no constructor DI — resolve services inside the method via `ServiceLocator::get()`.
-- [ ] Handler is idempotent and does not crash — wrap everything in `try/catch` with logging.
-- [ ] Heavy logic is moved to a queue (`Messenger` via `$message->send()`), handler only dispatches a task.
+- [ ] Handler signature matches the dispatcher (`Event` vs raw `&$arFields`).
+- [ ] Every `registerEventHandler` has an `unRegisterEventHandler` with identical args in uninstall.
+- [ ] Named args use kernel names (`fromModuleId`, not `fromModule`).
+- [ ] Handlers catch and log their own exceptions; heavy work goes to Messenger (`bitrix-background-jobs`).
+- [ ] Own events live in `lib/Public/Event/`, handlers in `lib/Internals/Integration/<Module>/EventHandler/`.

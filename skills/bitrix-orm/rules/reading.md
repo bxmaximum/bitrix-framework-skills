@@ -1,28 +1,21 @@
-# Reading / filters
+# Reading
 
-## Reading Data
-
-### Decision guide (read)
-
-| Need | Prefer |
+| Need | Use |
 | --- | --- |
-| New query in new code | `DataManager::query()` + fluent API |
-| Nested / OR / EXISTS / column-to-column filter | `Query::filter()` → `ConditionTree` (`where*`, `logic()`) |
-| Entity + relations / further mutation | `fetchObject()` / `fetchCollection()` |
-| Flat list, aggregation, hot path | `fetch()` / `fetchAll()` |
-| Legacy file already on array API | `getList()` / array `filter` (compatibility only) |
-| Reuse ORM filter as SQL WHERE | `Query::buildFilterSql($entity, $filter)` |
+| New query | `XxxTable::query()` + fluent API |
+| OR / nested / column-to-column conditions | `Query::filter()` → `ConditionTree` |
+| Entity with relations, later mutation | `fetchObject()` / `fetchCollection()` |
+| Flat list, aggregates, hot path | `fetch()` / `fetchAll()` |
+| Existing array-style code | `getList()` (compat) |
+| ORM filter as SQL `WHERE` | `Query::buildFilterSql($entity, $filter)` |
 
-Rules:
+- `query()` creates `static::getQueryClass()` (iblock element tablets return their own `Query`); `new Query($entity)` loses that. A `getList()` override is ignored by `query()`: put table-specific logic in `getQueryClass()` / `setDefaultScope()`.
+- Objects are not for `GROUP BY` / aggregate shapes.
+- Runtime fields as `ExpressionField` objects, not array expressions.
+- `disableDataDoubling()` only when a 1:N filter duplicates rows. `enablePrivateFields()` only when needed.
+- Unknown field in any clause → `ArgumentException`; `addOrder()` accepts only `ASC`/`DESC`.
 
-- Prefer `query()` over `getList()` / `getRow()` for new code (`getList` is a wrapper).
-- Prefer `ConditionTree` over legacy `'=FIELD' => $value` arrays for new filters.
-- Do **not** use object fetch for `GROUP BY` / aggregated result shapes.
-- Register runtime fields as `ExpressionField` objects — not array-expressions in `select`.
-- `disableDataDoubling()` only when a 1:N back-reference filter duplicates rows — not a default accelerator.
-- Private fields: call `enablePrivateFields()` explicitly when needed.
-
-### Preferred: `query()` + `ConditionTree`
+## `query()` + `ConditionTree`
 
 ```php
 use Bitrix\Main\ORM\Query\Query;
@@ -32,87 +25,63 @@ $visibility = Query::filter()
     ->where('AUTHOR_ID', $userId)
     ->where('PUBLIC', 'Y');
 
-$posts = PostTable::query()
-    ->setSelect(['ID', 'TITLE', 'AUTHOR_ID'])
+$rows = PostTable::query()
+    ->setSelect(['ID', 'TITLE', 'AUTHOR_NAME' => 'AUTHOR.NAME'])
     ->where('ACTIVE', 'Y')
     ->where($visibility)
     ->setOrder(['CREATED_AT' => 'DESC'])
     ->setLimit(20)
     ->fetchAll();
-```
 
-### Objects (`fetchObject`, `fetchCollection`)
-
-```php
-$post = PostTable::query()
-    ->setSelect(['*', 'AUTHOR', 'COMMENTS'])
-    ->where('ID', $id)
-    ->fetchObject();
-
-$title = $post?->getTitle();
+$post = PostTable::query()->setSelect(['*', 'AUTHOR', 'COMMENTS'])->where('ID', $id)->fetchObject();
 $authorName = $post?->getAuthor()?->getName();
-
-$collection = PostTable::query()
-    ->setSelect(['*', 'COMMENTS'])
-    ->where('ACTIVE', 'Y')
-    ->fetchCollection();
 ```
 
-### Query builder (runtime / aggregates)
+## Runtime fields, aggregates, DISTINCT
 
 ```php
 use Bitrix\Main\ORM\Fields\ExpressionField;
 
 $query = PostTable::query()
-    ->setSelect(['ID', 'TITLE', new ExpressionField('CNT', 'COUNT(%s)', 'COMMENTS.ID')])
-    ->registerRuntimeField(
-        new ExpressionField('IS_NEW', 'CASE WHEN %s > NOW() - INTERVAL 7 DAY THEN 1 ELSE 0 END', 'CREATED_AT')
-    )
+    ->setSelect(['AUTHOR_ID', new ExpressionField('CNT', 'COUNT(%s)', 'ID')])
     ->where('ACTIVE', 'Y')
-    ->whereIn('AUTHOR_ID', [1, 2, 3])
-    ->addOrder('CREATED_AT', 'DESC')
-    ->setLimit(50)
-    ->setGroup(['ID'])
-    ->having('CNT', '>', 0);
+    ->setGroup(['AUTHOR_ID'])
+    ->having('CNT', '>', 5);
+$stats = $query->fetchAll();
 
-// Aggregates → fetchAll(), not fetchObject()
-$result = $query->fetchAll();
+$authors = PostTable::query()->setSelect(['AUTHOR_ID'])->setDistinct()->fetchAll();   // SELECT DISTINCT
+$sql = $query->getQuery();                                                                // SQL, not executed
 ```
 
-### `buildFilterSql` (bridge to raw / mass ops)
+`setDistinct(false)` clears it. `hasDistinct()` is also true when a select `ExpressionField` contains `DISTINCT` (then the query flag is dropped to avoid double DISTINCT).
+
+## Pagination
 
 ```php
-$filter = Query::filter()
-    ->where('PROJECT_ID', $projectId)
-    ->whereNotNull('ARCHIVED_AT');
+$nav = (new \Bitrix\Main\UI\PageNavigation('posts'))->allowAllRecords(false)->setPageSize(20);
+$nav->setRecordCount(PostTable::getCount($filter));   // before initFromUri(): clamps the page number
+$nav->initFromUri();
 
-$whereSql = Query::buildFilterSql(PostTable::getEntity(), $filter);
+$items = PostTable::query()
+    ->setSelect(['ID', 'TITLE'])
+    ->setFilter($filter)
+    ->setOffset($nav->getOffset())
+    ->setLimit($nav->getLimit())
+    ->fetchCollection();
 ```
 
-### Legacy: `getList` + array filter
+Alternative: `->countTotal(true)->exec()` then `$result->getCount()` (same filter guaranteed; count arrives after `initFromUri()`, so no clamping). `getCount()` without `countTotal(true)` throws. Huge tables: fetch `limit + 1` rows instead of counting.
+
+## Legacy `getList`
 
 ```php
 $rows = PostTable::getList([
-    'select' => ['ID', 'TITLE', 'AUTHOR_NAME' => 'AUTHOR.NAME'],
+    'select' => ['ID', 'TITLE'],
     'filter' => ['=ACTIVE' => 'Y'],
-    'order'  => ['CREATED_AT' => 'DESC'],
-    'limit'  => 20,
-    'cache'  => ['ttl' => 3600],
+    'order' => ['ID' => 'DESC'],
+    'limit' => 20,
+    'cache' => ['ttl' => 3600, 'cache_joins' => true],
 ])->fetchAll();
 ```
 
-Use only in existing array-style code or tiny compatibility patches.
-
-## Collections and Annotations
-
-After `orm:annotate`, IDE gets types like `EO_Post`, `EO_Post_Collection`, `EO_Post_Query`:
-
-```php
-/** @var \Vendor\Module\Model\EO_Post $post */
-$post = PostTable::getByPrimary($id)->fetchObject();
-
-/** @var \Vendor\Module\Model\EO_Post_Collection $posts */
-$posts = PostTable::query()->where('ACTIVE', 'Y')->fetchCollection();
-```
-
-Collection methods: `save()`, `delete()`, `fill()` (eager load relations). Use `fetchCollection()` instead of looping `fetchObject()` to avoid N+1.
+Only in existing array-style code. The fluent equivalent of `cache` is `setCacheTtl()` / `cacheJoins()`.
