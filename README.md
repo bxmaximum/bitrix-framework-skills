@@ -214,4 +214,4 @@ php tools/verify-skills.php --kernel=/path/to/bitrix/modules
 
 ## Лицензия
 
-MIT License
+[MIT](LICENSE)
