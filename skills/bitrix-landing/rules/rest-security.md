@@ -1,25 +1,25 @@
-# REST, repo blocks, files
+# REST, репозиторные блоки, файлы
 
-REST method names are `landing.<class>.<method>` of `Bitrix\Landing\PublicAction\*`. Client-side calling (auth, batch, limits): `bitrix24-rest-api`.
+Имена REST: `landing.<class>.<method>` из `Bitrix\Landing\PublicAction\*`. Авторизация клиента, пакеты, лимиты: `bitrix24-rest-api`.
 
-## Repo blocks (`landing.repo.*`, **Since landing 26.1100**)
+## Репозиторные блоки (`landing.repo.*`, **Since landing 26.1100**)
 
-A repo block is a `b_landing_repo` row (REST app, `Landing\Repo::add()`, site import). It is data only:
+Репозиторный блок — строка `b_landing_repo` из REST-приложения, `Landing\Repo::add()` либо импорта сайта. Содержит только данные:
 
-- `assets.class` is ignored and `callbacks.afteradd` never runs (only a `\Closure` added at runtime does). PHP logic needs a file block in `/local/blocks/` (`rules/pages-blocks.md`).
-- `landing.repo.register` / `unregister` work only from a REST app or for `Rights::isAdmin()`, else `ACCESS_DENIED`. The row is matched by `=APP_CODE` = the app code (`false` without an app), so an admin script creates a duplicate instead of updating an app's block.
-- Unknown keys are dropped silently. Allowed fields: `NAME`, `CONTENT`, `SECTIONS`, `PREVIEW`, `DESCRIPTION`, `ACTIVE`, `SITE_TEMPLATE_ID`. Manifest keys: `block`, `nodes`, `cards`, `style`, `attrs`, `menu`, `assets`, `lang`, `lang_original`. `block.*`: `name`, `section`, `type`, `dynamic`, `subtype`, `subtype_params`, `description`. `assets`: `css`/`js` (http(s) paths ending `.css`/`.js`), `ext`.
-- Subtypes `widget`/`widgetvue` → `UNSUPPORTED_BLOCK_SUBTYPE`; register widgets only with `landing.repowidget.register`, handler must be public https (`WIDGET_HANDLER_INVALID`).
-- `landing.repo.bind` needs app context, a placement starting with `LANDING_` (`PLACEMENT_UNKNOWN`) and a valid handler (`PLACEMENT_HANDLER_INVALID`).
-- `Landing\Repo::add()` from PHP does not normalize. Pass input through `Security\RepoNormalizer::normalize($fields, $manifest, $xmlId, $appCode)` first; the result has `->fields` and `->contentRejected`.
+- `assets.class` игнорируется, `callbacks.afteradd` не вызывается (кроме `\Closure`, добавленного во время выполнения). PHP-логике нужен файловый блок `/local/blocks/` (`rules/pages-blocks.md`).
+- `landing.repo.register` / `unregister` доступны REST-приложению либо `Rights::isAdmin()`, иначе `ACCESS_DENIED`. Поиск строки: `=APP_CODE` равен коду приложения (`false` вне приложения); административный скрипт создаст дубль, а не обновит блок приложения.
+- Неизвестные ключи молча отбрасываются. Поля: `NAME`, `CONTENT`, `SECTIONS`, `PREVIEW`, `DESCRIPTION`, `ACTIVE`, `SITE_TEMPLATE_ID`. Манифест: `block`, `nodes`, `cards`, `style`, `attrs`, `menu`, `assets`, `lang`, `lang_original`. `block.*`: `name`, `section`, `type`, `dynamic`, `subtype`, `subtype_params`, `description`. `assets`: `css`/`js` (http(s), путь заканчивается `.css`/`.js`), `ext`.
+- Подтипы `widget`/`widgetvue` дают `UNSUPPORTED_BLOCK_SUBTYPE`. Виджеты регистрируй через `landing.repowidget.register`; обработчик — публичный https (`WIDGET_HANDLER_INVALID`).
+- `landing.repo.bind` требует контекст приложения, размещение с префиксом `LANDING_` (`PLACEMENT_UNKNOWN`) и корректный обработчик (`PLACEMENT_HANDLER_INVALID`).
+- PHP `Landing\Repo::add()` не нормализует данные. Сначала `Security\RepoNormalizer::normalize($fields, $manifest, $xmlId, $appCode)`; результат содержит `->fields`, `->contentRejected`.
 
-## PublicAction gateway (**Since landing 26.1100**)
+## Шлюз PublicAction (**Since landing 26.1100**)
 
-- AJAX batch: max `PublicAction::MAX_BATCH_ITEMS` (500) commands, no files, else `BATCH_LIMIT_EXCEEDED`.
-- A command without `scope` no longer inherits one from the previous command (AJAX and REST): pass `scope` in every command.
-- Exception text is returned only with `exception_handling.debug`; otherwise read the event log, type `LANDING_ACTION_EXCEPTION`.
+- Пакет AJAX: до `PublicAction::MAX_BATCH_ITEMS` (500) команд, без файлов; иначе `BATCH_LIMIT_EXCEEDED`.
+- Команда без `scope` больше не наследует его от предыдущей (AJAX и REST): передавай в каждой команде.
+- Текст исключения возвращается только с `exception_handling.debug`; иначе ищи в журнале событий тип `LANDING_ACTION_EXCEPTION`.
 
-## Files
+## Файлы
 
-- Pictures: `Manager::savePicture($file, $ext = false, $params = [], $trustedSource = false)` returns array or `false`. **Since landing 26.1100** a local path or a non-uploaded file array (e.g. from `CFile::MakeFileArray`) returns `false` unless `$trustedSource` is `true`. Pass `true` only for paths your server code built, never for request data. Older versions have no 4th argument.
-- Disk links in blocks (**Since landing 26.1100.200**): `landing.api.diskFile.download|view|info` require an authenticated user with read access to the page. Build URLs with `Controller\DiskFile::getDownloadLink($scope, $blockId, $fileId)`.
+- Изображения: `Manager::savePicture($file, $ext = false, $params = [], $trustedSource = false)` → массив либо `false`. **Since landing 26.1100** локальный путь и массив незагруженного файла (например, `CFile::MakeFileArray`) дают `false`, если `$trustedSource` не `true`. Передавай `true` только для путей серверного кода, не данных запроса. На старом ядре четвёртого аргумента нет.
+- Ссылки Диска в блоках (**Since landing 26.1100.200**): `landing.api.diskFile.download|view|info` требуют авторизованного пользователя с правом чтения страницы. URL строй через `Controller\DiskFile::getDownloadLink($scope, $blockId, $fileId)`.

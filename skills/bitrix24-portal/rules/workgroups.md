@@ -1,11 +1,11 @@
-# Workgroups, projects, collabs (socialnetwork)
+# Группы, проекты и коллабы (`socialnetwork`)
 
-One table for all: `Bitrix\Socialnetwork\WorkgroupTable` (`b_sonet_group`). Kind is `TYPE` → `Bitrix\Socialnetwork\Item\Workgroup\Type`: `Group` (`group`), `Project` (`project`), `Scrum` (`scrum`), `Collab` (`collab`). `TYPE` is nullable on old rows — also check `PROJECT = 'Y'`.
+Общая таблица `Bitrix\Socialnetwork\WorkgroupTable` (`b_sonet_group`). `TYPE` соответствует `Bitrix\Socialnetwork\Item\Workgroup\Type`: `Group` (`group`), `Project` (`project`), `Scrum` (`scrum`), `Collab` (`collab`). В старых строках `TYPE` бывает `null`; дополнительно проверяй `PROJECT = 'Y'`.
 
-## Read
+## Чтение
 
 ```php
-$group = \Bitrix\Socialnetwork\Item\Workgroup::getById($groupId);   // Workgroup|false (cached registry)
+$group = \Bitrix\Socialnetwork\Item\Workgroup::getById($groupId); // Workgroup|false, кешируемый реестр
 $isProject = $group && $group->isProject();
 
 $rows = \Bitrix\Socialnetwork\WorkgroupTable::query()
@@ -15,9 +15,9 @@ $rows = \Bitrix\Socialnetwork\WorkgroupTable::query()
     ->fetchAll();
 ```
 
-`Workgroup` item: `getId()`, `getFields()`, `getType()`, `isProject()`, `isScrumProject()`, `isCollab()`.
+Объект `Workgroup`: `getId()`, `getFields()`, `getType()`, `isProject()`, `isScrumProject()`, `isCollab()`.
 
-## Membership
+## Участники
 
 ```php
 $row = \Bitrix\Socialnetwork\UserToGroupTable::query()
@@ -30,22 +30,22 @@ $role = $row['ROLE'] ?? null;
 $isMember = in_array($role, \Bitrix\Socialnetwork\UserToGroupTable::getRolesMember(), true);   // A, E, K
 ```
 
-Roles (`UserToGroupTable::ROLE_*`): `ROLE_OWNER` `A`, `ROLE_MODERATOR` `E`, `ROLE_USER` `K`, `ROLE_BAN` `T`, `ROLE_REQUEST` `Z` (invite/request pending — not a member). `AUTO_MEMBER = 'Y'` marks users added by department sync.
+Роли `UserToGroupTable::ROLE_*`: владелец `ROLE_OWNER=A`, модератор `ROLE_MODERATOR=E`, участник `ROLE_USER=K`, заблокирован `ROLE_BAN=T`, приглашение/заявка `ROLE_REQUEST=Z` (ещё не участник). `AUTO_MEMBER='Y'` — добавлен синхронизацией отделов.
 
-User's groups: `UserToGroupTable::query()->setSelect(['GROUP_ID'])->where('USER_ID', $userId)->whereIn('ROLE', UserToGroupTable::getRolesMember())`.
+Группы пользователя: `UserToGroupTable::query()->setSelect(['GROUP_ID'])->where('USER_ID', $userId)->whereIn('ROLE', UserToGroupTable::getRolesMember())`.
 
-## Access checks
+## Проверка доступа
 
 ```php
 $canView = \Bitrix\Socialnetwork\Helper\Workgroup\Access::canView(['groupId' => $groupId, 'userId' => $userId]);
 $canModify = \Bitrix\Socialnetwork\Helper\Workgroup\Access::canModify(['groupId' => $groupId, 'userId' => $userId]);
 ```
 
-Also `canJoin`, `canLeave` (same `['groupId', 'userId']` params, default user = current); `canExclude`, `canSetModerator`, … take `userId` = target member and the actor in `fromUserId` (default current). Feature rights inside a group are legacy: `CSocNetFeatures::IsActiveFeature(SONET_ENTITY_GROUP, $groupId, 'files')`, `CSocNetFeaturesPerms::CanPerformOperation($userId, SONET_ENTITY_GROUP, $groupId, 'tasks', 'view_all')`.
+Также `canJoin`, `canLeave` с `['groupId', 'userId']`, по умолчанию текущий пользователь. `canExclude`, `canSetModerator`, … принимают целевого участника в `userId`, инициатора в `fromUserId` (по умолчанию текущий). Права инструментов legacy: `CSocNetFeatures::IsActiveFeature(SONET_ENTITY_GROUP, $groupId, 'files')`, `CSocNetFeaturesPerms::CanPerformOperation($userId, SONET_ENTITY_GROUP, $groupId, 'tasks', 'view_all')`.
 
-## Writes
+## Запись
 
-- `WorkgroupTable::add()/update()` and `UserToGroupTable::add()` throw `NotImplementedException`.
-- Members: `Bitrix\Socialnetwork\Control\ServiceFactory::getInstance()->getMemberService($groupId)->add($command)` with `(new \Bitrix\Socialnetwork\Control\Member\Command\MembersCommand())->setGroupId($groupId)->setMembers(['U' . $userId])->setInitiatorId($currentUserId)`; returns `Result`. Members are access codes (`U<id>`, departments too). The service checks no initiator rights — call `Access::canModify()` first.
-- Compat only: `CSocNetUserToGroup::Add()`, `CSocNetGroup::*`.
-- Group disk storage: `Bitrix\Disk\Driver::getInstance()->getStorageByGroupId($groupId)` (see `rules/disk.md`).
+- `WorkgroupTable::add()/update()` и `UserToGroupTable::add()` бросают `NotImplementedException`.
+- Участники: `Bitrix\Socialnetwork\Control\ServiceFactory::getInstance()->getMemberService($groupId)->add($command)` с `(new \Bitrix\Socialnetwork\Control\Member\Command\MembersCommand())->setGroupId($groupId)->setMembers(['U' . $userId])->setInitiatorId($currentUserId)` возвращает `Result`. Участники задаются кодами доступа (`U<id>`, также отделы). Сервис не проверяет права инициатора: сначала `Access::canModify()`.
+- Для совместимости: `CSocNetUserToGroup::Add()`, `CSocNetGroup::*`.
+- Диск группы: `Bitrix\Disk\Driver::getInstance()->getStorageByGroupId($groupId)` (`rules/disk.md`).

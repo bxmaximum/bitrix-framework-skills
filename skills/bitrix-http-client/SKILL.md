@@ -1,22 +1,25 @@
 ---
 name: bitrix-http-client
-description: 'Bitrix\Main\Web\HttpClient — legacy get/post/download, PSR-18 sendRequest, async requests, http_client_options, HttpDebug logging, SSRF protection, GeoIp\Manager. Use for outgoing HTTP calls, webhooks, file downloads and IP geolocation.'
+description: 'Используй для исходящих HTTP-запросов Битрикса через Web\HttpClient: вебхуки, загрузка файлов, PSR-18 sendRequest и асинхронные вызовы. Настройки, защита SSRF и GeoIp.'
 ---
 
 # HttpClient
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| GET/POST/JSON/download, PSR-18 requests, multipart, async | `rules/requests.md` |
-| Options, global defaults, logging, SSRF, `CHTTP` replacements | `rules/config-security.md` |
-| Country/city/time zone by IP | `rules/geoip.md` |
+| GET/POST/JSON/загрузка, запросы PSR-18, multipart, асинхронность | `rules/requests.md` |
+| Параметры, глобальные настройки, логи, SSRF, замены `CHTTP` | `rules/config-security.md` |
+| Страна/город/часовой пояс по IP | `rules/geoip.md` |
 
-## Invariants
+## Обязательные правила
 
-- Only `Bitrix\Main\Web\HttpClient`; `CHTTP` and raw `curl_*` / `file_get_contents($url)` are compat only.
-- Set `socketTimeout` and `streamTimeout` explicitly: defaults are 30 s and 60 s.
-- URLs from users, webhooks or imports: `'privateIp' => false` (the default `true` allows internal addresses).
-- Check the status before decoding; legacy calls return `false` on transport errors (`getError()`), PSR-18 throws `ClientException`.
-- Stream large bodies to a file (`download()`), don't hold them in memory.
+- Используй `Bitrix\Main\Web\HttpClient`; `CHTTP`, прямые `curl_*` / `file_get_contents($url)` допустимы только для совместимости.
+- Явно задавай `socketTimeout` и `streamTimeout`; по умолчанию 30 и 60 секунд.
+- Для URL от пользователя, вебхука или импорта ставь `'privateIp' => false` (стандартный `true` разрешает внутренние адреса).
+- Проверяй статус до разбора ответа; старые вызовы при транспортной ошибке возвращают `false` (`getError()`), PSR-18 выбрасывает `ClientException`.
+- Большие ответы сохраняй потоком в файл (`download()`), не держи в памяти.

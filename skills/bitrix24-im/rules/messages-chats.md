@@ -1,13 +1,13 @@
-# Messages and chats
+# Сообщения и чаты
 
-## Two paths, same engine
+## Два API одного механизма
 
-| Path | Returns | Rights check | After-send work |
+| API | Результат | Проверка прав | Работа после отправки |
 | --- | --- | --- | --- |
-| `\CIMChat::AddMessage()` (group), `\CIMMessage::Add()` (private), `\CIMMessenger::Add()` (any `DIALOG_ID`) | `int\|false`; error in `$APPLICATION->GetException()` | yes, unless `SYSTEM` or `SKIP_USER_CHECK` = `Y` | waits (`WAIT_FULL_EXECUTION` defaults to `Y`) |
-| `Chat::getInstance($id)->withContextUser($uid)->sendMessage(Message, ?SendingConfig)` | `SendResult`: `isSuccess()`, `getMessageId()`, `getPromise()` | no, call `canDo(Action::Send)` | background job |
+| `\CIMChat::AddMessage()` (группа), `\CIMMessage::Add()` (личное), `\CIMMessenger::Add()` (любой `DIALOG_ID`) | `int\|false`; ошибка в `$APPLICATION->GetException()` | есть, кроме `SYSTEM`/`SKIP_USER_CHECK` = `Y` | ожидает; `WAIT_FULL_EXECUTION` по умолчанию `Y` |
+| `Chat::getInstance($id)->withContextUser($uid)->sendMessage(Message, ?SendingConfig)` | `SendResult`: `isSuccess()`, `getMessageId()`, `getPromise()` | нет; сначала `canDo(Action::Send)` | фоновая задача |
 
-Both end in `Bitrix\Im\V2\Chat::sendMessage()`; the kernel's own REST `im.v2.Chat.Message.send` calls `CIMMessenger::Add()`.
+Оба пути приходят в `Bitrix\Im\V2\Chat::sendMessage()`. Собственный REST ядра `im.v2.Chat.Message.send` использует `CIMMessenger::Add()`.
 
 ```php
 <?php
@@ -38,10 +38,10 @@ final class OrderChat
             'TYPE' => Chat::IM_TYPE_CHAT,
             'ENTITY_TYPE' => 'VENDOR_ORDER',
             'ENTITY_ID' => (string)$orderId,
-            'TITLE' => 'Order #' . $orderId,
-            'AUTHOR_ID' => $ownerId,          // required; 0 is logged as deprecated
+            'TITLE' => 'Заказ №' . $orderId,
+            'AUTHOR_ID' => $ownerId,          // обязателен; 0 журналируется как устаревший вариант
             'USERS' => $userIds,
-            'SKIP_ADD_MESSAGE' => 'Y',        // no greeting/"users added" lines
+            'SKIP_ADD_MESSAGE' => 'Y',        // без приветствия и строк о добавлении пользователей
         ]);
 
         return $add->isSuccess() ? (new Result())->setData(['chatId' => $add->getChatId()]) : $add;
@@ -49,12 +49,12 @@ final class OrderChat
 
     public function post(int $chatId, int $authorId, string $bbText): Result
     {
-        $chat = Chat::getInstance($chatId)->withContextUser($authorId);  // NullChat if missing
+        $chat = Chat::getInstance($chatId)->withContextUser($authorId);  // NullChat, если чата нет
         if (!$chat->canDo(Action::Send)) {
-            return (new Result())->addError(new Error('Cannot write to chat', 'ACCESS_DENIED'));
+            return (new Result())->addError(new Error('Нет права записи в чат', 'ACCESS_DENIED'));
         }
         $send = $chat->sendMessage((new Message())->setMessage($bbText)->setAuthorId($authorId));
-        $send->getPromise()?->wait();   // only in CLI/agents: finish push, counters, events now
+        $send->getPromise()?->wait();   // в CLI/агенте завершить push, счётчики и события сейчас
 
         return $send;
     }
@@ -64,7 +64,7 @@ final class OrderChat
         return \CIMChat::AddMessage([
             'TO_CHAT_ID' => $chatId,
             'FROM_USER_ID' => 0,
-            'SYSTEM' => 'Y',                  // no author, skips rights check and slash commands
+            'SYSTEM' => 'Y',                  // без автора; обходит права и slash-команды
             'MESSAGE' => $text,
             'URL_PREVIEW' => 'N',
         ]);
@@ -72,31 +72,31 @@ final class OrderChat
 }
 ```
 
-- `addUniqueChat()` locks on `ENTITY_TYPE`+`ENTITY_ID` and returns the existing chat when present; `addChat()` always creates. Legacy `(new \CIMChat($userId))->Add($params)` wraps `addChat()`.
-- Chat params: `TYPE` (`Chat::IM_TYPE_CHAT`, `IM_TYPE_OPEN`, `IM_TYPE_CHANNEL`), `TITLE`, `DESCRIPTION`, `USERS`, `MANAGERS`, `AUTHOR_ID`, `ENTITY_TYPE`, `ENTITY_ID`, `ENTITY_DATA_1`, `AVATAR`, `COLOR`, `SKIP_ADD_MESSAGE`.
-- Dialog ids: `chat123` for chats, a user id for private dialogs. `\Bitrix\Im\Dialog::getChatId($dialogId, $userId)` resolves them; `ChatFactory::getInstance()->getPrivateChat($fromUserId, $toUserId)` gives the private chat.
-- Members: `$chat->addUsers([$id])`, `$chat->deleteUser($id)` (returns `Result`); legacy `(new \CIMChat($actorId))->AddUser($chatId, $userIds)`.
-- Text is BB-code (`[B]`, `[URL=…]`, `[USER=5][/USER]`, `[CHAT=12][/CHAT]`); max 20000 chars.
+- `addUniqueChat()` блокирует пару `ENTITY_TYPE`+`ENTITY_ID` и возвращает существующий чат; `addChat()` всегда создаёт. Legacy `(new \CIMChat($userId))->Add($params)` вызывает `addChat()`.
+- Параметры: `TYPE` (`Chat::IM_TYPE_CHAT`, `IM_TYPE_OPEN`, `IM_TYPE_CHANNEL`), `TITLE`, `DESCRIPTION`, `USERS`, `MANAGERS`, `AUTHOR_ID`, `ENTITY_TYPE`, `ENTITY_ID`, `ENTITY_DATA_1`, `AVATAR`, `COLOR`, `SKIP_ADD_MESSAGE`.
+- ID диалога: `chat123` для чата, ID пользователя для личного диалога. Преобразование: `\Bitrix\Im\Dialog::getChatId($dialogId, $userId)`; личный чат: `ChatFactory::getInstance()->getPrivateChat($fromUserId, $toUserId)`.
+- Участники: `$chat->addUsers([$id])`, `$chat->deleteUser($id)` возвращают `Result`; legacy: `(new \CIMChat($actorId))->AddUser($chatId, $userIds)`.
+- Текст — BB-код (`[B]`, `[URL=…]`, `[USER=5][/USER]`, `[CHAT=12][/CHAT]`), до 20000 символов.
 
-## Attach and keyboard
+## Вложения и клавиатура
 
 ```php
 $attach = new \CIMMessageParamAttach(null, '#29619b');
-$attach->AddLink(['NAME' => 'Order #15', 'LINK' => '/shop/orders/15/']);
-$attach->AddGrid([['NAME' => 'Total', 'VALUE' => '1 500', 'DISPLAY' => 'LINE']]);
-\CIMChat::AddMessage(['TO_CHAT_ID' => $chatId, 'FROM_USER_ID' => $userId, 'MESSAGE' => 'Paid', 'ATTACH' => $attach]);
+$attach->AddLink(['NAME' => 'Заказ №15', 'LINK' => '/shop/orders/15/']);
+$attach->AddGrid([['NAME' => 'Итого', 'VALUE' => '1 500', 'DISPLAY' => 'LINE']]);
+\CIMChat::AddMessage(['TO_CHAT_ID' => $chatId, 'FROM_USER_ID' => $userId, 'MESSAGE' => 'Оплачено', 'ATTACH' => $attach]);
 ```
 
-V2: `(new Message())->setAttach($attach)->setKeyboard($keyboard)`. Keyboards (`\Bitrix\Im\Bot\Keyboard`) with command buttons need a bot: `rules/bots.md`.
+V2: `(new Message())->setAttach($attach)->setKeyboard($keyboard)`. Кнопкам команд `\Bitrix\Im\Bot\Keyboard` нужен бот: `rules/bots.md`.
 
-## Events (module `im`)
+## События модуля `im`
 
-| Event | Handler arguments | Notes |
+| Событие | Аргументы обработчика | Поведение |
 | --- | --- | --- |
-| `OnBeforeMessageNotifyAdd` | `array &$fields` | every send despite the name; return `false` or `['result' => false, 'reason' => '…']` to cancel |
-| `OnBeforeChatMessageAdd` | `array $messageFields, array $chatFields` | non-private chats; cancel as above; `['fields' => [...]]` modifies |
-| `OnAfterMessagesAdd` | `int $messageId, array $fields` | runs in the background part |
+| `OnBeforeMessageNotifyAdd` | `array &$fields` | любая отправка, несмотря на имя; `false` либо `['result' => false, 'reason' => '…']` отменяет её |
+| `OnBeforeChatMessageAdd` | `array $messageFields, array $chatFields` | групповые чаты; отмена как выше, `['fields' => [...]]` меняет поля |
+| `OnAfterMessagesAdd` | `int $messageId, array $fields` | выполняется в фоновой части |
 | `OnAfterMessagesDelete` | `int $messageId, array $fields, array $flags` | |
-| `OnChatUserAdd` | `Main\Event`: `CHAT_ID`, `NEW_USERS`, `CHAT`, `ENTITY_TYPE`, `ENTITY_ID` | register with `addEventHandler` (gets the event object) |
+| `OnChatUserAdd` | `Main\Event`: `CHAT_ID`, `NEW_USERS`, `CHAT`, `ENTITY_TYPE`, `ENTITY_ID` | регистрируй через `addEventHandler`, получает объект события |
 
-Entity chats of other modules (tasks, projects) also send typed events `On<Action>ExternalChat<EntityType>`, e.g. `OnAfterSendMessageExternalChatTasksTask` with `AfterSendMessageEvent::getChat()`, `getMessage()`.
+Чаты сущностей других модулей (задачи, проекты) также отправляют типизированные `On<Action>ExternalChat<EntityType>`, например `OnAfterSendMessageExternalChatTasksTask`; методы `AfterSendMessageEvent::getChat()`, `getMessage()`.

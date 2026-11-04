@@ -1,22 +1,22 @@
-# Module installer
+# Установщик модуля
 
-## Scaffold
+## Генерация каркаса
 
-`php bitrix.php make:module vendor.module --name='Vendor Module'` (**Since main 25.900**; older: create files by hand) writes into `/local/modules/vendor.module/`:
+`php bitrix.php make:module vendor.module --name='Vendor Module'` (**Since main 25.900**; раньше создавай файлы вручную) пишет в `/local/modules/vendor.module/`:
 
 - `install/index.php`, `install/version.php`, `default_option.php`, `lang/ru/install/index.php`;
-- empty `install/mysql/install.sql` / `uninstall.sql` — on main 26.600+ delete them and use `install/migrations/` (`rules/install-migrations.md`).
+- Пустые `install/mysql/install.sql` / `uninstall.sql`: на main 26.600+ удали их и используй `install/migrations/` (`rules/install-migrations.md`).
 
-No `.settings.php`, no `lib/`. `dev:module-skeleton vendor.module` adds empty `lib/` layer dirs (`Controller`, `Entity`, `Internals/…`, `Service`, …).
+Нет `.settings.php` и `lib/`. `dev:module-skeleton vendor.module` добавляет пустые каталоги слоёв `lib/` (`Controller`, `Entity`, `Internals/…`, `Service`, …).
 
 ```
 /local/modules/vendor.module/
 ├── install/{index.php, version.php, migrations/}
-├── lang/<lang>/install/index.php   # mirrors the source path
+├── lang/<lang>/install/index.php   # повторяет путь исходного файла
 ├── lib/                            # PSR-4 Vendor\Module\...
 ├── .settings.php                   # services, controllers, console, messenger
 ├── default_option.php
-└── include.php                     # optional; returning false = module not loaded
+└── include.php                     # необязателен; return false означает отказ загрузки
 ```
 
 `install/version.php`: `$arModuleVersion = ['VERSION' => '1.0.0', 'VERSION_DATE' => '2026-09-30 12:00:00'];`
@@ -66,7 +66,7 @@ class vendor_module extends CModule
 
     public function InstallDB(): bool
     {
-        $result = $this->installMigrations(); // main 26.600+, see rules/install-migrations.md
+        $result = $this->installMigrations(); // main 26.600+, см. rules/install-migrations.md
         if (!$result->isSuccess())
         {
             $GLOBALS['APPLICATION']->ThrowException(implode('<br>', $result->getErrorMessages()));
@@ -79,29 +79,29 @@ class vendor_module extends CModule
 
     public function UnInstallDB(bool $dropTables = true): bool
     {
-        $result = $this->uninstallMigrations($dropTables); // true = DROP module tables (data loss); also unregisters events.php handlers
+        $result = $this->uninstallMigrations($dropTables); // true = DROP таблиц модуля (потеря данных); также снимает регистрации events.php
         if (!$result->isSuccess())
         {
             $GLOBALS['APPLICATION']->ThrowException(implode('<br>', $result->getErrorMessages()));
             return false;
         }
-        Option::delete($this->MODULE_ID);                   // all module options
-        ModuleManager::unRegisterModule($this->MODULE_ID);  // also removes agents and group rights
+        Option::delete($this->MODULE_ID);                   // все настройки модуля
+        ModuleManager::unRegisterModule($this->MODULE_ID);  // также удаляет агенты и групповые права
 
         return true;
     }
 }
 ```
 
-- Name/description come from `lang/<lang>/install/index.php` (`$MESS['VENDOR_MODULE_NAME'] = '…';`); a wrong path or code shows an empty name in *Settings → Modules*.
-- `InstallFiles()`: `CopyDirFiles($from, $to, $rewrite = true, $recursive = false)` — pass `true` as 4th arg or subfolders are skipped: `CopyDirFiles(__DIR__ . '/components', $_SERVER['DOCUMENT_ROOT'] . '/local/components', true, true)`.
-- `UnInstallFiles()`: `DeleteDirFilesEx('/local/components/vendor')` (path from `DOCUMENT_ROOT`, recursive). `DeleteDirFiles($fromDir, $toDir)` only unlinks top-level files of `$toDir` named like those in `$fromDir` — fine for `admin/` stubs, not for directories.
-- **Since main 26.700** `registerModule()` is idempotent (duplicate ignored); older: guard with `ModuleManager::isModuleInstalled()`.
-- `unRegisterModule()` removes agents (`CAgent::RemoveModuleAgents`) and group rights only; tables, event handlers, options and files are yours to remove.
+- Имя/описание берутся из `lang/<lang>/install/index.php` (`$MESS['VENDOR_MODULE_NAME'] = '…';`); неверный путь или код дают пустое имя в «Настройки → Модули».
+- `InstallFiles()`: `CopyDirFiles($from, $to, $rewrite = true, $recursive = false)` — передавай `true` четвёртым аргументом для копирования подкаталогов: `CopyDirFiles(__DIR__ . '/components', $_SERVER['DOCUMENT_ROOT'] . '/local/components', true, true)`.
+- `UnInstallFiles()`: `DeleteDirFilesEx('/local/components/vendor')` (путь от `DOCUMENT_ROOT`, рекурсивно). `DeleteDirFiles($fromDir, $toDir)` удаляет только файлы верхнего уровня `$toDir`, имена которых есть в `$fromDir`: подходит для заглушек `admin/`, но не каталогов.
+- **Since main 26.700** `registerModule()` идемпотентен (повтор игнорируется); раньше проверяй `ModuleManager::isModuleInstalled()`.
+- `unRegisterModule()` удаляет только агенты (`CAgent::RemoveModuleAgents`) и групповые права. Таблицы, обработчики, настройки и файлы удаляй самостоятельно.
 
-## Fallback before main 26.600
+## До main 26.600
 
-No `installMigrations()`: register first (module classes autoload only after registration), then create state yourself — each call idempotent.
+Метода `installMigrations()` нет: сначала регистрируй модуль (до этого его классы не загружаются), затем создавай состояние самостоятельно. Каждый вызов должен быть идемпотентным.
 
 ```php
 ModuleManager::registerModule($this->MODULE_ID);
@@ -116,7 +116,7 @@ if (!$connection->isTableExists(PostTable::getTableName()))
 \CAgent::AddAgent(SyncAgent::class . '::run();', $this->MODULE_ID, 'N', 3600, existError: false);
 ```
 
-Uninstall mirrors it: `unRegisterEventHandler()` with identical args, `$connection->dropTable(PostTable::getTableName())` (**destroys data** — offer "keep tables"), `Option::delete()`, `unRegisterModule()`.
+Удаление симметрично: `unRegisterEventHandler()` с теми же аргументами, `$connection->dropTable(PostTable::getTableName())` (**уничтожает данные** — предложи сохранить таблицы), `Option::delete()`, `unRegisterModule()`.
 
-- `registerEventHandler()` is idempotent (insert-ignore by handler hash).
-- `main:OnAfterUserAdd` is a legacy event: the handler gets `array &$arFields`, not `Event` (`bitrix-events`).
+- `registerEventHandler()` идемпотентен: вставка с игнорированием по хешу обработчика.
+- `main:OnAfterUserAdd` — старое событие: обработчик получает `array &$arFields`, не `Event` (`bitrix-events`).

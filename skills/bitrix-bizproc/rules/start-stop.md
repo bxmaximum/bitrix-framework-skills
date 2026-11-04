@@ -1,19 +1,19 @@
-# Start and stop workflows
+# Запуск и остановка процессов
 
-| Class | Role |
+| Класс | Назначение |
 | --- | --- |
-| `CBPDocument` | Start, terminate, kill, external events, states, rights |
-| `CBPRuntime` | Runtime singleton; workflow ids |
-| `CBPWorkflowTemplateLoader` | Template search and load |
-| `CBPDocumentService` | Bridge to the document provider of the owner module |
+| `CBPDocument` | Запуск, остановка, удаление, внешние события, состояния, права |
+| `CBPRuntime` | Единственный экземпляр исполнителя; ID процессов |
+| `CBPWorkflowTemplateLoader` | Поиск и загрузка шаблонов |
+| `CBPDocumentService` | Доступ к провайдеру документа его модуля |
 | `CBPDocumentEventType` | `Create`, `Edit`, `Manual`, `Automation`, `Trigger`, … |
 
-Normalize ids with `CBPHelper::parseDocumentId($documentId)` or `CBPHelper::normalizeComplexDocumentId($documentId)` (returns `null` for a bad id).
+Нормализуй ID через `CBPHelper::parseDocumentId($documentId)` либо `CBPHelper::normalizeComplexDocumentId($documentId)` (при неверном ID возвращает `null`).
 
-## CBPDocument
+## Методы CBPDocument
 
 ```php
-$documentId = ['crm', 'CCrmDocumentDeal', 'DEAL_' . $dealId]; // shape is provider-specific
+$documentId = ['crm', 'CCrmDocumentDeal', 'DEAL_' . $dealId]; // формат задаёт провайдер
 $errors = [];
 
 $canStart = \CBPDocument::canUserOperateDocument(
@@ -22,11 +22,15 @@ $canStart = \CBPDocument::canUserOperateDocument(
     $documentId,
 );
 
+if (!$canStart) {
+    throw new \RuntimeException('Нет права запуска процесса');
+}
+
 $workflowId = \CBPDocument::startWorkflow(
     $templateId,
     $documentId,
     [
-        \CBPDocument::PARAM_TAGRET_USER => 'user_' . $userId, // kernel spelling
+        \CBPDocument::PARAM_TAGRET_USER => 'user_' . $userId, // написание константы в ядре
         \CBPDocument::PARAM_DOCUMENT_EVENT_TYPE => \CBPDocumentEventType::Manual,
     ] + $templateParameters,
     $errors,
@@ -35,18 +39,18 @@ $workflowId = \CBPDocument::startWorkflow(
 \CBPDocument::autoStartWorkflows($documentType, \CBPDocumentEventType::Create, $documentId, [], $errors);
 \CBPDocument::sendExternalEvent($workflowId, $eventName, $eventParameters, $errors);
 \CBPDocument::terminateWorkflow($workflowId, $documentId, $errors, 'Cancelled');
-$errors = \CBPDocument::killWorkflow($workflowId, true, $documentId); // DANGER: deletes instance, tasks, tracking
+$errors = \CBPDocument::killWorkflow($workflowId, true, $documentId); // ОПАСНО: удаляет экземпляр, задания и журнал
 ```
 
-Also: `getTemplatesForStart($userId, $documentType, $documentId)`, `getDocumentStates($documentType, $documentId)`, `getDocumentState($documentId, $workflowId)`.
+Также: `getTemplatesForStart($userId, $documentType, $documentId)`, `getDocumentStates($documentType, $documentId)`, `getDocumentState($documentId, $workflowId)`.
 
-Always pass the real initiator in `PARAM_TAGRET_USER`: with pilot publication enabled it selects which template version runs.
+Передавай настоящего инициатора в `PARAM_TAGRET_USER`: при пилотной публикации от него зависит выбранная версия шаблона. Если `$canStart === false`, прекрати обработку до `startWorkflow()`; пример показывает вызовы API, а не готовую цепочку выполнения.
 
-## Pre-generated workflow id (**Since bizproc 26.1050**)
+## Заранее созданный ID процесса (**Since bizproc 26.1050**)
 
-Create it with `CBPRuntime::generateWorkflowId()` and pass it as `CBPDocument::PARAM_PRE_GENERATED_WORKFLOW_ID`. An invalid value is silently replaced (your stored id no longer matches); `CBPStateService::addWorkflow()` throws `InvalidWorkflowId`. Validate ids from requests with `CBPRuntime::isValidWorkflowId($id)`.
+Создай ID через `CBPRuntime::generateWorkflowId()` и передай в `CBPDocument::PARAM_PRE_GENERATED_WORKFLOW_ID`. Неверное значение заменяется молча, поэтому сохранённый ID разойдётся с фактическим. `CBPStateService::addWorkflow()` бросает `InvalidWorkflowId`. Проверяй ID запроса через `CBPRuntime::isValidWorkflowId($id)`. На старом модуле сохраняй ID, возвращённый запуском.
 
-## Starter (D7)
+## Запуск через Starter (D7)
 
 ```php
 use Bitrix\Bizproc\Starter\Dto\ContextDto;
@@ -69,12 +73,12 @@ if ($result->isSuccess()) {
 }
 ```
 
-Scenarios: `onManual`, `onDocumentAdd`, `onDocumentUpdate`, `onEvent` (triggers, `rules/triggers.md`), `onScript`, `onRest`. Facade with ready-made starters: `Bitrix\Bizproc\Public\Service\Workflow\StarterService`. AJAX: `Bitrix\Bizproc\Controller\Workflow\Starter`.
+Сценарии: `onManual`, `onDocumentAdd`, `onDocumentUpdate`, `onEvent` (триггеры, `rules/triggers.md`), `onScript`, `onRest`. Фасад готовых запусков: `Bitrix\Bizproc\Public\Service\Workflow\StarterService`. AJAX: `Bitrix\Bizproc\Controller\Workflow\Starter`.
 
-## WORKFLOW pseudo-document
+## Псевдодокумент WORKFLOW
 
-`['bizproc', \Bitrix\Bizproc\Public\Entity\Document\Workflow::class, 'WORKFLOW']` is a document type for processes without an entity. **Since bizproc 26.1200** `CreateWorkflow`, `CreateAutomation` and `WriteDocument` on it pass only for admins (`CBPWorkflowTemplateUser::isAdmin()`); viewing and starting stay open.
+`['bizproc', \Bitrix\Bizproc\Public\Entity\Document\Workflow::class, 'WORKFLOW']` — тип процессов без сущности. **Since bizproc 26.1200** операции `CreateWorkflow`, `CreateAutomation`, `WriteDocument` доступны только администраторам (`CBPWorkflowTemplateUser::isAdmin()`); просмотр и запуск остаются открытыми. На старом модуле проверяй административные права явно.
 
-## Completion events
+## События завершения
 
-`bizproc:OnWorkflowComplete($workflowId, $status)` (legacy) fires on completion and on termination (`terminateWorkflow()`, `killWorkflow($id, true)`; `$status` = `CBPWorkflowStatus::Terminated`). A successful `killWorkflow()` also fires D7 `bizproc:onAfterWorkflowKill` with param `ID`; `killWorkflow($id, false)` (the stuck-pause agent, `rules/runtime-ops.md`) fires only that one. Trackers that must see every end subscribe to both (`bitrix-events`).
+Legacy `bizproc:OnWorkflowComplete($workflowId, $status)` срабатывает при завершении и остановке (`terminateWorkflow()`, `killWorkflow($id, true)`; `$status` = `CBPWorkflowStatus::Terminated`). Успешный `killWorkflow()` также отправляет D7 `bizproc:onAfterWorkflowKill` с параметром `ID`. `killWorkflow($id, false)` (агент зависших пауз, `rules/runtime-ops.md`) отправляет только D7-событие. Для учёта всех окончаний подпишись на оба (`bitrix-events`).

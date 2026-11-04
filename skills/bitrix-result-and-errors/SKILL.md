@@ -1,17 +1,19 @@
 ---
 name: bitrix-result-and-errors
-description: 'Bitrix\Main\Result, Error, ErrorCollection, ORM AddResult/UpdateResult/DeleteResult, EventResult; Result vs exceptions, error codes, errors in controllers. Use when designing service APIs or passing errors across module boundaries.'
+description: 'Используй для контрактов сервисов Битрикса: Main\Result, Error, ErrorCollection и стабильные коды ошибок. AddResult/UpdateResult ORM, ответы контроллера и границы исключений.'
 ---
 
-# Result and Error
+# Result и Error
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-## Contract
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-- Expected failures (validation, business rule, not found, no rights) → `Result` with `Error`s.
-- Broken state or contract (module missing, DB down, misconfiguration, bug) → exception.
-- One method, one contract: always a `Result`, or a value plus exceptions for the exceptional case. Never `bool`/`null`/`-1`/`['error' => …]`.
+## Контракт
+
+- Ожидаемый отказ (валидация, бизнес-правило, отсутствие записи или прав) → `Result` с `Error`.
+- Нарушенное состояние/контракт (нет модуля, БД недоступна, неверная конфигурация, ошибка кода) → исключение.
+- Один метод — один контракт: всегда `Result` либо значение с исключениями для исключительных ситуаций. Не смешивай `bool`/`null`/`-1`/`['error' => …]`.
 
 ## `Bitrix\Main\Result`
 
@@ -22,26 +24,26 @@ use Bitrix\Main\Result;
 $result = new Result();
 if ($title === '')
 {
-    return $result->addError(new Error('Title required', 'BLOG_POST_TITLE_EMPTY', ['field' => 'title']));
+    return $result->addError(new Error('Нужен заголовок', 'BLOG_POST_TITLE_EMPTY', ['field' => 'title']));
 }
 
 return $result->setData(['id' => $id]);
 ```
 
-- `isSuccess()`, `addError(Error)`, `addErrors(Error[])`, `getErrors()`, `getError()` (first or `null`), `getErrorMessages()`, `getErrorCollection()`, `setData(array)`, `getData()`. Setters return `$this`.
-- `setData()` silently drops `SqlExpression` values.
+- `isSuccess()`, `addError(Error)`, `addErrors(Error[])`, `getErrors()`, `getError()` (первая ошибка либо `null`), `getErrorMessages()`, `getErrorCollection()`, `setData(array)`, `getData()`. Сеттеры возвращают `$this`.
+- `setData()` молча отбрасывает значения `SqlExpression`.
 
-## `Error` and codes
+## `Error` и коды
 
-`new Error($message, $code = 0, $customData = null)`. JSON form: `{"message", "code", "customData"}`.
+`new Error($message, $code = 0, $customData = null)`. Форма JSON: `{"message", "code", "customData"}`.
 
-- Codes are stable and machine-readable: module + entity + reason (`BLOG_POST_NOT_FOUND`), kept in constants. Clients branch on the code, not the text.
-- Messages via `Loc::getMessage('BLOG_ERROR_POST_TITLE_EMPTY')`.
-- `ErrorCollection`: `new ErrorCollection([$error])`, `setError()`, `add([...])`, `getErrorByCode('CODE')`, iterable, `isEmpty()`, `toArray()`.
+- Коды стабильны и пригодны для программной обработки: модуль + сущность + причина (`BLOG_POST_NOT_FOUND`), хранятся в константах. Клиент выбирает поведение по коду, не по тексту.
+- Сообщения получай через `Loc::getMessage('BLOG_ERROR_POST_TITLE_EMPTY')`.
+- `ErrorCollection`: `new ErrorCollection([$error])`, `setError()`, `add([...])`, `getErrorByCode('CODE')`, перебор, `isEmpty()`, `toArray()`.
 
-## Typed result
+## Типизированный результат
 
-Give callers getters instead of `getData()['post']`:
+Предоставляй методы чтения вместо `getData()['post']`:
 
 ```php
 final class CreatePostResult extends \Bitrix\Main\Result
@@ -61,13 +63,13 @@ final class CreatePostResult extends \Bitrix\Main\Result
 }
 ```
 
-## ORM results (`Bitrix\Main\ORM\Data\*`)
+## Результаты ORM (`Bitrix\Main\ORM\Data\*`)
 
 - `AddResult`: `getId()`, `getPrimary()`, `getObject()`.
 - `UpdateResult`: `getId()`, `getPrimary()`, `getAffectedRowsCount()`.
-- `DeleteResult`: no methods of its own (no affected-rows count).
-- `Bitrix\Main\Entity\*Result` are compat aliases. Write `ORM\Data\*`.
-- A failed ORM result whose errors nobody read (`isSuccess()` / `getErrors()`) raises `E_USER_WARNING` on destruct. Always check it and return it, or copy its errors up.
+- `DeleteResult`: своих методов нет, включая число затронутых строк.
+- `Bitrix\Main\Entity\*Result` — псевдонимы совместимости. Используй `ORM\Data\*`.
+- Неуспешный результат ORM, ошибки которого никто не прочитал (`isSuccess()` / `getErrors()`), при уничтожении вызывает `E_USER_WARNING`. Всегда проверяй его и возвращай либо передавай ошибки выше.
 
 ```php
 $add = PostTable::add(['TITLE' => $title]);
@@ -78,18 +80,18 @@ if (!$add->isSuccess())
 $id = $add->getId();
 ```
 
-## Other result types
+## Другие результаты
 
-- `EventResult` (`SUCCESS`, `ERROR`, `UNDEFINED`) is a handler's answer, not a service result: `bitrix-events`.
-- `ValidationResult` (`bitrix-validation`) extends `Result`: add its errors to the service result.
+- `EventResult` (`SUCCESS`, `ERROR`, `UNDEFINED`) — ответ обработчика, а не результат сервиса (`bitrix-events`).
+- `ValidationResult` (`bitrix-validation`) наследует `Result`: добавляй его ошибки в результат сервиса.
 
-## Controllers
+## Контроллеры
 
-`$this->addErrors($result->getErrors()); return null;` gives `{"status":"error","data":null,"errors":[…]}`. Envelope details: `bitrix-controllers`.
+`$this->addErrors($result->getErrors()); return null;` даёт `{"status":"error","data":null,"errors":[…]}`. Обёртка описана в `bitrix-controllers`.
 
-## Exceptions at the boundary
+## Исключения на границе
 
-Catch at the module/controller edge, log, return a generic error:
+Перехватывай на границе модуля/контроллера, записывай в лог и возвращай общую ошибку:
 
 ```php
 try
@@ -98,10 +100,17 @@ try
 }
 catch (\Bitrix\Main\SystemException $e)
 {
-    $this->logger->error('Run failed', ['exception' => $e]);
-    return (new Result())->addError(new Error('Internal error', 'VENDOR_INTERNAL_ERROR'));
+    $this->logger->error('Выполнение завершилось ошибкой', ['exception' => $e]);
+    return (new Result())->addError(new Error('Внутренняя ошибка', 'VENDOR_INTERNAL_ERROR'));
 }
 ```
 
-- Never swallow `\Throwable` without logging.
-- Developer mistakes (`InvalidArgumentException`, `LogicException`, `TypeError`) and "can't happen" domain states (division by zero in a money type) stay exceptions.
+- Не поглощай `\Throwable` без записи в журнал.
+- Ошибки разработчика (`InvalidArgumentException`, `LogicException`, `TypeError`) и невозможные состояния предметной области (деление на ноль в денежном типе) остаются исключениями.
+
+
+## Текст исключений в AJAX (**Since main 26.1000**)
+
+В `Engine\Controller` при `exception_handling.debug=false` обычное исключение становится `Internal server error.` с исходным кодом; PHP `Error` также скрывается. `ArgumentNullException` сохраняет текст с кодом `ERROR_REQUIRED_PARAMETER`, а `BinderArgumentException`, `ArgumentException`, `ValidationException` сохраняют сообщение. Явные `addError(Error)` и ошибки `ValidationException` передаются клиенту: не включай в них SQL, секреты и внутренние пути. При debug=true подробности открыты.
+
+До 26.1000 такого общего скрытия нет: перехватывай исключения на границе и возвращай безопасный `Error`, как выше. Для ожидаемого отказа используй стабильный код `Result`, а не RuntimeException с текстом для пользователя.

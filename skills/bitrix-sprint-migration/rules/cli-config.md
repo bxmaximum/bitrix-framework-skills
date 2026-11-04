@@ -1,9 +1,9 @@
-# CLI and configs
+# CLI и конфигурации
 
-## Module path
+## Путь модуля
 
 ```bash
-# from document root
+# из корня сайта
 if [ -f local/modules/sprint.migration/tools/migrate.php ]; then
   MIGRATE=local/modules/sprint.migration/tools/migrate.php
 else
@@ -12,62 +12,62 @@ fi
 php "$MIGRATE" <command> [args] [options]
 ```
 
-CLI SAPI only; it boots Bitrix through `prolog_before.php` (sets `DOCUMENT_ROOT` from its own path if empty) and installs the module if its files exist but it is not registered. Symfony: `php bin/console sprint:migration` when the bundle is registered.
+Только CLI SAPI; загрузка Битрикс через `prolog_before.php`, `DOCUMENT_ROOT` при пустом значении берётся из пути. Если файлы есть, а регистрация отсутствует, модуль установится. Symfony: `php bin/console sprint:migration` с зарегистрированным bundle.
 
-## Commands
+## Команды
 
-Full list: `{module}/commands-en.txt`.
+Полный список: `{module}/commands-en.txt`.
 
-| Command | Purpose |
+| Команда | Назначение |
 | --- | --- |
-| `add [desc] [name]` | Blank migration (`--desc=`, `--name=`) |
-| `ls` | List (`--new`, `--installed`, `--search=`, `--tag=`) |
-| `up` | Apply all new (`--search=`, `--tag=`, `--add-tag=`) |
-| `up <version>` | Apply one |
-| `down <version>` | Roll back one |
-| `down` | **DANGER:** rolls back every installed migration (optionally filtered by `--search=`/`--tag=`) |
-| `redo <version>` | `down` then `up` |
-| `run <builder>` | Run a builder (`rules/helpers-builders.md`) |
-| `mark <version\|new\|installed\|unknown> --as=installed\|new` | Change status without running code |
-| `delete <version\|new\|installed\|unknown>` | **DANGER:** deletes migration files/records |
-| `config`, `--config=<name>` | Show / switch config |
+| `add [desc] [name]` | Пустая миграция (`--desc=`, `--name=`) |
+| `ls` | Список (`--new`, `--installed`, `--search=`, `--tag=`) |
+| `up` | Применить все новые (`--search=`, `--tag=`, `--add-tag=`) |
+| `up <version>` | Применить одну |
+| `down <version>` | Откатить одну |
+| `down` | **ОПАСНО:** откатывает все установленные, при необходимости с фильтром `--search=`/`--tag=` |
+| `redo <version>` | down, затем up |
+| `run <builder>` | Запустить генератор (`rules/helpers-builders.md`) |
+| `mark <version\|new\|installed\|unknown> --as=installed\|new` | Сменить статус без выполнения кода |
+| `delete <version\|new\|installed\|unknown>` | **ОПАСНО:** удаляет файлы / записи миграций |
+| `config`, `--config=<name>` | Показать / переключить конфигурацию |
 
 ```bash
-php "$MIGRATE" add "Add news iblock" NewsIblock
+php "$MIGRATE" add "Добавить инфоблок новостей" NewsIblock
 php "$MIGRATE" ls --new
 php "$MIGRATE" up
-php "$MIGRATE" down Version20260720113800   # always name the version
+php "$MIGRATE" down Version20260720113800   # всегда указывай версию
 php "$MIGRATE" --config=shop up
 ```
 
-## Version naming
+## Имена версий
 
-- Valid PHP class name; class name = file name; namespace `Sprint\Migration`.
-- Contains a timestamp in `version_timestamp_format` (default `YmdHis`).
-- Template `version_name_template` = `#NAME##TIMESTAMP#` → `Version20260720113800`, `NewsIblock20260720113800`.
+- Допустимое имя PHP-класса, совпадает с файлом, пространство `Sprint\Migration`.
+- Содержит время в `version_timestamp_format`, по умолчанию YmdHis.
+- `version_name_template = #NAME##TIMESTAMP#`: `Version20260720113800`, `NewsIblock20260720113800`.
 
-## Configs
+## Конфигурации
 
-The module reads `migrations.<name>.php` from `local/php_interface` (or `bitrix/php_interface` without it) plus dirs returned by handlers of module event `OnSearchConfigFiles`. The file returns an array. `migrations.cfg.php` replaces the default `cfg` config.
+Модуль читает `migrations.<name>.php` из `local/php_interface`, иначе `bitrix/php_interface`, и каталогов обработчиков `OnSearchConfigFiles`. Файл возвращает массив. `migrations.cfg.php` заменяет стандартную конфигурацию cfg.
 
-`migration_dir` and `migration_table` are **not** derived from `<name>`. A file without them shares the default dir and table with `cfg`. Always set both:
+`migration_dir` и `migration_table` **не выводятся** из `<name>`. Без них используется общий каталог / таблица cfg. Задавай оба:
 
 ```php
 <?php
 return [
-    'title' => 'Shop migrations',
-    'migration_dir' => '/local/php_interface/migrations.shop',   // from docroot unless migration_dir_absolute
+    'title' => 'Миграции магазина',
+    'migration_dir' => '/local/php_interface/migrations.shop', // от корня сайта, если нет migration_dir_absolute
     'migration_table' => 'sprint_migration_shop',
-    // 'exchange_dir' => … (default = migration_dir)
+    // exchange_dir по умолчанию равен migration_dir
     // 'console_user' => 'admin' | 'login:deploy' | false,
     // 'version_builders' => [...], 'migration_extend_class' => 'Version',
 ];
 ```
 
-The admin "create config" button writes exactly these two keys. The module options page only creates/deletes config files; it stores no config values.
+Кнопка создания конфигурации записывает именно эти два ключа. Страница настроек только создаёт / удаляет файлы, значения в опциях не хранит.
 
-## Console user
+## Консольный пользователь
 
-- `console_user` (default `admin`): `admin` = first active user of the admin group, `login:<login>` = that user, `false` = no authorization.
-- `console_auth_events_disable` (default `true`) skips auth event handlers in CLI.
-- Admin UI and CLI share files and the versions table; automation uses CLI.
+- `console_user`, по умолчанию admin: первый активный пользователь группы администраторов; `login:<login>` — указанный пользователь; false — без авторизации.
+- `console_auth_events_disable`, по умолчанию true: в CLI пропускает события авторизации.
+- Административный интерфейс и CLI используют общие файлы / таблицу версий; автоматизация через CLI.

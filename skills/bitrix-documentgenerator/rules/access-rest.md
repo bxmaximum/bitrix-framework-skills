@@ -1,36 +1,36 @@
-# Access rights and REST
+# Права доступа и REST
 
-## Module rights
+## Права модуля
 
 ```php
-$permissions = \Bitrix\DocumentGenerator\Driver::getInstance()->getUserPermissions($userId);   // cached per user
+$permissions = \Bitrix\DocumentGenerator\Driver::getInstance()->getUserPermissions($userId); // кеш на пользователя
 if (!$permissions->canCreateDocumentOnTemplate($templateId))
 {
-    return $result->addError(new \Bitrix\Main\Error('Access denied'));   // $result: \Bitrix\Main\Result
+    return $result->addError(new \Bitrix\Main\Error('Доступ запрещён')); // $result: \Bitrix\Main\Result
 }
 ```
 
-`UserPermissions` methods: `canViewDocuments()`, `canModifyDocuments()`, `canModifyDocument($documentIdOrDocument)`, `canModifyTemplates()`, `canModifyTemplate(int $templateId)`, `canCreateDocumentOnTemplate(int $templateId)`, `canModifySettings()`, `getFilterForTemplateList()` (ORM filter for `TemplateTable`).
+Методы `UserPermissions`: `canViewDocuments()`, `canModifyDocuments()`, `canModifyDocument($documentIdOrDocument)`, `canModifyTemplates()`, `canModifyTemplate(int $templateId)`, `canCreateDocumentOnTemplate(int $templateId)`, `canModifySettings()`, `getFilterForTemplateList()` (ORM-фильтр `TemplateTable`).
 
-- Roles (`Model\RoleTable`, `RolePermissionTable`, `RoleAccessTable`) are edited in UI `bitrix:documentgenerator.settings.perms`; defaults ADMIN (admins) and MANAGER (company root department) are created on install.
-- Admin status is evaluated only for the current user; for other ids roles apply.
-- Template visibility per user: `TemplateUserTable` access codes; list templates for a provider with `Model\TemplateTable::getListByClassName($providerClass, $userId, $value)`.
+- Роли (`Model\RoleTable`, `RolePermissionTable`, `RoleAccessTable`) редактируются в `bitrix:documentgenerator.settings.perms`. При установке создаются ADMIN (администраторы) и MANAGER (корневой отдел компании).
+- Статус администратора проверяется только для текущего пользователя; для остальных ID действуют роли.
+- Видимость шаблона: коды доступа `TemplateUserTable`; список для поставщика — `Model\TemplateTable::getListByClassName($providerClass, $userId, $value)`.
 
-## Three layers — check all
+## Проверяй все три уровня
 
-1. Module right (above) — may the user create/see documents at all.
-2. Template access codes — may the user use this template.
-3. Data access — `$document->hasAccess($userId)` → your provider's `hasAccess()`. `Template::loadById()` and `Document::createByTemplate()` check nothing.
+1. Право модуля: можно ли создавать / видеть документы вообще.
+2. Коды доступа шаблона: можно ли использовать этот шаблон.
+3. Доступ к данным: `$document->hasAccess($userId)` вызывает `hasAccess()` поставщика. `Template::loadById()` и `Document::createByTemplate()` прав не проверяют.
 
-User id `0` passes every data check (agents, CLI): set a real user with `setUserId()` when generating on behalf of someone.
+ID пользователя `0` проходит все проверки данных (агенты, CLI). При генерации от чьего-либо имени задай настоящего пользователя через `setUserId()`.
 
-## Controllers and REST
+## Контроллеры и REST
 
-- Module controllers are exposed under alias `api` with REST integration: AJAX `documentgenerator.api.document.*`, `documentgenerator.api.template.*` (e.g. `BX.ajax.runAction('documentgenerator.api.document.getfile', …)`).
-- Public REST (scope `documentgenerator`): `documentgenerator.template.{add,update,delete,get,list,getfields}`, `documentgenerator.document.{add,update,delete,get,list,getfields,enablepublicurl}`, `documentgenerator.numerator.*`, `documentgenerator.region.*`, `documentgenerator.role.{…,fillaccesses}`. Details: `bitrix24-rest-api`.
-- Templates added through REST are forced to module `rest` with the `DataProvider\Rest` provider — REST apps pass all values in `document.add` (`values`), they can't use a PHP provider. REST can't reach templates/documents of other modules (`CheckScope`).
-- CRM documents have their own REST: `crm.documentgenerator.{template,document,numerator}.*` (`bitrix24-crm`).
+- Контроллеры модуля опубликованы под псевдонимом `api` с интеграцией REST: AJAX `documentgenerator.api.document.*`, `documentgenerator.api.template.*`, например `BX.ajax.runAction('documentgenerator.api.document.getfile', …)`.
+- Публичный REST (scope `documentgenerator`): `documentgenerator.template.{add,update,delete,get,list,getfields}`, `documentgenerator.document.{add,update,delete,get,list,getfields,enablepublicurl}`, `documentgenerator.numerator.*`, `documentgenerator.region.*`, `documentgenerator.role.{…,fillaccesses}`. Подробности: `bitrix24-rest-api`.
+- Шаблоны REST получают модуль `rest` и поставщика `DataProvider\Rest`. Приложение передаёт все значения в `document.add` (`values`), PHP-поставщик недоступен. Шаблоны / документы других модулей закрыты для REST (`CheckScope`).
+- У документов CRM свой REST: `crm.documentgenerator.{template,document,numerator}.*` (`bitrix24-crm`).
 
-## UI components
+## Компоненты интерфейса
 
-`bitrix:documentgenerator.templates` (list/upload), `.documents` (grid), `.placeholders` (field catalog), `.settings.perms` (roles), `.config`, `.region`, `.templates.default`, `.feature`, `.view` (public view by id + hash). They are product UI — open them in a slider rather than rebuilding.
+`bitrix:documentgenerator.templates` (список / загрузка), `.documents` (грид), `.placeholders` (каталог полей), `.settings.perms` (роли), `.config`, `.region`, `.templates.default`, `.feature`, `.view` (публичный просмотр по ID и хешу). Это готовый продуктовый интерфейс: открывай в слайдере.

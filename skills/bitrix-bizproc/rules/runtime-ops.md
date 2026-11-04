@@ -1,33 +1,40 @@
-# Runtime operations
+# Эксплуатация процессов
 
-## Bizproc vs agents vs Messenger
+## Выбор механизма
 
-| Mechanism | Use when |
+| Механизм | Назначение |
 | --- | --- |
-| Bizproc | Human tasks, approvals, document state, branching by fields |
-| `CAgent` | Periodic maintenance without a document |
-| `addBackgroundJob` | Short work after the response, same hit |
-| Messenger | Reliable async jobs with retries (`messenger:consume`) |
+| Bizproc | Задания людям, согласования, состояние документа, ветвление по полям |
+| `CAgent` | Периодическое обслуживание без документа |
+| `addBackgroundJob` | Короткая работа после ответа в том же запросе |
+| Messenger | Асинхронные задания с повторами (`messenger:consume`) |
 
-Details: `bitrix-background-jobs`. An activity that needs long work sends a Messenger message and waits for an external event (`rules/custom-activities.md`). Bizproc itself schedules delays (`CBPDelayActivity`, `SchedulerService`) and queued starts (`WorkflowStartReceiver`); that is internal runtime, not a pattern to copy for approvals.
+Подробности: `bitrix-background-jobs`. Долгое действие отправляет сообщение Messenger и ждёт внешнее событие (`rules/custom-activities.md`). Собственные задержки bizproc (`CBPDelayActivity`, `SchedulerService`) и очередь запусков (`WorkflowStartReceiver`) — внутренние механизмы; не копируй их для реализации согласований.
 
-## Stuck paused workflows are deleted (**Since bizproc 26.1100**)
+## Удаление зависших пауз (**Since bizproc 26.1100**)
 
-A daily agent `Bitrix\Bizproc\Infrastructure\Agent\ClearStuckPauseWorkflowAgent` kills workflows paused in Delay/RobotDelay/WaitWorkDay longer than option `bizproc:clear_stuck_pause_grace_days` (default 7, min 1) when nothing will wake them. It calls `killWorkflow($id, false)`: `onAfterWorkflowKill` fires, `OnWorkflowComplete` does not. Custom activities are not touched.
+Ежедневный агент `Bitrix\Bizproc\Infrastructure\Agent\ClearStuckPauseWorkflowAgent` удаляет процессы, которые никто не разбудит и которые ждут в Delay/RobotDelay/WaitWorkDay дольше `bizproc:clear_stuck_pause_grace_days` (по умолчанию 7 дней, минимум 1). Вызов `killWorkflow($id, false)` отправляет `onAfterWorkflowKill`, но не `OnWorkflowComplete`. Свои действия не затрагиваются. На старом модуле организуй диагностику пауз самостоятельно.
 
-- Disable: `ClearStuckPauseWorkflowAgent::unregister()` (sets `clear_stuck_pause_agent_active=N`); enable: `::register()`.
-- Or raise the grace days: `Option::set('bizproc', 'clear_stuck_pause_grace_days', '30')`.
-- Audit: logger `bizproc.workflow.stuckPause` (`bitrix-logger`).
+- Отключить: `ClearStuckPauseWorkflowAgent::unregister()` (записывает `clear_stuck_pause_agent_active=N`); включить: `::register()`.
+- Увеличить срок: `Option::set('bizproc', 'clear_stuck_pause_grace_days', '30')`.
+- Аудит: логгер `bizproc.workflow.stuckPause` (`bitrix-logger`).
 
-## Faults and tracking
+## Ошибки и журнал
 
-- **Since bizproc 26.1100** a failing `HandleFault` is retried at most 3 times, then the workflow is terminated. Handle errors inside `execute()`.
-- **Since bizproc 26.1400** nodes skipped by the engine write `b_bp_tracking` rows with `TYPE = CBPTrackingType::SkipActivity` (14), reason in `ACTION_NOTE`, no Close row. Reports on `b_bp_tracking` must handle type 14.
+- **Since bizproc 26.1100** после трёх исключений из `HandleFault` процесс завершается. Обрабатывай ошибки в `execute()`; на старом модуле ограничивай повторы самостоятельно.
+- **Since bizproc 26.1400** пропущенные узлы пишутся в `b_bp_tracking` с `TYPE = CBPTrackingType::SkipActivity` (14), причиной в `ACTION_NOTE`, без строки Close. Учитывай тип 14 в отчётах; на старом модуле не ожидай таких записей.
 
-## Storage items no longer expire (**Since bizproc 26.1200**)
+## Хранилище больше не очищается по сроку (**Since bizproc 26.1200**)
 
-The cleanup agent, `StorageCleanupService`, `StorageSizeCleanupService` and option `storage_items_cleanup_days` were removed (calls → Error). Prune with your own agent:
+Агент очистки, `StorageCleanupService`, `StorageSizeCleanupService` и опция `storage_items_cleanup_days` удалены; вызовы классов завершатся ошибкой. На старом модуле проверь его штатную очистку. На новом удаляй данные своим агентом: <!-- verify:negative -->
 
 ```php
 (new \Bitrix\Bizproc\Public\Command\StorageItem\DeleteStorageItemCommand($ids))->run(); // int|int[]
 ```
+
+
+## Пакетное выполнение заданий
+
+**Since bizproc 26.1600** AJAX `bizproc.task.doCollection` принимает `taskIds` и `taskRequest` формы задания, только POST, до 50 заданий. Права проверяются для текущего пользователя. Ответ содержит `results` и `doneCount`; проверяй каждое задание (`done`, `not_found`, `access_denied`, `error`). Общей транзакции нет: общий успех запроса не означает выполнения всех заданий. На старом модуле выполняй задания по одному штатным обработчиком.
+
+**Since bizproc 26.1700** общие файловые поля пакета запрещены (`TASK_FILE_FIELD_NOT_SHARED`). В одиночном задании произвольный ID существующего файла также не заменяет загрузку: допускаются уже сохранённое значение либо файл штатного загрузчика этого задания. Через REST передавай содержимое файла по контракту метода. На старом модуле самостоятельно проверяй доступ и происхождение файла.

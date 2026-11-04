@@ -1,6 +1,6 @@
-# Requests
+# Запросы
 
-## Legacy mode
+## Старый режим
 
 ```php
 use Bitrix\Main\Web\HttpClient;
@@ -11,24 +11,24 @@ $http = new HttpClient(['socketTimeout' => 5, 'streamTimeout' => 15, 'headers' =
 $body = $http->get('https://api.example.com/items');
 if ($body === false || $http->getStatus() !== 200)
 {
-    throw new \RuntimeException('HTTP error: ' . implode('; ', $http->getError()) . ' status ' . $http->getStatus());
+    throw new \RuntimeException('Ошибка HTTP: ' . implode('; ', $http->getError()) . ' статус ' . $http->getStatus());
 }
 $items = Json::decode($body);
 
-$http->post('https://api.example.com/form', ['login' => $login]);                        // urlencoded form
+$http->post('https://api.example.com/form', ['login' => $login]);                        // форма urlencoded
 $http->setHeader('Content-Type', 'application/json');
 $http->setHeader('Authorization', 'Bearer ' . $token);
-$http->post('https://api.example.com/users', Json::encode(['name' => 'Ivan']));         // raw body
+$http->post('https://api.example.com/users', Json::encode(['name' => 'Ivan']));         // тело без преобразования
 $http->post($url, ['file' => ['resource' => $fh, 'filename' => 'a.pdf']], true);        // multipart
 $http->download('https://files.example.com/r.csv', $_SERVER['DOCUMENT_ROOT'] . '/upload/tmp/r.csv');
 ```
 
-- `getError()` is `[code => message]` (`NETWORK`, `REDIRECT`, `PRIVATE_IP`, `URI_SCHEME`, …). `getHeaders()` → `HttpHeaders`, `getCookies()` → `HttpCookies`, `getEffectiveUrl()` after redirects.
-- Redirects are followed in legacy mode (`redirect`, `redirectMax` = 5); each hop is re-checked against `privateIp`.
-- Headers set on the object stay for its next requests: use one client per API.
-- Body only when needed: `$http->shouldFetchBody(fn (\Bitrix\Main\Web\Http\Response $r) => $r->getStatusCode() === 200)` (**Since main 23.300**; before: `head()` first).
+- `getError()` — массив `[code => message]` (`NETWORK`, `REDIRECT`, `PRIVATE_IP`, `URI_SCHEME`, …). `getHeaders()` возвращает `HttpHeaders`, `getCookies()` — `HttpCookies`, `getEffectiveUrl()` — URL после переходов.
+- В старом режиме переходы выполняются автоматически (`redirect`, `redirectMax` = 5); каждый адрес повторно проверяется по `privateIp`.
+- Заданные заголовки сохраняются для следующих запросов объекта: выделяй отдельный клиент каждому API.
+- Чтение тела по условию: `$http->shouldFetchBody(fn (\Bitrix\Main\Web\Http\Response $r) => $r->getStatusCode() === 200)` (**Since main 23.300**; раньше сначала `head()`).
 
-## PSR-18 mode
+## Режим PSR-18
 
 ```php
 use Bitrix\Main\Web\Http\{Request, Method, Stream, ClientException, NetworkException};
@@ -50,15 +50,15 @@ try
     $response = (new HttpClient(['useCurl' => true]))->sendRequest($request);
     $data = Json::decode((string)$response->getBody());
 }
-catch (NetworkException $e) { /* connect/timeout */ }
-catch (ClientException $e) { /* bad request, private IP, ... */ }
+catch (NetworkException $e) { /* подключение/таймаут */ }
+catch (ClientException $e) { /* неверный запрос, частный IP и т. п. */ }
 ```
 
-- PSR-7 objects are immutable: `withHeader()`, `withUri()` return copies.
-- No redirects: loop on `Location` yourself (and re-validate the target).
-- Multipart: `new \Bitrix\Main\Web\Http\MultipartStream(['title' => 'x', 'file' => ['resource' => $fh, 'filename' => 'r.pdf', 'contentType' => 'application/pdf']])` with header `'multipart/form-data; boundary=' . $stream->getBoundary()`; `FormStream` for urlencoded.
+- Объекты PSR-7 неизменяемы: `withHeader()`, `withUri()` возвращают копии.
+- Автоматических переходов нет: обрабатывай `Location` циклом и повторно проверяй адрес.
+- Multipart: `new \Bitrix\Main\Web\Http\MultipartStream(['title' => 'x', 'file' => ['resource' => $fh, 'filename' => 'r.pdf', 'contentType' => 'application/pdf']])` с заголовком `'multipart/form-data; boundary=' . $stream->getBoundary()`; для urlencoded — `FormStream`.
 
-## Async
+## Асинхронные запросы
 
 ```php
 $http = new HttpClient(['useCurl' => true, 'socketTimeout' => 5, 'streamTimeout' => 10]);
@@ -72,7 +72,7 @@ foreach ($promises as $key => $promise)
 {
     try
     {
-        $responses[$key] = $promise->wait();       // throws the ClientException of a failed request
+        $responses[$key] = $promise->wait();       // выбрасывает ClientException неуспешного запроса
     }
     catch (ClientException $e)
     {
@@ -81,4 +81,4 @@ foreach ($promises as $key => $promise)
 }
 ```
 
-`$http->wait()` waits for the whole queue and returns responses keyed by promise ID. `$promise->then($onFulfilled, $onRejected)` registers callbacks. There is no `Promise::all()`.
+`$http->wait()` ждёт всю очередь и возвращает ответы с ключами ID обещаний. `$promise->then($onFulfilled, $onRejected)` регистрирует обработчики. Метода `Promise::all()` нет. <!-- verify:negative -->

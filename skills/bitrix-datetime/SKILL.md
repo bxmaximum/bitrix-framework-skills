@@ -1,83 +1,85 @@
 ---
 name: bitrix-datetime
-description: 'Bitrix\Main\Type\Date and DateTime — parsing, culture formats and masks, arithmetic, server vs user time zone, ORM DateField/DatetimeField. Use when parsing, formatting, comparing or storing dates and times.'
+description: 'Используй для дат Битрикса: Type\Date и Type\DateTime, разбор ввода, формат культуры, вычисления и часовые пояса. Хранение в DatetimeField ORM и старом API.'
 ---
 
-# Date and time
+# Дата и время
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-- `Bitrix\Main\Type\Date` — date only (time `00:00:00`). **Not** a `\DateTime` subclass: it wraps one, so `modify()`, `sub()`, `setTimestamp()` don't exist.
-- `Bitrix\Main\Type\DateTime extends Date` — adds time, time zone and user-time conversion.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-Available: `format()`, `add()`, `setDate()`, `getTimestamp()`, `getDiff()`, `toString()`; `DateTime` adds `setTime()`, `setTimeZone()`, `setDefaultTimeZone()`, `toUserTime()`, `disableUserTime()`.
+- `Bitrix\Main\Type\Date` — только дата (время `00:00:00`). Это **не наследник** `\DateTime`, а обёртка: методов `modify()`, `sub()`, `setTimestamp()` нет.
+- `Bitrix\Main\Type\DateTime extends Date` добавляет время, часовой пояс и преобразование ко времени пользователя.
+
+Доступны `format()`, `add()`, `setDate()`, `getTimestamp()`, `getDiff()`, `toString()`; `DateTime` добавляет `setTime()`, `setTimeZone()`, `setDefaultTimeZone()`, `toUserTime()`, `disableUserTime()`.
 
 ```php
 use Bitrix\Main\Type\Date;
 use Bitrix\Main\Type\DateTime;
 
-$d = new Date('25.11.2025', 'd.m.Y');                  // 2nd arg is a PHP format
+$d = new Date('25.11.2025', 'd.m.Y');                  // второй аргумент — формат PHP
 $dt = new DateTime('2025-11-25 14:30:00', 'Y-m-d H:i:s', new \DateTimeZone('UTC'));
 $now = new DateTime();
-$fromSite = new DateTime($request->get('DATE'));       // no format = site culture format; bad input throws ObjectException
+$fromSite = new DateTime($request->get('DATE'));       // без формата используется культура сайта; неверный ввод вызывает ObjectException
 ```
 
-## Parsing user input
+## Разбор пользовательского ввода
 
 ```php
-$dt = DateTime::tryParse($input, 'd.m.Y H:i');         // null on error
-$isValid = $dt !== null && $dt->format('d.m.Y H:i') === $input;   // strict
+$dt = DateTime::tryParse($input, 'd.m.Y H:i');         // null при ошибке
+$isValid = $dt !== null && $dt->format('d.m.Y H:i') === $input;   // строгая проверка
 ```
 
-`Date::isCorrect('31.02.2025', 'd.m.Y')` returns **true**: the parser rolls it over to 03.03.2025. Use the strict round-trip above or `checkdate()`.
+`Date::isCorrect('31.02.2025', 'd.m.Y')` возвращает **true**: разбор переносит дату на 03.03.2025. Используй строгую обратную проверку выше или `checkdate()`.
 
-Other sources: `DateTime::createFromTimestamp($ts)`, `DateTime::createFromPhp(\DateTime $php)` (a `\DateTimeImmutable` needs `\DateTime::createFromImmutable()` first), `Date::createFromText('tomorrow')` (returns `DateTime|null`).
+Другие источники: `DateTime::createFromTimestamp($ts)`, `DateTime::createFromPhp(\DateTime $php)` (для `\DateTimeImmutable` сначала `\DateTime::createFromImmutable()`), `Date::createFromText('tomorrow')` (результат `DateTime|null`).
 
-## Culture formats and masks
+## Форматы культуры и маски
 
-Culture (`Context::getCurrent()->getCulture()`) stores **site masks** (`DD.MM.YYYY HH:MI:SS`), not PHP formats. Never pass them to `format()`:
+Культура (`Context::getCurrent()->getCulture()`) хранит **маски сайта** (`DD.MM.YYYY HH:MI:SS`), а не форматы PHP. Не передавай их в `format()`:
 
 ```php
 $culture = \Bitrix\Main\Context::getCurrent()->getCulture();
-echo $dt->toString($culture);                           // culture format, user TZ
-echo $dt->format(DateTime::getFormat($culture));        // culture format, no TZ shift
+echo $dt->toString($culture);                           // формат культуры, часовой пояс пользователя
+echo $dt->format(DateTime::getFormat($culture));        // формат культуры, без сдвига часового пояса
 echo $d->format(Date::convertFormatToPhp($culture->getDateFormat()));
 ```
 
 `Date::convertFormatToPhp()`:
 
-| Mask | PHP | Note |
+| Маска | PHP | Примечание |
 | --- | --- | --- |
 | `YYYY`, `MMMM`, `MM`, `DD` | `Y`, `F`, `m`, `d` | |
 | `MI`, `SS` | `i`, `s` | |
-| `HH` / `H` | `H` / `h` | a lone `H` (no `HH`) means 12-hour |
-| `GG` / `G` | `G` / `g` | same rule, no leading zero |
+| `HH` / `H` | `H` / `h` | Одиночный `H` (без `HH`) означает 12-часовой формат |
+| `GG` / `G` | `G` / `g` | То же правило, без ведущего нуля |
 | `TT` / `T` | `A` / `a` | AM/PM |
 
-## Arithmetic
+## Вычисления
 
-`add()` mutates and returns the object. It accepts ISO intervals (`P10D`, `-P1M`, `PT30M`) and relative text (`+2 weeks`, `-3 days`):
+`add()` изменяет и возвращает объект. Принимает интервалы ISO (`P10D`, `-P1M`, `PT30M`) и относительный текст (`+2 weeks`, `-3 days`):
 
 ```php
 $tomorrow = (clone $now)->add('P1D');
 $dayStart = (clone $now)->setTime(0, 0);
 $monday = (clone $dayStart)->add('-' . ((int)$now->format('N') - 1) . ' days');
-$days = $d1->getDiff($d2)->days;                        // \DateInterval from $d1 to $d2
+$days = $d1->getDiff($d2)->days;                        // \DateInterval от $d1 до $d2
 ```
 
-## Time zones
+## Часовые пояса
 
-Values are kept in **server** time; users see their own zone when time zones are enabled in the main module.
+Значения хранятся во времени **сервера**; пользователь видит свой пояс, если часовые пояса включены в главном модуле.
 
-| Call | Result |
+| Вызов | Результат |
 | --- | --- |
-| `(string)$dt`, `$dt->toString()` | culture format in **user** TZ (if enabled and not disabled on the object) |
-| `$dt->format(...)` | the object's own TZ (server unless set, e.g. the UTC example above), never user-shifted |
-| `$dt->disableUserTime()` | `toString()` stays in server time: logs, e-mails, text for humans in server TZ |
-| `DateTime::createFromUserTime($str)` | parses a user-TZ string into server time |
-| `$dt->toUserTime()` | shifts the object itself; use on a clone, never save it |
+| `(string)$dt`, `$dt->toString()` | Формат культуры во времени **пользователя**, если пояса включены и не отключены у объекта |
+| `$dt->format(...)` | Часовой пояс объекта (по умолчанию сервер, если не задан, как UTC выше), без сдвига к пользователю |
+| `$dt->disableUserTime()` | `toString()` остаётся во времени сервера: логи, письма, текст для человека в серверном поясе |
+| `DateTime::createFromUserTime($str)` | Разбирает строку времени пользователя в серверное время |
+| `$dt->toUserTime()` | Сдвигает сам объект: используй клон и не сохраняй его |
 
-Legacy writers (`CAgent::AddAgent`, `$DB->Add()`/`PrepareUpdate()`) run date strings through `CDatabase::CharToDateFunction()`, which subtracts the user offset. Pass them **user-time** strings — plain `toString()`, not `disableUserTime()`:
+Старые методы записи (`CAgent::AddAgent`, `$DB->Add()`/`PrepareUpdate()`) проводят строки дат через `CDatabase::CharToDateFunction()`, вычитающую смещение пользователя. Передавай строки во времени **пользователя**: обычный `toString()`, без `disableUserTime()`:
 
 ```php
 \CAgent::AddAgent(
@@ -87,16 +89,16 @@ Legacy writers (`CAgent::AddAgent`, `$DB->Add()`/`PrepareUpdate()`) run date str
     60,
     '',
     'Y',
-    (new DateTime())->add('+5 minutes')->toString(),   // user time; the kernel shifts it back
+    (new DateTime())->add('+5 minutes')->toString(),   // время пользователя; ядро сдвинет обратно
 );
 ```
 
 ## ORM
 
-`DateField` returns `Date`, `DatetimeField` returns `DateTime`; filter with objects, not strings:
+`DateField` возвращает `Date`, `DatetimeField` — `DateTime`; фильтруй объектами, а не строками:
 
 ```php
 PostTable::query()->setSelect(['ID'])->where('CREATED_AT', '>', (new DateTime())->add('-P7D'))->fetchAll();
 ```
 
-At the SQL level `DateTime` is written in server TZ (`bitrix-database`). Third-party code wanting `\DateTimeInterface`: `\DateTime::createFromFormat('U', (string)$dt->getTimestamp())`.
+На уровне SQL `DateTime` записывается в поясе сервера (`bitrix-database`). Для внешнего кода с `\DateTimeInterface`: `\DateTime::createFromFormat('U', (string)$dt->getTimestamp())`.

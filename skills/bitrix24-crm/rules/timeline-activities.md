@@ -1,34 +1,34 @@
-# Timeline and activities
+# Таймлайн и дела
 
-Operations write creation, change and stage records to the timeline themselves (`disableSaveToTimeline()` to skip). Add your own records as below.
+Операции сами пишут создание, изменения и стадии в таймлайн (`disableSaveToTimeline()` отключает запись). Для собственных записей используй API ниже.
 
-## Comment
+## Комментарий
 
 ```php
 use Bitrix\Crm\Timeline\CommentController;
 use Bitrix\Crm\Timeline\CommentEntry;
 
 $commentId = CommentEntry::create([
-    'TEXT' => $text, // BB-code; empty → ArgumentException
-    'AUTHOR_ID' => $userId, // default: current user
+    'TEXT' => $text, // BB-код; пустая строка вызывает ArgumentException
+    'AUTHOR_ID' => $userId, // по умолчанию текущий пользователь
     'SETTINGS' => ['HAS_FILES' => 'N'],
     'BINDINGS' => [['ENTITY_TYPE_ID' => $entityTypeId, 'ENTITY_ID' => $entityId]],
-]); // int, 0 on failure
+]); // int; при неудаче 0
 
 if ($commentId > 0) {
     CommentController::getInstance()->onCreate($commentId, [
         'COMMENT' => $text,
         'ENTITY_TYPE_ID' => $entityTypeId,
         'ENTITY_ID' => $entityId,
-    ]); // push to open cards
+    ]); // обновление открытых карточек через push
 }
 ```
 
-- No rights check inside: for user actions check `getUserPermissions()->item()->canUpdate($entityTypeId, $entityId)` first.
-- Several `BINDINGS` show one comment in several cards.
-- `CommentEntry::update($id, ['COMMENT' => $text])` and `CommentEntry::delete($id)` exist; they fire `OnAfterCrmTimelineComment{Update|Delete}`.
+- Внутри права не проверяются. Для пользовательского действия сначала проверяй `getUserPermissions()->item()->canUpdate($entityTypeId, $entityId)`.
+- Несколько `BINDINGS` показывают комментарий в нескольких карточках.
+- `CommentEntry::update($id, ['COMMENT' => $text])` и `CommentEntry::delete($id)` отправляют `OnAfterCrmTimelineComment{Update|Delete}`.
 
-## To-do
+## Запланированное дело
 
 ```php
 use Bitrix\Crm\Activity\Entity\ToDo;
@@ -37,21 +37,21 @@ use Bitrix\Crm\ItemIdentifier;
 use Bitrix\Main\Type\DateTime;
 
 $todo = (new ToDo(new ItemIdentifier($entityTypeId, $entityId), new ToDoProvider()))
-    ->setSubject('Call back')
-    ->setDescription('Discuss the offer')
+    ->setSubject('Перезвонить')
+    ->setDescription('Обсудить предложение')
     ->setDeadline((new DateTime())->add('+1 day'))
     ->setResponsibleId($userId)
-    ->setCheckPermissions(false); // system job only; keep true for user actions
+    ->setCheckPermissions(false); // только системное задание; для пользователя оставь true
 
 $result = $todo->save(); // Main\Result
 $activityId = $todo->getId();
 ```
 
-- Responsible defaults to the context user; `setCheckPermissions(true)` checks update rights on the owner.
-- Loading: `(new ToDo($owner, new ToDoProvider()))->load($activityId)` returns `?ToDo`; `loadNearest()` gets the nearest open one.
-- Saving an already completed to-do fails (`CAN_NOT_UPDATE_COMPLETED_TODO`).
+- Ответственный по умолчанию — пользователь контекста. `setCheckPermissions(true)` проверяет право изменения владельца.
+- `(new ToDo($owner, new ToDoProvider()))->load($activityId)` возвращает `?ToDo`; `loadNearest()` загружает ближайшее открытое дело.
+- Сохранение уже завершённого дела даёт `CAN_NOT_UPDATE_COMPLETED_TODO`.
 
-## Other activities
+## Другие дела
 
 ```php
 $open = \Bitrix\Crm\ActivityTable::getList([
@@ -63,9 +63,12 @@ $open = \Bitrix\Crm\ActivityTable::getList([
     ],
 ])->fetchAll();
 
-\CCrmActivity::Complete($activityId, true); // no D7 replacement
+\CCrmActivity::Complete($activityId, true); // современного D7-аналога пока нет
 ```
 
-- Read activities with `ActivityTable`/`ActivityBindingTable` (read-only). One activity can be bound to several owners.
-- Writes go through providers (`Activity\Provider\*`) or `\CCrmActivity::Add/Update/Delete($id, …, $checkPerms, $regEvent, $options)`: compat API, still the kernel path for calls, e-mails and meetings. Don't insert into `ActivityTable`.
-- Closing a deal/item in a final stage autocompletes open activities of completable providers (operation option `disableActivitiesAutocompletion()`).
+- Читай через `ActivityTable`/`ActivityBindingTable`; одно дело привязывается к нескольким владельцам. Таблицы здесь только для чтения.
+- Запись — через провайдеры `Activity\Provider\*` либо `\CCrmActivity::Add/Update/Delete($id, …, $checkPerms, $regEvent, $options)`. Это legacy API, но по нему ядро сохраняет звонки, письма и встречи. Не вставляй строки в `ActivityTable`.
+- Финальная стадия сделки/элемента автоматически завершает открытые дела соответствующих провайдеров. Отключение: `disableActivitiesAutocompletion()` операции.
+
+
+**Since crm 26.1800** удалены провайдер `CRM_DOCUMENT` и `DocumentGeneratorManager::createDocumentActivity()`, `actualizeDocumentImmediately()`, `enqueueItemScheduledDocumentsForActualization()`. Старые документные дела недоступны; `CreateActivity=Y` действия БП больше не создаёт дело. Не используй удалённые методы. Для новой задачи планируй документ и обычное дело отдельными операциями; на старой версии учитывай прежнюю связь. <!-- verify:negative -->

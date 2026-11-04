@@ -1,41 +1,41 @@
-# Legacy API and REST equivalents
+# Совместимость старого API и REST
 
-## Legacy → D7
+## Старый API и D7
 
-In crm 26.800 `CCrmLead`/`CCrmDeal`/`CCrmContact`/`CCrmCompany` `Add()`/`Update()`/`Delete()` always delegate to Factory operations through `Crm\Entity\Compatibility\Adapter` (`*Settings::isFactoryEnabled()` returns `true`). Differences: the legacy adapter does not start robots and business processes (`setRunAutomation(false)`, `setRunBizProc(false)`; old callers start them by hand), and errors come back as a `LAST_ERROR` string. Switching to D7 operations therefore starts robots: `disableAutomation()` if the old flow did not. Keep legacy calls only in code you are not touching.
+В проверенной crm 26.1900 `Add()`/`Update()`/`Delete()` классов `CCrmLead`/`CCrmDeal`/`CCrmContact`/`CCrmCompany` делегируют операциям Factory через `Crm\Entity\Compatibility\Adapter` (`*Settings::isFactoryEnabled()` возвращает `true`). Адаптер не запускает роботов и БП (`setRunAutomation(false)`, `setRunBizProc(false)`): старые вызывающие места запускают их отдельно. Ошибки возвращаются строкой `LAST_ERROR`. При переходе на D7 роботы начнут запускаться; сохрани прежнюю логику через `disableAutomation()`, если она исключала автоматизацию. Legacy оставляй только в нетронутом коде; на старом модуле проверь его собственный путь записи.
 
-| Legacy (compat only) | D7 |
+| Старый API для совместимости | D7 |
 | --- | --- |
 | `(new \CCrmDeal(false))->Add($fields)` | `$factory->getAddOperation($item, $context)` + `disableCheckAccess()` |
 | `->Update($id, $fields)`, `->Delete($id)` | `getUpdateOperation()`, `getDeleteOperation()` |
 | `\CCrmDeal::GetListEx()`, `GetByID()` | `getItems()`, `getItem()`, `getItemsFilteredByPermissions()` |
 | `\CCrmFieldMulti::GetList()`, `SetFields()` | `Item::getFm()`/`setFm()` |
-| `\CCrmProductRow::SaveRows()` | `Item::setProductRowsFromArrays()` + update operation |
+| `\CCrmProductRow::SaveRows()` | `Item::setProductRowsFromArrays()` + операция изменения |
 | `\CCrmPerms`, `\CCrmDeal::CheckReadPermission()`, `\CCrmAuthorizationHelper` | `getUserPermissions()->item()`/`entityType()` |
-| `\CCrmActivity::Add()` for to-dos | `Activity\Entity\ToDo` |
-| `\CCrmStatus` for stages | read: `$factory->getStages()`; write: still `CCrmStatus` |
-| `\CCrmInvoice` (type 5) | smart invoices (31) via factory |
-| `DealTable`/`LeadTable`/`ContactTable`/`CompanyTable::add/update/delete` | never; read-only at most |
+| `\CCrmActivity::Add()` для запланированных дел | `Activity\Entity\ToDo` |
+| `\CCrmStatus` для стадий | чтение: `$factory->getStages()`; запись: пока `CCrmStatus` |
+| `\CCrmInvoice` (тип 5) | смарт-счета (31) через фабрику |
+| `DealTable`/`LeadTable`/`ContactTable`/`CompanyTable::add/update/delete` | не использовать для записи; допустимо чтение |
 
-Field keys: legacy arrays use entity columns (`STATUS_ID` for leads, `DATE_CREATE`, `CREATED_BY_ID`); D7 uses `Item::FIELD_NAME_*` (`STAGE_ID`, `CREATED_TIME`, `CREATED_BY`). `$item->getCompatibleData()` / `setFromCompatibleData()` convert.
+Legacy-массивы используют имена столбцов (`STATUS_ID` лида, `DATE_CREATE`, `CREATED_BY_ID`); D7 — `Item::FIELD_NAME_*` (`STAGE_ID`, `CREATED_TIME`, `CREATED_BY`). Преобразование: `$item->getCompatibleData()` / `setFromCompatibleData()`.
 
-## D7 ↔ REST
+## Соответствие D7 и REST
 
-Cloud portals have no PHP access: the same logic goes through REST (`bitrix24-rest-api` for calling it). REST handlers run the same operations with REST context.
+В облаке доступа к PHP нет: используй REST (`bitrix24-rest-api`). REST-обработчики выполняют операции с контекстом REST.
 
-| D7 (box) | REST |
+| D7 коробки | REST |
 | --- | --- |
 | `getItems()`, `getItem()` | `crm.item.list`, `crm.item.get` (`entityTypeId`) |
-| add/update/delete operations | `crm.item.add`, `crm.item.update`, `crm.item.delete` |
+| Операции добавления/изменения/удаления | `crm.item.add`, `crm.item.update`, `crm.item.delete` |
 | `getFieldsInfo()` | `crm.item.fields` |
-| `getTypeByEntityTypeId()`, type ORM object | `crm.type.getByEntityTypeId`, `crm.type.list`, `crm.type.add` |
+| `getTypeByEntityTypeId()`, ORM-объект типа | `crm.type.getByEntityTypeId`, `crm.type.list`, `crm.type.add` |
 | `getCategories()`, `createCategory()` | `crm.category.list`, `crm.category.add` (`entityTypeId`) |
 | `getStages()`, `CCrmStatus` | `crm.status.list`, `crm.status.add` (`ENTITY_ID` = `getStagesEntityId()`) |
 | `CommentEntry::create()` | `crm.timeline.comment.add` |
 | `Activity\Entity\ToDo` | `crm.activity.todo.add` |
 | `CUserTypeEntity` + `getUserFieldEntityId()` | `userfieldconfig.add` (`moduleId: crm`) |
-| `onCrmDynamicItem*`, `OnAfterCrm*` | REST events `onCrmDynamicItemAdd`…, `onCrmDealAdd`… |
-| `WebHookTrigger::execute()` | `crm.automation.trigger` (webhook), `crm.automation.trigger.execute` (app) |
+| `onCrmDynamicItem*`, `OnAfterCrm*` | REST-события `onCrmDynamicItemAdd`…, `onCrmDealAdd`… |
+| `WebHookTrigger::execute()` | `crm.automation.trigger` (вебхук), `crm.automation.trigger.execute` (приложение) |
 
-- REST uses camelCase names (`stageId`, `assignedById`, `ufCrm5_…`); D7 uses UPPER_SNAKE.
-- Legacy REST `crm.deal.*`, `crm.lead.*` map to the legacy classes above; prefer `crm.item.*` with `entityTypeId` 1–4 in new integrations.
+- REST использует camelCase (`stageId`, `assignedById`, `ufCrm5_…`), D7 — UPPER_SNAKE.
+- Legacy REST `crm.deal.*`, `crm.lead.*` вызывает старые классы выше. В новых интеграциях предпочитай `crm.item.*` с `entityTypeId` 1–4.

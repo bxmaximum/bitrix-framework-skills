@@ -1,26 +1,28 @@
 ---
 name: bitrix-search
-description: 'Site search module (legacy CSearch) — CSearch::Index for custom content, BeforeIndex/OnReindex/OnSearchGetURL, CSearch::Search, search.page/search.title, Sphinx/OpenSearch, reindex. Use when indexing or searching own data.'
+description: 'Поиск по сайту Битрикс через CSearch: индексация своих данных (CSearch::Index), запросы и search:reindex. Используй для search.page/search.title, прав поиска и выбора движка.'
 ---
 
-# Bitrix search module
+# Модуль поиска Битрикс
 
-Baseline: main 23.0+ · Verified: search 25.200.0, main 26.800.0
+Baseline: main 23.0+ · Verified: search 26.100.0, main 26.1000.0
 
-Ships in all editions (Site Management and Bitrix24). Legacy API only: `CSearch*` classes, no `lib/`, no D7 or ORM layer, no console commands.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
 
-| Task | Read |
+Есть во всех редакциях «Управления сайтом» и Битрикс24. Основной API индекса / поиска — `CSearch*`. **Since search 26.0** есть консольная search:reindex и служебные классы Messenger; ORM-таблета для замены CSearch нет. На старом модуле используй `CSearch::ReindexModule()` из своей команды.
+
+| Задача | Читать |
 | --- | --- |
-| Index own entities, fields, rights, delete, `BeforeIndex` | `rules/indexing.md` |
-| `OnReindex` handler, full/module reindex, CLI, steps | `rules/reindex.md` |
-| `search.page`/`search.title`, `CSearch::Search()`, permissions, URL hooks | `rules/searching.md` |
-| Sphinx/OpenSearch/MySQL/PgSQL engines, stemming, custom rank, static files | `rules/engines.md` |
+| Индексация своей сущности, поля, права, удаление, `BeforeIndex` | `rules/indexing.md` |
+| `OnReindex`, полный / модульный переиндекс, CLI, шаги | `rules/reindex.md` |
+| `search.page`/`search.title`, `CSearch::Search()`, права, события URL | `rules/searching.md` |
+| Sphinx/OpenSearch/MySQL/PgSQL, морфология, свой ранг, файлы сайта | `rules/engines.md` |
 
-## Invariants
+## Общие правила
 
-- `Loader::includeModule('search')` before any `CSearch*` call; the module may be absent or uninstalled — indexing must not break your writes.
-- Keep `CSearch` behind one service in `/local/modules/<vendor.module>/`; entity events and the `OnReindex` handler both call it with the same field builder.
-- Index key is (`MODULE_ID`, `ITEM_ID`); use your module id, never `iblock` or `main`.
-- Always pass `SITE_ID`, `PERMISSIONS` and `DATE_CHANGE`; items without rights are visible to admins only, `G2` means everyone including anonymous.
-- Register `search:OnReindex` persistently with your module id (installer), not via runtime `addEventHandler()`.
-- Search from web context: `CSearch::Search()` needs `$USER` and fatals in agents.
+- До `CSearch*` вызывай `Loader::includeModule('search')`. Модуль может отсутствовать / быть удалён: индексация не должна ломать запись сущности.
+- Оберни `CSearch` сервисом `/local/modules/<vendor.module>/`; события сущности и `OnReindex` используют общий сборщик полей.
+- Ключ индекса — (`MODULE_ID`, `ITEM_ID`); используй ID своего модуля, не `iblock` / `main`.
+- Передавай `SITE_ID`, `PERMISSIONS`, `DATE_CHANGE`. Без прав запись видит только администратор; G2 — все, включая гостей.
+- `search:OnReindex` регистрируй постоянно под ID модуля в установщике, не через `addEventHandler()` во время выполнения.
+- Поиск — в веб-контексте: `CSearch::Search()` требует `$USER`, без него в агенте фатальная ошибка.

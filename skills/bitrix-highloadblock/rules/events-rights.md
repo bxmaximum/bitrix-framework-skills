@@ -1,13 +1,13 @@
-# Events and rights
+# События и права
 
-## Double dispatch
+## Двойная отправка
 
-Every record event is sent **twice**, module `''` (global-namespace entity), names built from block `NAME`:
+Событие записи отправляется **дважды**, модуль `''` (сущность глобального пространства), имя строится из `NAME` блока:
 
-1. legacy `<Name><Event>`, e.g. `ProductColorOnBeforeAdd`. Reduced payload: update events have no `primary`/`oldFields`, delete events only `id`.
-2. modern `\<Name>::<Event>`, e.g. `\ProductColor::OnBeforeAdd`. Full payload; `Bitrix\Main\ORM\EventManager` subscribes here.
+1. Старое `<Name><Event>`, например `ProductColorOnBeforeAdd`. Сокращённые данные: update без `primary`/`oldFields`, delete только `id`.
+2. Современное `\<Name>::<Event>`, например `\ProductColor::OnBeforeAdd`. Полные данные; сюда подписывает `Bitrix\Main\ORM\EventManager`.
 
-Subscribe to one form only: both → the handler runs twice and errors from both land in the `Result`. Renaming `NAME` silently orphans all handlers.
+Подписывайся на один формат: оба вызовут обработчик дважды, ошибки обоих попадут в `Result`. Переименование `NAME` молча оставляет обработчики без событий.
 
 ```php
 use Bitrix\Main\ORM\Data\DataManager;
@@ -17,7 +17,7 @@ use Bitrix\Main\ORM\EventManager;
 use Bitrix\Main\ORM\EventResult;
 use Bitrix\Main\ORM\Fields\FieldError;
 
-// needs the compiled data class; returns a key for removeEventHandler()
+// нужен скомпилированный класс данных; возвращает ключ для removeEventHandler()
 $key = EventManager::getInstance()->addEventHandler(
     $dataClass,
     DataManager::EVENT_ON_BEFORE_ADD,
@@ -25,7 +25,7 @@ $key = EventManager::getInstance()->addEventHandler(
         $result = new EventResult();
         $code = trim((string)($event->getParameter('fields')['UF_CODE'] ?? ''));
         if ($code === '') {
-            $result->addError(new FieldError($event->getEntity()->getField('UF_CODE'), 'Code required'));
+            $result->addError(new FieldError($event->getEntity()->getField('UF_CODE'), 'Код обязателен'));
             return $result;
         }
         $result->modifyFields(['UF_CODE' => mb_strtolower($code)]);
@@ -34,41 +34,41 @@ $key = EventManager::getInstance()->addEventHandler(
 );
 ```
 
-- Also `removeEventHandler($dataClass, $type, $key)`, persistent `registerEventHandler($dataClass, $type, $toModuleId, $toClass, $toMethod)` / `unRegisterEventHandler(...)`. All resolve the entity (block must compile); unknown type → `ArgumentException`.
-- Without compiling on every hit, subscribe by name: `\Bitrix\Main\EventManager::getInstance()->addEventHandler('', '\ProductColor::OnAfterAdd', [Handler::class, 'onAfterAdd'])` in `init.php`, or `registerEventHandler('', '\ProductColor::OnAfterAdd', 'vendor.module', Handler::class, 'onAfterAdd')` on module install (`bitrix-events`).
+- Также `removeEventHandler($dataClass, $type, $key)`, постоянные `registerEventHandler($dataClass, $type, $toModuleId, $toClass, $toMethod)` / `unRegisterEventHandler(...)`. Все разрешают сущность (блок должен компилироваться); неизвестный тип вызывает `ArgumentException`.
+- Без компиляции на каждом хите подписывайся по имени: `\Bitrix\Main\EventManager::getInstance()->addEventHandler('', '\ProductColor::OnAfterAdd', [Handler::class, 'onAfterAdd'])` в `init.php` либо `registerEventHandler('', '\ProductColor::OnAfterAdd', 'vendor.module', Handler::class, 'onAfterAdd')` при установке (`bitrix-events`).
 
-## Parameters (modern form)
+## Параметры современного формата
 
-| Event | Params | Cancel |
+| Событие | Параметры | Отмена |
 | --- | --- | --- |
-| `OnBeforeAdd` | `fields`, `object` (mutable) | `addError()`; `modifyFields()`, `unsetFields()` |
-| `OnAdd` / `OnAfterAdd` | `fields`, `object` (clone); after: + `id`, `primary` | no |
-| `OnBeforeUpdate` | `id`, `primary`, `fields` (only passed keys), `object`, `oldFields` | as `OnBeforeAdd` |
-| `OnUpdate` / `OnAfterUpdate` | same | no |
-| `OnBeforeDelete` / `OnDelete` / `OnAfterDelete` | `id`, `primary`, `oldFields` | before only |
+| `OnBeforeAdd` | `fields`, изменяемый `object` | `addError()`; `modifyFields()`, `unsetFields()` |
+| `OnAdd` / `OnAfterAdd` | `fields`, копия `object`; после: также `id`, `primary` | Нет |
+| `OnBeforeUpdate` | `id`, `primary`, `fields` (только переданные ключи), `object`, `oldFields` | Как `OnBeforeAdd` |
+| `OnUpdate` / `OnAfterUpdate` | Те же | Нет |
+| `OnBeforeDelete` / `OnDelete` / `OnAfterDelete` | `id`, `primary`, `oldFields` | Только OnBeforeDelete |
 
-- `OnBefore*` run before UF validation. `OnAdd`/`OnUpdate`/`OnDelete` fire just before SQL. After an `OnBeforeDelete` error the later delete events do not fire.
-- `oldFields` holds scalar values before the change; multiple fields are unreliable there — read them before `update()`. It does not lock or version the row.
-- `FieldError` for one field, `EntityError` for record rules. `unsetFields()` drops silently (use `addError` if the caller must know). Several handlers changing one field → order-dependent.
-- Calling the same data class inside its handler re-fires events: guard with `static $running` + `try/finally` (per process only). After-events are not transactional with your side effects.
+- `OnBefore*` предшествуют проверке UF. `OnAdd`/`OnUpdate`/`OnDelete` — перед SQL. После ошибки `OnBeforeDelete` остальные события удаления не вызываются.
+- `oldFields` содержит прежние скалярные значения; множественные ненадёжны, прочитай до `update()`. Блокировки и версионирования строки нет.
+- `FieldError` — ошибка поля, `EntityError` — записи. `unsetFields()` молча убирает поле; для уведомления добавь `addError`. Изменение одного поля несколькими обработчиками зависит от порядка.
+- Вызов класса данных из обработчика повторно вызывает события: защити `static $running` + `try/finally` (только внутри процесса). Побочные действия after-событий не объединены с записью транзакцией.
 
-## Rights
+## Права
 
-Module tasks: `hblock_denied` (D, none), `hblock_read` (R → `hl_element_read`), `hblock_write` (W → `hl_element_write`, `hl_element_delete`). Per block, not per record. **`hblock_write` does not include `hl_element_read`**. The kernel admin and components treat any operation as read access.
+Задачи: `hblock_denied` (D, нет операций), `hblock_read` (R → `hl_element_read`), `hblock_write` (W → `hl_element_write`, `hl_element_delete`). Права на блок, не запись. **`hblock_write` не включает `hl_element_read`**. Административный интерфейс и компоненты принимают любую операцию за чтение.
 
 ```php
 use Bitrix\Highloadblock\HighloadBlockRightsTable;
 use Bitrix\Main\TaskTable;
 
-$ops = HighloadBlockRightsTable::getOperationsName([$hlId])[$hlId] ?? []; // scalar form warns when empty
+$ops = HighloadBlockRightsTable::getOperationsName([$hlId])[$hlId] ?? []; // скалярный аргумент при пустом результате вызывает warning
 $canRead = $USER->IsAdmin() || array_intersect(['hl_element_read', 'hl_element_write'], $ops) !== [];
 $canWrite = $USER->IsAdmin() || in_array('hl_element_write', $ops, true);
 
-// grant in a migration; never hardcode TASK_ID
+// права выдавай миграцией; не зашивай TASK_ID
 $taskId = (int)TaskTable::getList([
     'select' => ['ID'], 'filter' => ['=MODULE_ID' => 'highloadblock', '=NAME' => 'hblock_read'],
 ])->fetch()['ID'];
 HighloadBlockRightsTable::add(['HL_ID' => $hlId, 'TASK_ID' => $taskId, 'ACCESS_CODE' => 'G2']);
 ```
 
-`getOperationsName()` reads global `$USER` → fatal in CLI/agents without it. There, decide the access model explicitly (never default to admin).
+`getOperationsName()` читает глобальный `$USER`: без него в CLI/агенте фатальная ошибка. Явно определи модель доступа, не подставляй администратора по умолчанию.

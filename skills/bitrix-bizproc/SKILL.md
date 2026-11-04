@@ -1,26 +1,26 @@
 ---
 name: bitrix-bizproc
-description: 'Business processes (bizproc) — CBPDocument, Starter, custom activities and triggers in /local/activities, template rights. Use for approvals, document workflows, robots/activities, starting or stopping workflows from PHP, or bizproc agents.'
+description: 'Бизнес-процессы в PHP коробки: запуск CBPDocument/Starter, свои действия в /local/activities и триггеры, права шаблонов. Для согласований, роботов и обработки документов.'
 ---
 
-# Business processes (`bizproc`)
+# Бизнес-процессы (`bizproc`)
 
-Baseline: main 23.0+ · Verified: bizproc 26.1400.0, bizprocdesigner 26.800.0, main 26.800.0
+Baseline: main 23.0+ · Verified: bizproc 26.1700.0, bizprocdesigner 26.1100.0, main 26.1000.0
 
-Runtime, documents and activities are in `bizproc`; the template designer UI is `bizprocdesigner` (needs feature `BizProc`). Load `bizproc` and the document owner module (`crm`, `lists`, …).
+Перед PHP-кодом один раз прочитай `bitrix-framework`. Исполнение, документы и действия находятся в `bizproc`; редактор — в `bizprocdesigner` (нужна возможность `BizProc`). Подключи `bizproc` и модуль документа (`crm`, `lists`, …).
 
-| Task | Read |
+| Задача | Открыть |
 | --- | --- |
-| Start, terminate, kill, external events, document ids, `Starter` | `rules/start-stop.md` |
-| Custom activity: folder, `.description.php`, class, reserved names, waiting for events | `rules/custom-activities.md` |
-| Custom triggers for the Nodes designer | `rules/triggers.md` |
-| Template rights, designer controllers, import, template service | `rules/templates-access.md` |
-| Stuck pauses, fault limit, tracking, storage cleanup, agents vs Messenger | `rules/runtime-ops.md` |
+| Запуск, остановка, удаление, внешние события, ID документов, `Starter` | `rules/start-stop.md` |
+| Своё действие: каталог, описание, класс, зарезервированные имена, ожидание события | `rules/custom-activities.md` |
+| Свои триггеры узлового дизайнера | `rules/triggers.md` |
+| Права шаблонов, контроллеры дизайнера, импорт, сервис шаблонов | `rules/templates-access.md` |
+| Зависшие паузы, ошибки, журнал, очистка, агенты и Messenger | `rules/runtime-ops.md` |
 
-## Invariants
+## Общие правила
 
-- A document id is `[moduleId, entity, documentId]`, a type `[moduleId, entity, documentType]`. Copy triples from the owner module or an existing template; never invent them.
-- `CBPDocument` methods report through `$errors` (by reference), not exceptions: check it after every call.
-- Check rights before a manual start and in every custom controller (`CBPDocument::canUserOperateDocument()` / `canUserOperateDocumentType()`).
-- Approvals and document state machines → bizproc. Periodic sync and heavy I/O → agents or Messenger (`bitrix-background-jobs`), never inside `execute()`.
-- Custom activity classes and helpers are vendor-prefixed and never reuse `CBPActivity` member names.
+- ID документа: `[moduleId, entity, documentId]`, тип: `[moduleId, entity, documentType]`. Бери тройки из модуля документа или существующего шаблона.
+- Методы `CBPDocument` возвращают ошибки через `$errors` по ссылке. Проверяй его после каждого вызова; прочие исключения также возможны.
+- Перед ручным запуском и в своих контроллерах проверяй права: `CBPDocument::canUserOperateDocument()` / `canUserOperateDocumentType()`.
+- Согласования и состояния документа выполняй через bizproc. Периодическую синхронизацию и тяжёлый ввод-вывод выноси в агенты/Messenger (`bitrix-background-jobs`), из `execute()` ставь задачу в очередь.
+- Имена классов действий и помощников начинай с префикса поставщика. Не переиспользуй имена членов `CBPActivity`.

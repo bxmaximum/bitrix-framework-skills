@@ -1,40 +1,40 @@
-# Fields and user fields
+# Поля и пользовательские поля
 
-## Discovering fields
+## Получение метаданных
 
 ```php
 use Bitrix\Crm\Item;
 
-foreach ($factory->getFieldsCollection() as $field) { // Bitrix\Crm\Field, system + UF
-    $field->getName();  // common name: TITLE, STAGE_ID, UF_CRM_5_EXT_ID
+foreach ($factory->getFieldsCollection() as $field) { // Bitrix\Crm\Field: системные поля и UF
+    $field->getName();  // общее имя: TITLE, STAGE_ID, UF_CRM_5_EXT_ID
     $field->getTitle();
-    $field->getType();  // Field::TYPE_* or UF type id
+    $field->getType();  // Field::TYPE_* либо ID типа UF
     $field->isRequired(); $field->isMultiple(); $field->isUserField();
 }
 $factory->isFieldExists('UF_CRM_5_EXT_ID');
 $caption = $factory->getFieldCaption(Item::FIELD_NAME_STAGE_ID);
-$userFields = $factory->getUserFieldsCollection(); // UF only
-$ufInfo = $factory->getUserFieldsInfo();           // UF metadata arrays
+$userFields = $factory->getUserFieldsCollection(); // только UF
+$ufInfo = $factory->getUserFieldsInfo();           // массивы метаданных UF
 ```
 
-- `isRequired()` is static required-ness; stage-dependent required fields are enforced by operations.
-- `getFieldsInfo()` + `getUserFieldsInfo()` arrays are what REST `crm.item.fields` returns (camelCased).
-- Collections are cached per hit; after adding a UF call `$factory->clearUserFieldsInfoCache()` and `$factory->clearFieldsCollectionCache()`.
+- `isRequired()` задаёт постоянную обязательность; обязательность по стадиям проверяет операция.
+- Массивы `getFieldsInfo()` + `getUserFieldsInfo()` соответствуют ответу REST `crm.item.fields` с именами camelCase.
+- Коллекции кешируются на запрос. После добавления UF вызывай `$factory->clearUserFieldsInfoCache()` и `$factory->clearFieldsCollectionCache()`.
 
-## UF entity IDs
+## Идентификаторы сущностей UF
 
-Take it from `$factory->getUserFieldEntityId()` (or `\CCrmOwnerType::ResolveUserFieldEntityID($entityTypeId)`), never hardcode.
+Получай через `$factory->getUserFieldEntityId()` либо `\CCrmOwnerType::ResolveUserFieldEntityID($entityTypeId)`; не задавай строку вручную.
 
-| Entity | `ENTITY_ID` |
+| Сущность | `ENTITY_ID` |
 | --- | --- |
-| Lead, Deal, Contact, Company, Quote | `CRM_LEAD`, `CRM_DEAL`, `CRM_CONTACT`, `CRM_COMPANY`, `CRM_QUOTE` |
-| Smart process | `CRM_{typeId}`: the type `ID`, not `entityTypeId` |
-| Smart invoice, smart document | `CRM_SMART_INVOICE`, `CRM_SMART_DOCUMENT` |
-| Activity | `CRM_ACTIVITY` |
+| Лид, сделка, контакт, компания, предложение | `CRM_LEAD`, `CRM_DEAL`, `CRM_CONTACT`, `CRM_COMPANY`, `CRM_QUOTE` |
+| Смарт-процесс | `CRM_{typeId}`: `ID` типа, не `entityTypeId` |
+| Смарт-счёт, смарт-документ | `CRM_SMART_INVOICE`, `CRM_SMART_DOCUMENT` |
+| Дело | `CRM_ACTIVITY` |
 
-Recycle-bin copies use `…_SPD` entities; don't add fields there.
+Копии в корзине используют сущности `…_SPD`; поля туда не добавляй.
 
-## Adding a UF (installer or migration)
+## Добавление UF в установщике или миграции
 
 ```php
 $entityId = $factory->getUserFieldEntityId();
@@ -49,16 +49,16 @@ $ufId = (new \CUserTypeEntity())->Add([
     'MANDATORY' => 'N',
     'EDIT_FORM_LABEL' => ['en' => 'External ID', 'ru' => 'Внешний ID'],
     'LIST_COLUMN_LABEL' => ['en' => 'External ID', 'ru' => 'Внешний ID'],
-]); // int ID or false ($APPLICATION->GetException())
+]); // int ID либо false; ошибка в $APPLICATION->GetException()
 $factory->clearUserFieldsInfoCache();
 $factory->clearFieldsCollectionCache();
 ```
 
-- Name rule of REST `userfieldconfig.add`: `UF_{ENTITY_ID}_…`; `CUserTypeEntity` itself requires `UF_`, `[0-9A-Z_]`, 4–50 chars. Legacy deal fields look like `UF_CRM_1639669411830`.
-- Idempotent: check `$factory->isFieldExists($fieldName)` before `Add()`.
-- Enumerations: `(new \CUserFieldEnum())->SetEnumValues($ufId, ['n0' => ['VALUE' => 'A', 'XML_ID' => 'A']])`. General UF API: `bitrix-cms-basics`.
+- REST `userfieldconfig.add` требует `UF_{ENTITY_ID}_…`. Сам `CUserTypeEntity` требует префикс `UF_`, символы `[0-9A-Z_]`, длину 4–50. Старые поля сделок выглядят как `UF_CRM_1639669411830`.
+- Для идемпотентности проверяй `$factory->isFieldExists($fieldName)` до `Add()`.
+- Список: `(new \CUserFieldEnum())->SetEnumValues($ufId, ['n0' => ['VALUE' => 'A', 'XML_ID' => 'A']])`. Общий API UF: `bitrix-cms-basics`.
 
-## UF values on items
+## Значения UF элемента
 
 ```php
 $item->set('UF_CRM_5_EXT_ID', 'A-17');
@@ -66,6 +66,13 @@ $value = $item->get('UF_CRM_5_EXT_ID');
 $items = $factory->getItems(['filter' => ['=UF_CRM_5_EXT_ID' => 'A-17'], 'select' => ['ID']]);
 ```
 
-- Multiple fields take/return arrays. Value format is that of the UF type (enum → value ID, file → file ID or file array).
-- Mandatory UF are checked by operations (`disableCheckRequiredUserFields()` to skip).
-- Unknown or type-disabled field names in `set()` throw `ArgumentException`.
+- Множественные поля принимают и возвращают массивы. Формат определяется типом UF: список — ID значения, файл — ID или файловый массив.
+- Обязательные UF проверяет операция; `disableCheckRequiredUserFields()` отключает проверку.
+- Неизвестное либо выключенное для типа поле в `set()` вызывает `ArgumentException`.
+
+
+## Обязательность по стадиям
+
+**Since crm 26.1800** публичные `Bitrix\Crm\V2\Public\Command\Field\SetRequirementCommand` и `ClearRequirementCommand` изменяют правило обязательности от указанного пользователя с проверкой права управления полями. `SetRequirementCommand` принимает тип `V2\Public\EntityType`, `userId`, `fieldId`, `categoryId`, `Requirement\SetInput`; проверяй `Result`. Для сделки `categoryId=0` — основная воронка; для лида/предложения — `null`.
+
+`SetInput::withRequiredStageIds([])` снимает дополнительное правило, `SetInput::withoutRequiredStageIds()` делает поле обязательным во всей воронке. Ограничение лицензии: `STAGE_REQUIREMENT_NOT_AVAILABLE`; технические исключения могут выйти наружу. Классы Requirement находятся в `Bitrix\Crm\V2\Public\Entity\Field\Requirement`. На старом модуле пользуйся настройкой обязательности в интерфейсе, не записывай служебные таблицы напрямую.

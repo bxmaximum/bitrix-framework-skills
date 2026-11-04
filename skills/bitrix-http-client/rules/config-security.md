@@ -1,8 +1,8 @@
-# Options, logging, SSRF
+# Параметры, логирование и SSRF
 
-## Options
+## Параметры
 
-Constructor array (or setters) override `.settings.php` → `http_client_options`, which applies to every `new HttpClient()` including kernel calls:
+Массив конструктора (или сеттеры) переопределяет секцию `http_client_options` из `.settings.php`, которая действует на каждый `new HttpClient()`, включая вызовы ядра:
 
 ```php
 'http_client_options' => [
@@ -15,23 +15,23 @@ Constructor array (or setters) override `.settings.php` → `http_client_options
 ],
 ```
 
-| Option | Default | Note |
+| Параметр | По умолчанию | Примечание |
 | --- | --- | --- |
-| `socketTimeout` / `streamTimeout` | 30 / 60 s | connect / read |
-| `useCurl` | `false` | needs `php-curl`; better for https and async |
-| `compress` | `false` | accept gzip |
-| `redirect`, `redirectMax` | `true`, 5 | legacy mode only |
-| `privateIp` | `true` | `false` blocks private, loopback and link-local targets |
-| `disableSslVerification` | off | debugging only |
-| `bodyLengthMax` | 0 (no limit) | cap response size |
-| `waitResponse` | `true` | `false`: read headers and disconnect |
+| `socketTimeout` / `streamTimeout` | 30 / 60 секунд | Подключение / чтение |
+| `useCurl` | `false` | Нужен `php-curl`; лучше для https и асинхронности |
+| `compress` | `false` | Принимать gzip |
+| `redirect`, `redirectMax` | `true`, 5 | Только старый режим |
+| `privateIp` | `true` | `false` блокирует частные, локальные и link-local адреса |
+| `disableSslVerification` | Выключен | Только отладка |
+| `bodyLengthMax` | 0 (без предела) | Ограничение размера ответа |
+| `waitResponse` | `true` | `false`: прочитать заголовки и отключиться |
 | `proxyHost`, `proxyPort`, `proxyUser`, `proxyPassword` | | |
-| `headers`, `cookies` | | defaults for every request |
-| `debugLevel` | `HttpDebug::DEFAULT` | used only with `$http->setLogger()`; for the `.settings.php` logger set it in its constructor |
+| `headers`, `cookies` | | Начальные значения каждого запроса |
+| `debugLevel` | `HttpDebug::DEFAULT` | Только с `$http->setLogger()`; для логгера из `.settings.php` задавай уровень в его конструкторе |
 
-## Logging
+## Логирование
 
-The client logs through the PSR-3 logger `main.HttpClient` (`bitrix-logger`); nothing is written unless it is configured:
+Клиент пишет через PSR-3 логгер `main.HttpClient` (`bitrix-logger`); без настройки записи нет. Пример ниже — только для локальной диагностики с безопасными данными: заголовки могут содержать `Authorization`/`Cookie`, URL — ключ вебхука, тело — секреты. Для рабочего окружения отключай запись трафика либо используй логгер с удалением секретов:
 
 ```php
 'loggers' => [
@@ -47,18 +47,18 @@ The client logs through the PSR-3 logger `main.HttpClient` (`bitrix-logger`); no
 ],
 ```
 
-`HttpDebug` bits: `REQUEST_HEADERS`, `REQUEST_BODY`, `REQUEST`, `RESPONSE_HEADERS`, `RESPONSE_BODY`, `RESPONSE`, `CONNECT`, `ALL`; `0` = off. `DIAGNOSTICS` (timings) and `DEFAULT` **Since main 26.250\***, older kernels: combine `CONNECT | REQUEST_HEADERS | RESPONSE_HEADERS`; `BACKTRACE` **Since main 26.700** (the backtrace becomes a separate log record). There is no `HttpDebug::NONE`. Bodies may contain secrets: don't log them in production.
+Биты `HttpDebug`: `REQUEST_HEADERS`, `REQUEST_BODY`, `REQUEST`, `RESPONSE_HEADERS`, `RESPONSE_BODY`, `RESPONSE`, `CONNECT`, `ALL`; `0` отключает запись. `DIAGNOSTICS` (время) и `DEFAULT` доступны **Since main 26.250\***; раньше комбинируй `CONNECT | REQUEST_HEADERS | RESPONSE_HEADERS` только с безопасными данными. `BACKTRACE` доступен **Since main 26.700** (стек отдельной записью). Константы `HttpDebug::NONE` нет. Не записывай секреты из URL, заголовков и тел на production. <!-- verify:negative -->
 
 ## SSRF
 
-- User-supplied URL → `new HttpClient(['privateIp' => false])`. The host is resolved once and the checked IP is used for the connection; every redirect hop is checked again. Only `http`/`https` are accepted.
-- Keep `privateIp => true` only for trusted internal services.
-- `CFile::MakeFileArray($url)` downloads http(s) with `privateIp => false`; `ftp(s)://` to private IPs is blocked only **since main 26.800**. On older kernels accept only `https?://` from users. `OnMakeFileArray` handlers bypass the check.
-- More: `bitrix-security`.
+- Пользовательский URL → `new HttpClient(['privateIp' => false])`. Имя разрешается один раз, проверенный IP используется для подключения; каждый переход проверяется повторно. Разрешены только `http`/`https`.
+- Оставляй `privateIp => true` только для доверенных внутренних сервисов.
+- `CFile::MakeFileArray($url)` скачивает http(s) с `privateIp => false`; `ftp(s)://` на частные IP блокируются только **Since main 26.800**. На старом ядре принимай от пользователей лишь `https?://`. Обработчики `OnMakeFileArray` обходят проверку.
+- Подробнее: `bitrix-security`.
 
-## `CHTTP` (compat only)
+## `CHTTP` (только совместимость)
 
-| Legacy | Use |
+| Старый вызов | Использовать |
 | --- | --- |
 | `CHTTP::Download()`, `$http->Get()` | `HttpClient::download()`, `get()` |
 | `CHTTP::PrepareData()` | `http_build_query()` |

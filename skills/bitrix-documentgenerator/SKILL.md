@@ -1,28 +1,30 @@
 ---
 name: bitrix-documentgenerator
-description: 'Document generator (DOCX/PDF from templates) — Template, Document::createByTemplate, custom DataProvider, placeholders, numerators, storage, transformer PDF, rights, documentgenerator.* REST. Use when generating documents from own data.'
+description: 'Генератор документов Битрикс24: DOCX/PDF из шаблонов и своих данных, Document::createByTemplate, свой DataProvider. Используй для полей шаблона, нумерации, хранения и прав.'
 ---
 
-# Bitrix document generator
+# Генератор документов Битрикс
 
-Baseline: main 23.0+ · Verified: documentgenerator 26.200.100, main 26.800.0
+Baseline: main 23.0+ · Verified: documentgenerator 26.400.0, main 26.1000.0
 
-Bitrix24 editions only (cloud and on-premise): install requires `humanresources`; absent from "Site Management". PDF/JPG need module `transformer` and a document server.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
 
-| Task | Read |
+Только Битрикс24, облако и коробка: установка требует `humanresources`, в «Управлении сайтом» модуля нет. Для PDF/JPG нужны `transformer` и сервер документов.
+
+| Задача | Читать |
 | --- | --- |
-| Placeholders, modifiers, tables, images, create template from code | `rules/templates.md` |
-| Own entity data: provider class, fields, lists, registration | `rules/providers.md` |
-| Generate DOCX/PDF, numbers, storage, delete, events | `rules/generation.md` |
-| Module rights, roles, template access, REST, UI components | `rules/access-rest.md` |
+| Поля подстановки, модификаторы, таблицы, изображения, создание шаблона кодом | `rules/templates.md` |
+| Данные своей сущности: класс поставщика, поля, списки, регистрация | `rules/providers.md` |
+| Генерация DOCX/PDF, номера, хранение, удаление, события | `rules/generation.md` |
+| Права модуля, роли, доступ к шаблону, REST, компоненты интерфейса | `rules/access-rest.md` |
 
-CRM documents (invoices, deals) use CRM's own providers: `bitrix24-crm`.
+Документы CRM (счета, сделки) используют поставщиков CRM: `bitrix24-crm`.
 
-## Invariants
+## Общие правила
 
-- `Loader::requireModule('documentgenerator')`; code lives in your module under `/local/modules/`, the provider is registered by that module id.
-- Template `MODULE_ID` = provider `MODULE` = an installed module; otherwise the provider is silently ignored.
-- Call `Template::setSourceType()` before `getFields()` / `Document::createByTemplate()` and check `getSourceType()`.
-- Check rights explicitly: `UserPermissions`, template access, `Document::hasAccess()`. Loading and creating check nothing; user `0` passes data checks.
-- Reference files by `b_documentgenerator_file.ID` (`FILE_ID`, `PDF_ID`); convert with `FileTable::getBFileId()`.
-- PDF is asynchronous: generate with `getFile(false)` or skip conversion errors, react to `onDocumentTransformationComplete`.
+- `Loader::requireModule('documentgenerator')`; код — в своём модуле `/local/modules/`, поставщик зарегистрирован под ID этого модуля.
+- `MODULE_ID` шаблона = `MODULE` поставщика = установленный модуль; иначе поставщик молча игнорируется.
+- Вызывай `Template::setSourceType()` до `getFields()` / `Document::createByTemplate()`, проверяй `getSourceType()`.
+- Проверяй права явно: `UserPermissions`, доступ к шаблону, `Document::hasAccess()`. Загрузка и создание прав не проверяют; пользователь `0` проходит проверки данных.
+- Ссылки на файлы — `b_documentgenerator_file.ID` (`FILE_ID`, `PDF_ID`); преобразование — `FileTable::getBFileId()`.
+- PDF создаётся асинхронно: `getFile(false)` либо пропуск ошибок преобразования; обрабатывай `onDocumentTransformationComplete`.

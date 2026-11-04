@@ -1,29 +1,29 @@
-# Permissions
+# Права
 
 ```php
 use Bitrix\Crm\Service\Container;
 
-$perms = Container::getInstance()->getUserPermissions($userId); // null → context user
+$perms = Container::getInstance()->getUserPermissions($userId); // null — пользователь контекста
 ```
 
-One cached instance per user per hit.
+Один кешируемый экземпляр на пользователя в пределах запроса.
 
-| Question | Call |
+| Проверка | Вызов |
 | --- | --- |
-| Portal admin, CRM admin | `$perms->isAdmin()`, `$perms->isCrmAdmin()` |
-| Admin of a type or funnel | `$perms->isAdminForEntity($entityTypeId, $categoryId)` |
-| Any access to a type | `$perms->entityType()->canReadItems($entityTypeId)`, `canAddItems()`, `canUpdateItems()`, `canDeleteItems()`, `canExportItems()`, `canImportItems()` |
-| Same inside a funnel | `$perms->entityType()->canReadItemsInCategory($entityTypeId, $categoryId)`, `canAddItemsInCategory()`, `canUpdateItemsInCategory()`, `canDeleteItemsInCategory()` |
-| One item by ID | `$perms->item()->canRead($entityTypeId, $id)`, `canUpdate()`, `canDelete()` |
-| Loaded item | `$perms->item()->canReadItem($item)`, `canAddItem($item)`, `canUpdateItem($item)`, `canDeleteItem($item)` |
-| Stage move | `$perms->item()->canChangeStage(ItemIdentifier $identifier, $fromStageId, $toStageId)` |
-| Stage rights | `$perms->stage()->canAddInStage($entityTypeId, $categoryId, $stageId)`, `canUpdateInStage()`, `canReadInStage()` |
-| Funnels | `$perms->category()->canAdd($category)`, `canUpdate()`, `canDelete()`, `getAvailableForReadingCategoriesIds($entityTypeId)` |
-| Smart process settings | `$perms->dynamicType()->canAdd()`, `canUpdate($entityTypeId)` |
+| Администратор портала/CRM | `$perms->isAdmin()`, `$perms->isCrmAdmin()` |
+| Администратор типа/воронки | `$perms->isAdminForEntity($entityTypeId, $categoryId)` |
+| Доступ к типу | `$perms->entityType()->canReadItems($entityTypeId)`, `canAddItems()`, `canUpdateItems()`, `canDeleteItems()`, `canExportItems()`, `canImportItems()` |
+| Доступ в воронке | `$perms->entityType()->canReadItemsInCategory($entityTypeId, $categoryId)`, `canAddItemsInCategory()`, `canUpdateItemsInCategory()`, `canDeleteItemsInCategory()` |
+| Элемент по ID | `$perms->item()->canRead($entityTypeId, $id)`, `canUpdate()`, `canDelete()` |
+| Загруженный элемент | `$perms->item()->canReadItem($item)`, `canAddItem($item)`, `canUpdateItem($item)`, `canDeleteItem($item)` |
+| Смена стадии | `$perms->item()->canChangeStage(ItemIdentifier $identifier, $fromStageId, $toStageId)` |
+| Права стадии | `$perms->stage()->canAddInStage($entityTypeId, $categoryId, $stageId)`, `canUpdateInStage()`, `canReadInStage()` |
+| Воронки | `$perms->category()->canAdd($category)`, `canUpdate()`, `canDelete()`, `getAvailableForReadingCategoriesIds($entityTypeId)` |
+| Настройки смарт-процесса | `$perms->dynamicType()->canAdd()`, `canUpdate($entityTypeId)` |
 
-`ItemIdentifier` is `Bitrix\Crm\ItemIdentifier`: `new ItemIdentifier($entityTypeId, $id)` or `ItemIdentifier::createByItem($item)`.
+`ItemIdentifier` — `Bitrix\Crm\ItemIdentifier`: `new ItemIdentifier($entityTypeId, $id)` либо `ItemIdentifier::createByItem($item)`.
 
-## Lists
+## Списки
 
 ```php
 use Bitrix\Crm\Service\UserPermissions;
@@ -36,12 +36,12 @@ $items = $factory->getItemsFilteredByPermissions(
 $total = $factory->getItemsCountFilteredByPermissions($filter, $userId);
 ```
 
-- User 0 gets `[]`. Plain `getItems()` never filters.
-- Own ORM query on a CRM table: `$perms->itemsList()->applyAvailableItemsFilter($filter, [(new PermissionEntityTypeHelper($entityTypeId))->getPermissionEntityTypeForCategory($categoryId)])` adds an access subquery on `ID` (`Bitrix\Crm\Category\PermissionEntityTypeHelper`).
+- Пользователь 0 получает `[]`. Обычный `getItems()` не фильтрует по правам.
+- В своём ORM-запросе таблицы CRM вызов `$perms->itemsList()->applyAvailableItemsFilter($filter, [(new PermissionEntityTypeHelper($entityTypeId))->getPermissionEntityTypeForCategory($categoryId)])` добавляет подзапрос доступа по `ID`. Класс: `Bitrix\Crm\Category\PermissionEntityTypeHelper`.
 
-## Rules
+## Правила
 
-- Operations check the context user's rights on write. Check reads, custom controller actions and UI buttons yourself.
-- Check the acting user, not a technical one: pass the real user ID to both `getUserPermissions()` and `Context`.
-- Deprecated on `UserPermissions` but still present in 26.800 (docblocks say removal "after March 2025"): `checkReadPermissions()`, `checkAddPermissions()`, `checkUpdatePermissions()`, `checkDeletePermissions()`, `canReadType()`, `canUpdateType()`, `canWriteConfig()`, `canReadItem()`, `canUpdateItem()`, `getCrmPermissions()`. Use them only as a fallback on older crm builds that lack `item()`/`entityType()`.
-- `CCrmPerms`, `CCrmDeal::CheckReadPermission()`, `CCrmAuthorizationHelper::CheckUpdatePermission()`: compat only.
+- Запись через операции проверяет права пользователя контекста. Чтение, свои действия и кнопки интерфейса проверяй отдельно.
+- Проверяй инициатора, а не технического пользователя: один реальный ID в `getUserPermissions()` и `Context`.
+- В `UserPermissions` устарели: `checkReadPermissions()`, `checkAddPermissions()`, `checkUpdatePermissions()`, `checkDeletePermissions()`, `canReadType()`, `canUpdateType()`, `canWriteConfig()`, `canReadItem()`, `canUpdateItem()`, `getCrmPermissions()`. В старом ядре они нужны как запасной путь при отсутствии `item()`/`entityType()`. Наличие проверяй по исходнику версии, срок удаления в docblock не гарантирует удаление.
+- `CCrmPerms`, `CCrmDeal::CheckReadPermission()`, `CCrmAuthorizationHelper::CheckUpdatePermission()` оставляй для совместимости.

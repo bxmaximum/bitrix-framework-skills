@@ -1,27 +1,27 @@
-# Filters
+# Фильтры
 
-## Defaults
+## Стандартные фильтры
 
-`Controller::getDefaultPreFilters()` = `Authentication`, `HttpMethod([GET, POST])`, `Csrf`; `JsonController` adds `ContentType([JSON])`. When overriding, start from `parent::getDefaultPreFilters()` (REST v3 controllers depend on it). If the base list allows POST and lacks `Csrf`, a POST request gets `Csrf` added anyway. Only `-prefilters` / `#[DisablePrefilters]` really removes it.
+`Controller::getDefaultPreFilters()` возвращает `Authentication`, `HttpMethod([GET, POST])`, `Csrf`; `JsonController` добавляет `ContentType([JSON])`. При переопределении начинай с `parent::getDefaultPreFilters()` (контроллеры REST v3 зависят от него). Если базовый список разрешает POST без `Csrf`, POST-запрос всё равно добавит `Csrf`. Действительно удаляют его только `-prefilters` / `#[DisablePrefilters]`.
 
-Built-in `Bitrix\Main\Engine\ActionFilter\*`:
+Встроенные `Bitrix\Main\Engine\ActionFilter\*`:
 
-- `Authentication($enableRedirect = false)`: 401 for guests.
-- `Csrf`: `sessid` param or `X-Bitrix-Csrf-Token` header. Runs only in `SCOPE_AJAX` (AJAX and routed controllers), on GET too.
+- `Authentication($enableRedirect = false)`: 401 для гостей.
+- `Csrf`: параметр `sessid` или заголовок `X-Bitrix-Csrf-Token`. Выполняется только в `SCOPE_AJAX` (AJAX и контроллеры маршрутов), включая GET.
 - `HttpMethod([...])`, `ContentType([...])`, `CloseSession` (parallel AJAX), `Cors`, `Scope(Scope::NOT_REST)`.
-- `Token`: signed entity token headers. Niche.
-- `AccessCheck`: via `#[ActionAccess]`, see below.
+- `Token`: заголовки с подписанным токеном сущности; специальный сценарий.
+- `AccessCheck`: через `#[ActionAccess]`, см. ниже.
 
-Missing a check? Write one `ActionFilter\Base` subclass (below) instead of copying checks into actions.
+Если проверки не хватает, напиши один подкласс `ActionFilter\Base` (ниже), а не копируй проверки по действиям.
 
-## Attributes (**Since main 26.250\***)
+## Атрибуты (**Since main 26.250\***)
 
 `ActionFilter\Attribute\Rule\*`:
 
-- `Authentication`, `HttpMethod`, `Csrf`, `ContentType`, `CloseSession`, `Cors`, `Scope`, `Token` append their filter (`+prefilters`). The last ctor arg `FilterType $type` removes it instead (`FilterType::DisablePrefilter`).
-- `EnablePrefilters([...])` / `DisablePrefilters([...FQCN])`, same for postfilters. `Prefilters([...])` / `Postfilters([...])` replace the defaults.
-- `#[HttpMethod]` without args = GET only. Its 2nd arg is `FilterType`, not a method. The docs example `HttpMethod(METHOD_GET, METHOD_POST)` is wrong.
-- Removal runs before append; removal matches by class (`is_a`).
+- `Authentication`, `HttpMethod`, `Csrf`, `ContentType`, `CloseSession`, `Cors`, `Scope`, `Token` добавляют фильтр (`+prefilters`). Последний параметр конструктора `FilterType $type` позволяет удалить его (`FilterType::DisablePrefilter`).
+- `EnablePrefilters([...])` / `DisablePrefilters([...FQCN])`; аналогично для последующих фильтров. `Prefilters([...])` / `Postfilters([...])` заменяют стандартный набор.
+- `#[HttpMethod]` без аргументов разрешает только GET. Второй аргумент — `FilterType`, а не метод. Пример документации `HttpMethod(METHOD_GET, METHOD_POST)` неверен.
+- Удаление выполняется перед добавлением; сопоставление по классу (`is_a`).
 
 ```php
 use Bitrix\Main\Engine\ActionFilter;
@@ -30,10 +30,10 @@ use Bitrix\Main\Engine\ActionFilter\Attribute\Rule\EnablePrefilters;
 
 #[DisablePrefilters([ActionFilter\Authentication::class, ActionFilter\Csrf::class])]
 #[EnablePrefilters([new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_GET])])]
-public function pingAction(): array { return ['ok' => true]; } // public, read-only
+public function pingAction(): array { return ['ok' => true]; } // публичное действие, только чтение
 ```
 
-## `configureActions()` (any version)
+## `configureActions()` (любая версия)
 
 ```php
 public function configureActions(): array
@@ -47,11 +47,11 @@ public function configureActions(): array
 }
 ```
 
-Keys: `prefilters` / `postfilters` replace the defaults, `+…` appends, `-…` removes by FQCN. An action configured here must have no filter attributes.
+Ключи `prefilters` / `postfilters` заменяют стандартный набор, `+…` добавляет, `-…` удаляет по FQCN. У настроенного здесь действия не должно быть атрибутов фильтров.
 
 ## `#[ActionAccess]` (**Since main 26.600\***)
 
-Use it when the module has an access controller (`Bitrix\Main\Access\AccessibleController`, e.g. `BaseAccessController`). The controller must implement `Engine\Contract\AccessCheckControllerInterface`, otherwise `SystemException`.
+Используй, когда у модуля есть контроллер доступа (`Bitrix\Main\Access\AccessibleController`, например `BaseAccessController`). Контроллер должен реализовать `Engine\Contract\AccessCheckControllerInterface`, иначе `SystemException`.
 
 ```php
 use Bitrix\Main\Access\AccessibleController;
@@ -70,13 +70,13 @@ final class Post extends Controller implements AccessCheckControllerInterface
 }
 ```
 
-- `action`: string or enum (backed → value, pure → case name). The default strategy `ItemIdFromRequestStrategy` reads the request key (`id`) and calls `checkByItemId()`. Custom strategy: implement `AccessCheckStrategyInterface`.
-- No HTTP 403 by default (`AccessCheck` `setHttpStatus` is `false`), the response only gets the error.
-- Fallback before 26.600: a `Base` filter calling `$access->checkByItemId($action, $id)`.
+- `action` — строка или enum (со значением → значение, без значения → имя варианта). Стандартная `ItemIdFromRequestStrategy` читает ключ запроса `id` и вызывает `checkByItemId()`. Своя стратегия реализует `AccessCheckStrategyInterface`.
+- HTTP 403 по умолчанию не устанавливается (`AccessCheck`: `setHttpStatus=false`); ответ получает только ошибку.
+- До 26.600 используй фильтр `Base`, вызывающий `$access->checkByItemId($action, $id)`.
 
-Lists: nest the row filter so user keys or `'LOGIC' => 'OR'` can't override it: `'filter' => [$userFilter, $access->getEntityFilter($action, PostTable::class) ?? []]`. Use the same filter for the list and for `count`.
+Для списков вкладывай фильтр доступа отдельно, чтобы пользовательские ключи или `'LOGIC' => 'OR'` не могли его обойти: `'filter' => [$userFilter, $access->getEntityFilter($action, PostTable::class) ?? []]`. Один фильтр используй для выборки и `count`.
 
-## Custom filter
+## Свой фильтр
 
 ```php
 use Bitrix\Main\Context;
@@ -95,11 +95,11 @@ final class RequireGroup extends ActionFilter\Base
 
     public function onBeforeAction(Event $event)
     {
-        // getUserGroups() returns group IDs
+        // getUserGroups() возвращает ID групп
         if (!in_array($this->groupId, array_map('intval', CurrentUser::get()->getUserGroups()), true))
         {
             Context::getCurrent()->getResponse()->setStatus(403);
-            $this->addError(new Error('Access denied', 'ACCESS_DENIED'));
+            $this->addError(new Error('Доступ запрещён', 'ACCESS_DENIED'));
 
             return new EventResult(EventResult::ERROR, null, null, $this);
         }
@@ -107,5 +107,5 @@ final class RequireGroup extends ActionFilter\Base
         return null;
     }
 }
-// #[EnablePrefilters([new RequireGroup(5)])] or '+prefilters' => [new RequireGroup(5)]
+// #[EnablePrefilters([new RequireGroup(5)])] или '+prefilters' => [new RequireGroup(5)]
 ```

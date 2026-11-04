@@ -1,31 +1,33 @@
 ---
 name: bitrix-performance
-description: 'Bitrix high-load tuning — Composite (dynamic areas, createFrame, StaticArea), query optimization, read replicas via the cluster module. Use when a page or query is slow or when enabling composite.'
+description: 'Производительность Битрикс: композит (createFrame, StaticArea), динамические области и реплики чтения модуля cluster. Используй при медленных страницах и запросах или настройке композита.'
 ---
 
-# Performance
+# Производительность
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-Caching itself: `bitrix-caching`. SQL profiling: `bitrix-database` (SqlTracker). Sessions: `bitrix-sessions`.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-## Composite
+Кеширование: `bitrix-caching`. Профилирование SQL: `bitrix-database` (SqlTracker). Сессии: `bitrix-sessions`.
 
-Static HTML of the page is served from the composite cache (NGINX can serve it directly); dynamic areas are fetched by a follow-up request. Enable in Settings → Composite site. Kernel: `Bitrix\Main\Composite\Engine`, `Page`, `StaticArea`, `BufferArea`.
+## Композит
 
-In a component template (`$this` is `CBitrixComponentTemplate`):
+Статический HTML берётся из композитного кеша, в том числе напрямую через NGINX; динамические области загружаются следующим запросом. Включение: Настройки → Композитный сайт. Ядро: `Bitrix\Main\Composite\Engine`, `Page`, `StaticArea`, `BufferArea`.
+
+В шаблоне компонента (`$this` — `CBitrixComponentTemplate`):
 
 ```php
-$this->setFrameMode(true);                 // template is composite-compatible
+$this->setFrameMode(true);                 // шаблон совместим с композитом
 
-$frame = $this->createFrame()->begin('Loading…');  // stub shown in the cached HTML
-echo htmlspecialcharsbx($arResult['USER_NAME']);   // dynamic content
+$frame = $this->createFrame()->begin('Загрузка…');  // заглушка в кешированном HTML
+echo htmlspecialcharsbx($arResult['USER_NAME']);   // динамическое содержимое
 $frame->end();
 ```
 
-Long stub markup: `begin()` → dynamic content → `beginStub()` → stub HTML → `end()`.
+Объёмная заглушка: `begin()` → динамическое содержимое → `beginStub()` → HTML заглушки → `end()`.
 
-Outside components (site template header, `init.php` helpers):
+Вне компонентов (шапка шаблона сайта, функции в `init.php`):
 
 ```php
 use Bitrix\Main\Composite\StaticArea;
@@ -37,21 +39,21 @@ echo (int)$basketCount;
 $area->finishDynamicArea();
 ```
 
-- Per-component switch without code: params `COMPOSITE_FRAME_MODE` (`A`/`Y`/`N`) and `COMPOSITE_FRAME_TYPE` (`AUTO`, `STATIC`, `DYNAMIC_WITH_STUB`, `DYNAMIC_WITHOUT_STUB`).
-- Exclude a page: `\Bitrix\Main\Composite\Page::getInstance()->markNonCacheable()`.
-- There is no `data-dynamic` attribute and no `composite_frame_mode` page property.
-- Never leave personal data (name, cart, rights, CSRF tokens) in the static part. Test every dynamic area as a guest and as a user.
+- Настройка компонента без кода: параметры `COMPOSITE_FRAME_MODE` (`A`/`Y`/`N`) и `COMPOSITE_FRAME_TYPE` (`AUTO`, `STATIC`, `DYNAMIC_WITH_STUB`, `DYNAMIC_WITHOUT_STUB`).
+- Исключить страницу: `\Bitrix\Main\Composite\Page::getInstance()->markNonCacheable()`.
+- Атрибута `data-dynamic` и свойства страницы `composite_frame_mode` нет.
+- Не оставляй личные данные (имя, корзину, права, CSRF-токены) в статической части. Проверь динамические области гостем и авторизованным пользователем.
 
-## Queries
+## Запросы
 
-- Select only needed fields; index columns used in `filter`/`order`.
-- No N+1: `fetchCollection()` + `fill()`, or relations in `select` (`bitrix-orm`).
-- Batch writes (`addMulti`, `updateMulti`) instead of per-row loops.
-- ORM query cache for repeated reads; tagged data cache for assembled results.
+- Выбирай нужные поля; индексируй столбцы `filter`/`order`.
+- Устраняй N+1: `fetchCollection()` + `fill()` либо связи в `select` (`bitrix-orm`).
+- Используй пакетную запись (`addMulti`, `updateMulti`) вместо записи по строке в цикле.
+- Повторные чтения: кеш ORM-запроса; собранные результаты: тегированный кеш данных.
 
-## Read replicas
+## Реплики чтения
 
-With the `cluster` module, `SELECT`s from `query()` may go to a slave. Pin read-after-write to the master:
+С модулем `cluster` запросы `SELECT` через `query()` могут уходить на реплику. Чтение сразу после записи закрепляй за основной БД:
 
 ```php
 $pool = \Bitrix\Main\Application::getInstance()->getConnectionPool();
@@ -66,11 +68,12 @@ finally
 }
 ```
 
-Extra DBs (analytics, reports): a named connection in `connections` (`bitrix-database`).
+useMasterOnly() меняет счётчик вложенности: каждому true нужен false в finally.
 
-## Checklist
+Дополнительные БД для аналитики и отчётов: именованное подключение в `connections` (`bitrix-database`).
 
-- [ ] Every composite dynamic area checked as guest and as logged-in user.
-- [ ] NGINX serves the composite cache in production.
-- [ ] Slow queries found with SqlTracker and indexed.
-- [ ] Cache and sessions on Redis/Memcached, not files, under load.
+## Проверка
+
+- [ ] Динамические области композита проверены гостем и авторизованным пользователем.
+- [ ] Если настроена отдача композита через NGINX, проверено попадание в статический кеш.
+- [ ] Медленные запросы найдены через SqlTracker, нужные индексы созданы.

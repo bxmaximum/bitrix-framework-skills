@@ -1,42 +1,44 @@
-# Engines, morphology, ranking
+# Движки, морфология, ранжирование
 
-## Full-text engine
+## Полнотекстовый движок
 
-Option `search` / `full_text_engine` (module settings page), read by `CSearchFullText::getInstance()`:
+Опция `search` / `full_text_engine` страницы настроек, читается `CSearchFullText::getInstance()`:
 
-| Value | Engine | Notes |
+| Значение | Движок | Особенности |
 | --- | --- | --- |
-| `bitrix` (default) | `CSearchStemTable` | Stem tables in the main DB |
-| `mysql` | `CSearchMysql` | MySQL FULLTEXT index; offered only on MySQL |
-| `pgsql` | `CSearchPgsql` | GIN `to_tsvector` index; offered only on PostgreSQL |
-| `sphinx` | `CSearchSphinx` | SphinxQL; options `sphinx_connection` (`127.0.0.1:9306`), `sphinx_index_name`. Sphinx 3.x supported since search 25.200 |
-| `opensearch` | `CSearchOpenSearch` | options `opensearch_connection`, `opensearch_user`, `opensearch_index`; password in `CPasswordStorage` (`search@opensearch_password`); one index per site |
+| `bitrix` (по умолчанию) | `CSearchStemTable` | Таблицы основ слов в основной БД |
+| `mysql` | `CSearchMysql` | MySQL FULLTEXT; доступен только на MySQL |
+| `pgsql` | `CSearchPgsql` | GIN `to_tsvector`; доступен только на PostgreSQL |
+| `sphinx` | `CSearchSphinx` | SphinxQL; `sphinx_connection` (`127.0.0.1:9306`), `sphinx_index_name`. Sphinx 3.x — **Since search 25.200** |
+| `opensearch` | `CSearchOpenSearch` | `opensearch_connection`, `opensearch_user`, `opensearch_index`; пароль в `CPasswordStorage` (`search@opensearch_password`); индекс на сайт |
 
-- No Elasticsearch engine in the kernel.
-- If Sphinx/OpenSearch is unreachable, `getInstance()` throws `Bitrix\Main\DB\ConnectionException` — indexing calls fail too. Wrap `CSearch::Index()` in your service with a try/catch and log.
-- Changing the engine requires a full reindex (`rules/reindex.md`).
-- Custom ranking (`CSearchCustomRank`) is not pushed to Sphinx/OpenSearch.
+- Движка Elasticsearch в ядре нет.
+- **Since search 26.100** `getInstance()` создаёт объект без подключения; ConnectionException может возникнуть при первом запросе. Адрес и индекс задаются в конструкторе движка, connect($ignoreErrors = false) принимает только режим ошибки. На старом модуле проверяй прежнюю сигнатуру connect(). Индексацию защищай на уровне сервиса, сбой поиска не должен отменять запись сущности.
+- Смена движка требует полного переиндекса (`rules/reindex.md`).
+- Пользовательский ранг `CSearchCustomRank` не передаётся в Sphinx/OpenSearch.
 
-## Morphology and words
+## Морфология и слова
 
-- Option `use_stemming` (default `Y`); per query `$aParamsEx['STEMMING'] = false`. Bundled stemmers: `ru`, `en`, `tr`.
-- Custom stemmer for a language: define `stemming_<lang>($word, $flags = 0)` before search runs (e.g. from `/local/php_interface/init.php`), or put it in `/bitrix/php_interface/<lang>/search/stemming.php` — `/local` is not scanned for that file.
-- Option `letters` (default `-`) adds characters that belong to words; change → full reindex.
-- Option `agent_stemming = Y` moves stemming to an agent (`CSearchStemTable::DelayedStemIndex()`); new items are findable only after it runs.
+- `use_stemming` по умолчанию Y; на запрос — `$aParamsEx['STEMMING'] = false`. Встроенные языки: ru, en, tr.
+- Для своего языка определи `stemming_<lang>($word, $flags = 0)` до поиска, например в `/local/php_interface/init.php`. Ядро также читает `/bitrix/php_interface/<lang>/search/stemming.php`, но аналогичный `/local` не ищет; предпочитай регистрацию через init.php.
+- `letters` по умолчанию `-` добавляет символы слова; изменение требует полного переиндекса.
+- `agent_stemming = Y` переносит морфологию в агент `CSearchStemTable::DelayedStemIndex()`: новые записи находятся после его запуска.
 
-## Ranking and tags
+## Ранжирование и теги
 
-- Order: `CUSTOM_RANK`, then relevance `RANK`, then date.
-- Per-item boost: `CUSTOM_RANK` in `CSearch::Index()`, but a matching rule from `b_search_custom_rank` overrides it.
-- Rules: `(new CSearchCustomRank())->Add(['SITE_ID' => 's1', 'MODULE_ID' => 'vendor.docs', 'PARAM1' => 'contract', 'RANK' => 10])`, then call `StartUpdate()` and `NextUpdate()` until done to apply to existing items (or edit rules in admin).
-- Tags: `TAGS` field in `Index()`; list with `CSearchTags::GetList($arSelect = [], $arFilter = [], $arOrder = [], $limit = 100)` (rights-checked); cloud = `bitrix:search.tags.cloud`.
-- Suggestions (`b_search_suggest`) are built from queries and are not filtered by rights — don't enable `USE_SUGGEST` where phrases are sensitive.
+- Порядок: `CUSTOM_RANK`, релевантность `RANK`, дата.
+- Ранг записи: `CUSTOM_RANK` в `CSearch::Index()`, но совпавшее правило `b_search_custom_rank` перекрывает его.
+- Правила: `(new CSearchCustomRank())->Add(['SITE_ID' => 's1', 'MODULE_ID' => 'vendor.docs', 'PARAM1' => 'contract', 'RANK' => 10])`; для применения к старым записям — `StartUpdate()`, затем `NextUpdate()` до завершения. Либо редактирование в административном интерфейсе.
+- Теги: `TAGS` в `Index()`; список `CSearchTags::GetList($arSelect = [], $arFilter = [], $arOrder = [], $limit = 100)` с проверкой прав; облако `bitrix:search.tags.cloud`.
+- Подсказки `b_search_suggest` строятся из запросов без фильтра прав. Не включай `USE_SUGGEST`, если фразы конфиденциальны.
 
-## Static files (module `main`)
+## Файлы сайта (модуль `main`)
 
-Public files are indexed as `MODULE_ID = 'main'` during full reindex, by options `include_mask` (`*.php;*.html;*.htm`) and `exclude_mask` (default excludes `/bitrix/*`, `/upload/*`, `/local/*`). One file: `CSearch::ReindexFile([$siteId, '/about/index.php'])`. File contents of other types come from `OnSearchGetFileContent` handlers.
+Публичные файлы индексируются как `MODULE_ID = 'main'` при полном переиндексе: `include_mask` (`*.php;*.html;*.htm`), `exclude_mask` (по умолчанию исключает `/bitrix/*`, `/upload/*`, `/local/*`). Один файл: `CSearch::ReindexFile([$siteId, '/about/index.php'])`. Содержимое других форматов дают `OnSearchGetFileContent`.
 
-## Maintenance
+## Обслуживание
 
-- Daily agents: `CSearchSuggest::CleanUpAgent()`, `CSearchStatistic::CleanUpAgent()`. No reindex agent.
-- Phrase statistics (`stat_phrase`) grow with every search; keep `stat_phrase_save_days` reasonable.
+- Ежедневные агенты: `CSearchSuggest::CleanUpAgent()`, `CSearchStatistic::CleanUpAgent()`. Агента переиндекса нет.
+- Статистика `stat_phrase` растёт с каждым поиском; ограничь `stat_phrase_save_days`.
+
+**Since search 26.100** временная опция full_text_delay_index = Y откладывает запись OpenSearch в очередь search_sync_content. По умолчанию N; штатный переиндекс отключает задержку в своём контексте. Это не автоматическое переключение на другой поисковый движок. На старой версии сохраняй задание на повторную индексацию своим фоновым обработчиком (`bitrix-background-jobs`).

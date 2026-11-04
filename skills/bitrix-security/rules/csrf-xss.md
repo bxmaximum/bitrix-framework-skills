@@ -1,37 +1,37 @@
-# CSRF, XSS, links, redirects
+# CSRF, XSS, ссылки и перенаправления
 
 ## CSRF
 
-- Controllers: the default `Csrf` prefilter accepts the `sessid` param or the `X-Bitrix-Csrf-Token` header. It runs only in `SCOPE_AJAX` (AJAX and routed controllers). REST and CLI rely on their own auth. Never drop it on actions that change data (`bitrix-controllers`).
-- Forms: `<?= bitrix_sessid_post() ?>`. JS: `BX.bitrix_sessid()` in the header; `BX.ajax.runAction()` sends it itself.
-- Hand-written handlers (legacy pages, `PublicPageController` targets): `if (!check_bitrix_sessid()) { … }` checks the param and the header.
-- No state changes on GET.
+- Контроллеры: стандартный фильтр `Csrf` принимает `sessid` или заголовок `X-Bitrix-Csrf-Token`. Работает только в `SCOPE_AJAX` (AJAX и контроллеры маршрутов). REST и CLI имеют свою авторизацию. Не удаляй фильтр у действий записи (`bitrix-controllers`).
+- Формы: `<?= bitrix_sessid_post() ?>`. JS: `BX.bitrix_sessid()` в заголовке; `BX.ajax.runAction()` отправляет автоматически.
+- Самописные обработчики (старые страницы, цели `PublicPageController`): `if (!check_bitrix_sessid()) { … }` проверяет параметр и заголовок.
+- Не меняй состояние через GET.
 
-## Escaping and user HTML
+## Экранирование и пользовательский HTML
 
-- HTML text and attributes: `htmlspecialcharsbx($value)`. Component `$arResult` is not escaped: escape in the template.
-- Data for JS: `\Bitrix\Main\Web\Json::encode($data)`, never string concatenation. In JS insert text via `BX.Text.encode()` / `Tag.safe`; `innerHTML` and `BX.Runtime.html()` insert raw HTML.
-- User HTML: sanitize, don't escape.
+- HTML-текст и атрибуты: `htmlspecialcharsbx($value)`. `$arResult` компонента не экранирован: делай это в шаблоне.
+- Данные JS: `\Bitrix\Main\Web\Json::encode($data)`, без склейки строк. В JS вставляй текст через `BX.Text.encode()` / `Tag.safe`; `innerHTML` и `BX.Runtime.html()` вставляют исходный HTML.
+- Пользовательский HTML очищай от опасных конструкций, а не экранируй целиком.
 
 ```php
 $sanitizer = new \CBXSanitizer();
-$sanitizer->SetLevel(\CBXSanitizer::SECURE_LEVEL_HIGH); // or SECURE_LEVEL_MIDDLE / SECURE_LEVEL_LOW
+$sanitizer->SetLevel(\CBXSanitizer::SECURE_LEVEL_HIGH); // либо SECURE_LEVEL_MIDDLE / SECURE_LEVEL_LOW
 $safeHtml = $sanitizer->SanitizeHtml($userHtml);
 ```
 
-- `\Bitrix\UI\Format\BBCode\Converter::toHtml()` (ui 26.600+) keeps `iframe` and `style`: post-filter where embeds are not allowed.
+- `\Bitrix\UI\Format\BBCode\Converter::toHtml()` (ui 26.600+) сохраняет `iframe` и `style`: дополнительно фильтруй, если встраивание запрещено.
 
-## Links
+## Ссылки
 
-`htmlspecialcharsbx()` does not stop `javascript:` or `data:` in `href`/`src`. Allow-list the scheme:
+`htmlspecialcharsbx()` не блокирует `javascript:` / `data:` в `href`/`src`. Разрешай схемы по списку:
 
 ```php
 function safeHref(string $href): string
 {
-    $v = preg_replace('/[\x00-\x20]/', '', $href); // browsers drop these: "java\tscript:"
+    $v = preg_replace('/[\x00-\x20]/', '', $href); // браузеры удаляют эти символы: "java\tscript:"
     if (str_starts_with(str_replace('\\', '/', $v), '//'))
     {
-        return ''; // protocol-relative foreign host
+        return ''; // чужой хост с относительной схемой
     }
     if (preg_match('/^([a-z][a-z0-9+.-]*):/i', $v, $m) && !in_array(strtolower($m[1]), ['http', 'https'], true))
     {
@@ -41,11 +41,11 @@ function safeHref(string $href): string
 }
 ```
 
-Output: `htmlspecialcharsbx(safeHref($url))`. Landing code has `\Bitrix\Landing\Sanitizer::sanitizeHrefScheme()` (landing 26.1000+).
+Вывод: `htmlspecialcharsbx(safeHref($url))`. В Landing есть `\Bitrix\Landing\Sanitizer::sanitizeHrefScheme()` (landing 26.1000+).
 
-## Redirects
+## Перенаправления
 
-`Engine\Response\Redirect` / `LocalRedirect()` don't block external hosts unless the `security` module's redirect protection is on (`skipSecurity: true` bypasses it). For `backurl`-style input accept only local paths:
+`Engine\Response\Redirect` / `LocalRedirect()` не блокируют внешние хосты без включённой защиты модуля `security` (`skipSecurity: true` обходит её). Для ввода вроде `backurl` разрешай только локальные пути:
 
 ```php
 $target = preg_replace('/[\x00-\x20]/', '', (string)$request->getQuery('backurl'));
@@ -55,12 +55,12 @@ if (!str_starts_with($target, '/') || str_starts_with(str_replace('\\', '/', $ta
 }
 ```
 
-## Raw-HTML sinks
+## Приёмники исходного HTML
 
-Pass only escaped or sanitized strings to:
+Передавай только экранированные или очищенные строки в:
 
-- ui `Toolbar` `add…Html()` methods (`addBeforeTitleHtml`, `addAfterTitleHtml`, `addRightCustomHtml`, …);
-- `ui.timeline` item `htmlDescription`;
-- `ui.entity-catalog` group `icon` (`v-html`) and `slots` strings (compiled into the Vue template).
+- методы ui `Toolbar` `add…Html()` (`addBeforeTitleHtml`, `addAfterTitleHtml`, `addRightCustomHtml` и другие);
+- `htmlDescription` элементов `ui.timeline`;
+- `icon` группы `ui.entity-catalog` (`v-html`) и строки `slots` (компилируются в шаблон Vue).
 
-`main.interface.toolbar` escapes button `TEXT`/`TITLE`/`LINK`/`ICON` since main 26.700: pass plain text there, HTML will show as text.
+`main.interface.toolbar` экранирует `TEXT`/`TITLE`/`LINK`/`ICON` кнопок с main 26.700: передавай обычный текст, HTML отобразится текстом.

@@ -1,23 +1,26 @@
 ---
 name: bitrix-routing
-description: 'D7 routing — /local/routes, RoutingConfigurator, route params, closures, controller-rendered public pages, PublicPageController, urlrewrite.php migration. Use when adding or debugging public or API URLs.'
+description: 'Используй для URL Битрикса: маршруты D7 в /local/routes, RoutingConfigurator, параметры и контроллеры публичных страниц. Подключение сервера, кеш и перенос urlrewrite.php.'
 ---
 
-# Bitrix Routing
+# Маршрутизация Битрикса
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| Web server rule, `routing` config, module route files | `rules/setup.md` |
-| `web.php`, verbs, params, names, groups, closure handlers | `rules/routes-handlers.md` |
-| Public page on a controller, `PublicPageController` | `rules/public-pages.md` |
-| Match order, compile cache, site-guard, `urlrewrite.php` migration | `rules/matching-legacy.md` |
+| Правило веб-сервера, секция `routing`, файлы маршрутов модуля | `rules/setup.md` |
+| `web.php`, HTTP-методы, параметры, имена, группы, замыкания | `rules/routes-handlers.md` |
+| Публичная страница контроллера, `PublicPageController` | `rules/public-pages.md` |
+| Порядок выбора, кеш компиляции, выбор сайта, перенос `urlrewrite.php` | `rules/matching-legacy.md` |
 
-## Invariants
+## Обязательные правила
 
-- User routes only in `/local/routes/*.php`, listed by basename in `routing.config`. Module route files are `require`d from there.
-- Handlers are thin: `[Controller::class, 'action']` for anything with auth, CSRF or a stable contract. Protect routed controllers with filters (`bitrix-controllers`), never with `->middleware()`.
-- Routed controllers run in `SCOPE_AJAX`: the default `Authentication` + `Csrf` apply to GET pages too. Drop them per action for public read-only pages.
-- Explicit verbs (`get`/`post`/…) for state-changing routes, `->where()` on every param.
-- A physical file at the same path wins over the route: the web server serves it before `routing_index.php`.
+- Свои маршруты держи только в `/local/routes/*.php`, перечисляя имена файлов в `routing.config`. Файлы маршрутов модулей подключай оттуда через `require`.
+- Обработчики тонкие: `[Controller::class, 'action']` для авторизации, CSRF и стабильного контракта. Защищай контроллеры маршрутов фильтрами (`bitrix-controllers`), не через `->middleware()`.
+- Контроллеры маршрутов работают в `SCOPE_AJAX`: стандартные `Authentication` и `Csrf` действуют и на GET-страницах. Удаляй их для конкретного действия публичной страницы только для чтения.
+- Для изменения состояния задавай HTTP-метод явно (`get`/`post`/…) и `->where()` для каждого параметра.
+- Физический файл с тем же путём приоритетнее маршрута: веб-сервер отдаёт его до `routing_index.php`.

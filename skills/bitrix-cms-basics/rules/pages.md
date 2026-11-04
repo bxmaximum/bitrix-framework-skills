@@ -1,50 +1,50 @@
-# Pages: properties, sections, menus, includes
+# Страницы: свойства, разделы, меню, включаемые области
 
-## Page and directory properties
+## Свойства страницы и раздела
 
 ```php
-$APPLICATION->SetTitle('About');
-$APPLICATION->SetPageProperty('description', 'About the company');
-$title = $APPLICATION->GetPageProperty('title', 'Default');
-$desc = $APPLICATION->GetProperty('description');   // page → directory → default
+$APPLICATION->SetTitle('О компании');
+$APPLICATION->SetPageProperty('description', 'О компании');
+$title = $APPLICATION->GetPageProperty('title', 'По умолчанию');
+$desc = $APPLICATION->GetProperty('description');   // страница → раздел → значение по умолчанию
 ```
 
-- `SetPageProperty` / `GetPageProperty` — current page; `SetDirProperty` / `GetDirProperty` — directory (usually from `.section.php`); `GetProperty` — page, then directory.
-- Keys: `title`, `description`, `keywords`, `robots`, plus own uppercase IDs. SEO meta: `bitrix-seo`.
-- Set properties in the page, a component's `component_epilog.php` or its class — never only in a cached template (`bitrix-components`).
+- `SetPageProperty` / `GetPageProperty` — страница; `SetDirProperty` / `GetDirProperty` — раздел (обычно из `.section.php`); `GetProperty` — страница, затем раздел.
+- Ключи: `title`, `description`, `keywords`, `robots` и собственные ID в верхнем регистре. Метаданные SEO: `bitrix-seo`.
+- Задавай свойства на странице, в `component_epilog.php` или классе компонента, а не только в кешируемом шаблоне (`bitrix-components`).
 
-## `.section.php` and `.access.php`
+## `.section.php` и `.access.php`
 
 ```php
 <?php
-$sSectionName = 'News';                          // breadcrumb title
-$arDirProperties = ['description' => 'Company news'];
+$sSectionName = 'Новости';                       // заголовок в цепочке навигации
+$arDirProperties = ['description' => 'Новости компании'];
 ```
 
-The kernel walks from the current directory up to the site root. `.access.php` holds per-directory file rights (`PERM[...]`); change them via Admin or `$APPLICATION->SetFileAccessPermission($path, $permissions)`, not by hand.
+Ядро проходит от текущего каталога к корню сайта. `.access.php` хранит права на файлы раздела (`PERM[...]`); меняй их через административный интерфейс или `$APPLICATION->SetFileAccessPermission($path, $permissions)`, а не вручную.
 
-## Menus
+## Меню
 
-- Types per site (`top`, `left`, …) in main module settings; items in `.<type>.menu.php` (`$aMenuLinks`) in the section folder; dynamic items in `.<type>.menu_ext.php`.
-- Output: `bitrix:menu` with `ROOT_MENU_TYPE`, `MAX_LEVEL`, `CHILD_MENU_TYPE`, `USE_EXT`.
+- Типы меню сайта (`top`, `left`, …) — в настройках main; пункты — в `.<type>.menu.php` (`$aMenuLinks`) раздела; динамические пункты — в `.<type>.menu_ext.php`.
+- Вывод: `bitrix:menu` с `ROOT_MENU_TYPE`, `MAX_LEVEL`, `CHILD_MENU_TYPE`, `USE_EXT`.
 
-## Include areas
+## Включаемые области
 
 ```php
 $APPLICATION->IncludeComponent('bitrix:main.include', '', [
-    'AREA_FILE_SHOW' => 'file',                   // file | page | sect
+    'AREA_FILE_SHOW' => 'file',                   // режим: file | page | sect
     'PATH' => SITE_DIR . 'include/phone.php',
 ]);
 ```
 
-`page` / `sect` look for `<page>_inc.php` / `sect_inc.php` (`AREA_FILE_SUFFIX`, default `inc`; `AREA_FILE_RECURSIVE` searches parent sections). Editable in the public edit mode.
+`page` / `sect` ищут `<page>_inc.php` / `sect_inc.php` (`AREA_FILE_SUFFIX`, по умолчанию `inc`; `AREA_FILE_RECURSIVE` включает поиск в родительских разделах). Редактируются в публичном режиме правки.
 
-## Breadcrumbs
+## Цепочка навигации
 
-From `$sSectionName` along the path, plus `$APPLICATION->AddChainItem($title, $url)`; output `bitrix:breadcrumb`.
+Строится по `$sSectionName` вдоль пути и `$APPLICATION->AddChainItem($title, $url)`; вывод — `bitrix:breadcrumb`.
 
-## Users, groups, admin pages
+## Пользователи, группы, административные страницы
 
-- Users: read `\Bitrix\Main\UserTable` (read-only), write `CUser`; group membership `CUser::GetUserGroup($id)`, `$USER->GetUserGroupArray()`.
-- Module rights: `\CMain::GetUserRight($moduleId)` (`'D'` = denied … `'W'` = full); file rights: `.access.php`.
-- Admin pages: module `admin/` scripts included from `/bitrix/admin/` stubs (`bitrix-modules`); modern lists/forms: `bitrix-ui`; legacy `CAdminList` / `CAdminForm` compat only.
+- Пользователи: чтение `\Bitrix\Main\UserTable` (только чтение), запись `CUser`; группы: `CUser::GetUserGroup($id)`, `$USER->GetUserGroupArray()`.
+- Права модуля: `\CMain::GetUserRight($moduleId)` (`'D'` — запрет … `'W'` — полный доступ); права файлов: `.access.php`.
+- Административные страницы: скрипты `admin/` модуля подключаются заглушками `/bitrix/admin/` (`bitrix-modules`); современные списки и формы: `bitrix-ui`; `CAdminList` / `CAdminForm` — для совместимости.

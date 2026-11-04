@@ -1,26 +1,29 @@
 ---
 name: bitrix-files
-description: 'b_file storage via CFile (SaveFile, MakeFileArray, GetFileArray, ResizeImageGet, Delete), upload validation, ui.uploader UploaderController, BFile delivery, File\ContentReplacer. Use when saving, validating, resizing or serving files.'
+description: 'Файлы Битрикс: b_file через CFile (SaveFile, MakeFileArray, ResizeImageGet), проверка загрузок и защищённая выдача. Используй также для серверной части ui.uploader.'
 ---
 
-# Bitrix files
+# Файлы Битрикс
 
-Baseline: main 23.0+ · Verified: main 26.800.0, ui 26.687.0
+Baseline: main 23.0+ · Verified: main 26.1000.0, ui 26.700.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
+
+| Задача | Читать |
 | --- | --- |
-| Save, read, resize, delete; `b_file` layout; clouds; replace content keeping the ID | `rules/storage.md` |
-| Accept uploads in your action: validation, MIME, legacy `main.file.input` | `rules/uploads.md` |
-| `ui.uploader` backend: `UploaderController`, commit pending files | `rules/ui-uploader.md` |
-| Serve files: `BFile`, private files, viewer | `rules/delivery.md` |
+| Сохранение, чтение, уменьшение, удаление; `b_file`, облака, замена содержимого с сохранением ID | `rules/storage.md` |
+| Загрузка в своё действие: проверки, MIME, старый `main.file.input` | `rules/uploads.md` |
+| Административное поле FileInput, временная загрузка и сохранение формы | `rules/file-input.md` |
+| Серверная часть `ui.uploader`: `UploaderController`, закрепление временных файлов | `rules/ui-uploader.md` |
+| Выдача: `BFile`, приватные файлы, просмотрщик | `rules/delivery.md` |
 
-JS widgets (`ui.uploader`, `ui.viewer`): `bitrix-ui`. Uploader settings in `.settings.php`: `bitrix-settings`. File fields: `bitrix-iblocks`, `bitrix-highloadblock`.
+JS-виджеты `ui.uploader`, `ui.viewer`: `bitrix-ui`. Настройки загрузчика в `.settings.php`: `bitrix-settings`. Файловые поля: `bitrix-iblocks`, `bitrix-highloadblock`.
 
-## Invariants
+## Общие правила
 
-- Write `b_file` only through `CFile`. `FileTable` is read-only: `add`/`update`/`delete` throw `NotImplementedException`. Store the file ID, never a path.
-- For URLs use `CFile::GetFileArray()['SRC']` or `CFile::GetPath()`; for local bytes use `CFile::MakeFileArray($id)['tmp_name']`. Never glue `/upload/` + `SUBDIR` yourself: clouds, the `upload_dir` option and replacements all break it.
-- Client name, MIME and size are untrusted: whitelist extensions, detect MIME from content, and decode images.
-- Never pass user input to `CFile::MakeFileArray()`: it reads local paths, b_file IDs and URLs.
-- Everything in `/upload/` is reachable by URL. Serve private files through an action that checks rights.
-- `CFile::Delete()` removes the physical file and its resize cache. It cannot be undone.
+- Записывай `b_file` только через `CFile`. `FileTable` — только чтение: `add`/`update`/`delete` бросают `NotImplementedException`. Храни ID файла, а не путь.
+- URL: `CFile::GetFileArray()['SRC']` или `CFile::GetPath()`; локальное содержимое: `CFile::MakeFileArray($id)['tmp_name']`. Не склеивай `/upload/` + `SUBDIR`: облака, опция `upload_dir` и замены ломают такой путь.
+- Имя, MIME и размер клиента недостоверны: разрешай конкретные расширения, определяй MIME по содержимому, декодируй изображения.
+- Не передавай пользовательский ввод в `CFile::MakeFileArray()`: метод читает локальные пути, ID b_file и URL.
+- Всё внутри `/upload/` доступно по URL. Приватные файлы выдавай действием с проверкой прав.
+- `CFile::Delete()` удаляет физический файл и кеш уменьшенных копий без возможности отмены.

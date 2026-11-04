@@ -1,13 +1,13 @@
-# Public pages: controller or PublicPageController
+# Публичные страницы: контроллер или PublicPageController
 
-| Page | Use |
+| Страница | Использовать |
 | --- | --- |
-| Layout/markup owned by developers | route → controller → `renderView()` |
-| One component, params in code | route → controller → `renderComponent()` |
-| Content managers edit the file or component params | keep the physical page, or `PublicPageController` |
-| Many legacy pages, gradual migration | `PublicPageController` for now |
+| Разработчик управляет структурой и разметкой | Маршрут → контроллер → `renderView()` |
+| Один компонент с параметрами в коде | Маршрут → контроллер → `renderComponent()` |
+| Контент-менеджер правит файл или параметры компонента | Физическая страница либо `PublicPageController` |
+| Много старых страниц, постепенный перенос | Временно `PublicPageController` |
 
-## Page on a controller (**Since main 25.700**)
+## Страница контроллера (**Since main 25.700**)
 
 ```php
 // /local/routes/web.php
@@ -24,32 +24,32 @@ use Bitrix\Main\HttpResponse;
 final class Blog extends Controller
 {
     #[HttpMethod([ActionFilter\HttpMethod::METHOD_GET])]
-    #[DisablePrefilters([ActionFilter\Authentication::class, ActionFilter\Csrf::class])] // public read-only
+    #[DisablePrefilters([ActionFilter\Authentication::class, ActionFilter\Csrf::class])] // публичная страница только для чтения
     public function indexAction(): HttpResponse
     {
         return $this->renderView('blog/index', ['title' => 'Blog']);
-        // or: return $this->renderComponent('bitrix:news.list', '', ['IBLOCK_ID' => 5]);
+        // либо: return $this->renderComponent('bitrix:news.list', '', ['IBLOCK_ID' => 5]);
     }
 }
 ```
 
-- Routed controllers run in `SCOPE_AJAX` with the default filters: guests get a 401 JSON error, and a plain link fails `Csrf` for everyone. Drop both for public read-only pages; keep `HttpMethod`; never drop `Csrf` on actions that change data.
-- Attributes need main 26.250\*; on 25.700–26.2xx use `configureActions()` with `'-prefilters' => [ActionFilter\Authentication::class, ActionFilter\Csrf::class]`.
-- View path rules (`/local/modules/<module>/views/blog/index.php`, title via `$APPLICATION->SetTitle()`): `bitrix-controllers` → `rules/errors-response.md`.
-- Delete the old `/blog/index.php` once the route works: a physical file is served before the route.
-- Public edit mode sees `/bitrix/routing_index.php` as the page file (`REAL_FILE_PATH`): never edit it. Pages that content managers edit stay physical.
+- Контроллеры маршрутов работают в `SCOPE_AJAX` со стандартными фильтрами: гость получает 401 с JSON-ошибкой, обычная ссылка не проходит `Csrf` у любого пользователя. Для публичной страницы только для чтения отключи оба фильтра, сохрани `HttpMethod`. Не отключай `Csrf` у изменяющих данные действий.
+- Атрибуты требуют main 26.250\*; на 25.700–26.2xx используй `configureActions()` с `'-prefilters' => [ActionFilter\Authentication::class, ActionFilter\Csrf::class]`.
+- Путь представления (`/local/modules/<module>/views/blog/index.php`, заголовок через `$APPLICATION->SetTitle()`): `bitrix-controllers` → `rules/errors-response.md`.
+- Удали старую `/blog/index.php` после проверки маршрута: физический файл отдаётся раньше маршрута.
+- Публичный режим правки видит страницей `/bitrix/routing_index.php` (`REAL_FILE_PATH`): не редактируй его. Редактируемые контент-менеджерами страницы оставляй физическими.
 
-## `PublicPageController` (legacy bridge)
+## `PublicPageController`: переход со старых страниц
 
-Includes an existing public PHP page. No new logic behind it.
+Подключает существующую публичную PHP-страницу. Новую логику за ним не создавай.
 
 ```php
 use Bitrix\Main\Routing\Controllers\PublicPageController;
 use Bitrix\Main\Routing\RoutingConfigurator;
 
 return function (RoutingConfigurator $routes): void {
-    $siteDir = '/';                       // path under DOCUMENT_ROOT
-    $sitePrefix = ltrim($siteDir, '/');   // for prefix()
+    $siteDir = '/';                       // путь внутри DOCUMENT_ROOT
+    $sitePrefix = ltrim($siteDir, '/');   // для prefix()
 
     $routes->prefix($sitePrefix . 'docs')->group(function (RoutingConfigurator $routes) use ($siteDir) {
         $routes->get('item/{id}/', new PublicPageController($siteDir . 'docs/item.php'))
@@ -62,5 +62,5 @@ return function (RoutingConfigurator $routes): void {
 };
 ```
 
-- It `include`s the file and `die()`s. It runs before the prolog and without filters, and middlewares run first: the page itself checks input, rights and CSRF.
-- Route params and `default()` values are copied into `$_GET`/`$_REQUEST`.
+- Подключает файл через `include` и вызывает `die()`. Работает до пролога без фильтров; middleware выполняются первыми. Страница сама проверяет ввод, права и CSRF.
+- Параметры маршрута и значения `default()` копируются в `$_GET`/`$_REQUEST`.

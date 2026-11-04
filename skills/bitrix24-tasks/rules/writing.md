@@ -1,17 +1,17 @@
-# Writing tasks
+# Запись задач
 
-## Which API (tasks 26.x)
+## Выбор API в tasks 26.x
 
-| Layer | State in tasks 26.300.100 | Use |
+| Уровень | Состояние в проверенной версии | Применение |
 | --- | --- | --- |
-| `Bitrix\Tasks\V2\Public\Command\Task\*Command` | public API; kernel controllers, `im`, `socialnetwork` call it | new code |
-| `Bitrix\Tasks\Control\Task` | `@deprecated`, delegates to V2 services | compat |
-| `CTaskItem`, `CTasks::Add/Update` | `@deprecated` wrappers over `Control\Task` | compat, older boxes |
-| `Bitrix\Tasks\Internals\TaskTable` | ORM table | read joins only |
+| `Bitrix\Tasks\V2\Public\Command\Task\*Command` | публичный API; вызывается контроллерами ядра, `im`, `socialnetwork` | новый код |
+| `Bitrix\Tasks\Control\Task` | `@deprecated`, делегирует V2-сервисам | совместимость |
+| `CTaskItem`, `CTasks::Add/Update` | устаревшие обёртки `Control\Task` | совместимость/старое ядро |
+| `Bitrix\Tasks\Internals\TaskTable` | ORM-таблица | только чтение и JOIN |
 
-All paths end in the V2 `AddTaskService`/`UpdateTaskService`/`DeleteTaskService`, so events and side effects are identical.
+Пути записи приходят в V2 `AddTaskService`/`UpdateTaskService`/`DeleteTaskService`, поэтому основные события и побочные эффекты общие.
 
-## Gateway
+## Класс доступа к API
 
 ```php
 <?php
@@ -54,7 +54,7 @@ final class TaskGateway
             priority: Entity\Priority::High,
         );
         if (!(new TaskAccessService())->canSave($actorId, $task)) {
-            return (new Result())->addError(new Error('Access denied', 'ACCESS_DENIED'));
+            return (new Result())->addError(new Error('Доступ запрещён', 'ACCESS_DENIED'));
         }
 
         return $this->run(new AddTaskCommand($task, new AddConfig(userId: $actorId)));
@@ -62,9 +62,9 @@ final class TaskGateway
 
     public function rename(int $actorId, int $taskId, string $title): Result
     {
-        $patch = new Entity\Task(id: $taskId, title: $title); // null properties stay unchanged
+        $patch = new Entity\Task(id: $taskId, title: $title); // свойства null остаются без изменения
         if (!(new TaskAccessService())->canSave($actorId, $patch)) {
-            return (new Result())->addError(new Error('Access denied', 'ACCESS_DENIED'));
+            return (new Result())->addError(new Error('Доступ запрещён', 'ACCESS_DENIED'));
         }
 
         return $this->run(new UpdateTaskCommand($patch, new UpdateConfig(userId: $actorId)));
@@ -72,14 +72,14 @@ final class TaskGateway
 
     public function complete(int $actorId, int $taskId): Result
     {
-        // check ActionDictionary::ACTION_TASK_COMPLETE first (rules/access-events.md)
+        // Сначала проверяй ActionDictionary::ACTION_TASK_COMPLETE (rules/access-events.md).
         return $this->run(new CompleteTaskCommand($taskId, new UpdateConfig(userId: $actorId)));
     }
 
     public function delete(int $actorId, int $taskId): Result
     {
         if (!(new TaskAccessService())->canDelete($actorId, $taskId)) {
-            return (new Result())->addError(new Error('Access denied', 'ACCESS_DENIED'));
+            return (new Result())->addError(new Error('Доступ запрещён', 'ACCESS_DENIED'));
         }
 
         return $this->run(new DeleteTaskCommand($taskId, new DeleteConfig(userId: $actorId)));
@@ -88,29 +88,29 @@ final class TaskGateway
     private function run(AbstractCommand $command): Result
     {
         try {
-            return $command->run(); // V2 Result: getId(), getObject() -> Entity\Task
-        } catch (CommandValidationException $e) { // empty title, no creator/responsible, id <= 0
+            return $command->run(); // V2 Result: getId(), getObject() возвращает Entity\Task
+        } catch (CommandValidationException $e) { // пустой заголовок, нет постановщика/ответственного, id <= 0
             return (new Result())->addErrors($e->getValidationErrors());
         }
     }
 }
 ```
 
-## Rules
+## Правила
 
-- `run()` returns `Bitrix\Tasks\V2\Internal\Result\Result` (extends `Main\Result`). Service exceptions (`TaskAddException`, `TaskNotExistsException`, handler cancellations) become errors; validation failures throw `CommandValidationException`.
-- Update is a patch: set only changed properties. Collections (`accomplices`, `auditors`, `tags`) replace the whole set; `deadlineTs: 0` clears the deadline.
-- Parent task: `parent: new Entity\Task(id: $parentId)` (the add mapper reads `parent`, not `parentId`).
-- Status: `Status\CompleteTaskCommand`, `StartTaskCommand`, `PauseTaskCommand`, `DeferTaskCommand`, `RenewTaskCommand`, `ApproveTaskCommand`, `DisapproveTaskCommand` — each `(int $taskId, UpdateConfig $config)`. With control on (`needsControl`, creator ≠ responsible) complete by anyone but the creator gives `SupposedlyCompleted`; the creator then approves (`ApproveTaskCommand`).
-- Delete moves the task to the recycle bin when `recyclebin` is installed; `OnBeforeTaskDelete` returning `false` yields an error.
-- Config flags (`AddConfig`, `UpdateConfig`: `skipNotifications`, `skipBP`, `needCorrectDatePlan`, …) are named arguments; pass only what you need.
+- `run()` возвращает `Bitrix\Tasks\V2\Internal\Result\Result`, наследник `Main\Result`. Исключения сервисов (`TaskAddException`, `TaskNotExistsException`, отмена обработчика) превращаются в ошибки; ошибки валидации бросают `CommandValidationException`.
+- Изменение частичное: задавай только новые свойства. Коллекции `accomplices`, `auditors`, `tags` заменяются целиком; `deadlineTs: 0` очищает срок.
+- Родитель: `parent: new Entity\Task(id: $parentId)`. Mapper добавления читает `parent`, не `parentId`.
+- Статусы: `Status\CompleteTaskCommand`, `StartTaskCommand`, `PauseTaskCommand`, `DeferTaskCommand`, `RenewTaskCommand`, `ApproveTaskCommand`, `DisapproveTaskCommand`, аргументы `(int $taskId, UpdateConfig $config)`. При контроле (`needsControl`, постановщик отличается от ответственного) завершение другим пользователем даёт `SupposedlyCompleted`, затем постановщик принимает через `ApproveTaskCommand`.
+- При установленном `recyclebin` удаление переносит задачу в корзину. `false` из `OnBeforeTaskDelete` возвращает ошибку.
+- Флаги `AddConfig`/`UpdateConfig` (`skipNotifications`, `skipBP`, `needCorrectDatePlan`, …) — именованные аргументы. Передавай только необходимые после проверки текущей сигнатуры.
 
-## Compat (older boxes, array fields)
+## Совместимость: старое ядро и массивы полей
 
 ```php
-// throws \TasksException on denial or error; DEADLINE as object, not string
+// При отказе/ошибке бросает \TasksException. DEADLINE передаётся объектом, не строкой.
 $item = \CTaskItem::add(
-    ['TITLE' => 'Call client', 'RESPONSIBLE_ID' => $responsibleId, 'DEADLINE' => new \Bitrix\Main\Type\DateTime()],
+    ['TITLE' => 'Позвонить клиенту', 'RESPONSIBLE_ID' => $responsibleId, 'DEADLINE' => new \Bitrix\Main\Type\DateTime()],
     $actorId,
 );
 \CTaskItem::getInstance($item->getId(), $actorId)->complete();

@@ -1,8 +1,8 @@
-# Custom data provider
+# Собственный поставщик данных
 
-A provider turns a source value (usually your entity id) into fields for placeholders. Put it in your module: `/local/modules/vendor.orders/lib/DocumentGenerator/OrderProvider.php`.
+Поставщик преобразует исходное значение (обычно ID сущности) в поля подстановки. Размещай в своём модуле: `/local/modules/vendor.orders/lib/DocumentGenerator/OrderProvider.php`.
 
-## Root provider
+## Корневой поставщик
 
 ```php
 namespace Vendor\Orders\DocumentGenerator;
@@ -19,16 +19,16 @@ final class OrderProvider extends DataProvider implements Nameable
     public function __construct($source, array $options = [])
     {
         parent::__construct($source, $options);
-        $id = (int)$source;                                    // field catalog passes ' '
+        $id = (int)$source; // каталог полей передаёт ' '
         if ($id > 0)
         {
-            $this->data = ServiceLocator::getInstance()->get(OrderService::class)->getDocumentData($id); // ['NUMBER' => …, 'DATE' => Date, 'ROWS' => [...]] or null
+            $this->data = ServiceLocator::getInstance()->get(OrderService::class)->getDocumentData($id); // ['NUMBER' => …, 'DATE' => Date, 'ROWS' => [...]] либо null
         }
     }
 
     public static function getLangName(): string
     {
-        return 'Order';
+        return 'Заказ';
     }
 
     public function isRootProvider(): bool
@@ -45,13 +45,13 @@ final class OrderProvider extends DataProvider implements Nameable
     public function getFields(): array
     {
         return $this->fields ??= [
-            'NUMBER' => ['TITLE' => 'Number', 'REQUIRED' => 'Y'],
-            'DATE' => ['TITLE' => 'Date', 'TYPE' => self::FIELD_TYPE_DATE],
+            'NUMBER' => ['TITLE' => 'Номер', 'REQUIRED' => 'Y'],
+            'DATE' => ['TITLE' => 'Дата', 'TYPE' => self::FIELD_TYPE_DATE],
             'ITEMS' => [
-                'TITLE' => 'Items',
+                'TITLE' => 'Позиции',
                 'PROVIDER' => ArrayDataProvider::class,
                 'VALUE' => [$this, 'getItems'],
-                'OPTIONS' => ['ITEM_PROVIDER' => OrderItemProvider::class, 'ITEM_NAME' => 'ITEM', 'ITEM_TITLE' => 'Item'],
+                'OPTIONS' => ['ITEM_PROVIDER' => OrderItemProvider::class, 'ITEM_NAME' => 'ITEM', 'ITEM_TITLE' => 'Позиция'],
             ],
         ];
     }
@@ -62,7 +62,7 @@ final class OrderProvider extends DataProvider implements Nameable
         $items = [];
         foreach ($this->data['ROWS'] ?? [] as $row)
         {
-            $item = $manager->getDataProvider(OrderItemProvider::class, $row, [], $this); // parent = $this
+            $item = $manager->getDataProvider(OrderItemProvider::class, $row, [], $this); // родитель — $this
             if ($item) { $items[] = $item; }
         }
         return $items;
@@ -70,44 +70,44 @@ final class OrderProvider extends DataProvider implements Nameable
 }
 ```
 
-Item provider — `HashDataProvider` keeps only keys listed in `getFields()`:
+Поставщик строки: `HashDataProvider` сохраняет только ключи из `getFields()`:
 
 ```php
 final class OrderItemProvider extends \Bitrix\DocumentGenerator\DataProvider\HashDataProvider
 {
     public function getFields(): array
     {
-        return $this->fields ??= ['NAME' => ['TITLE' => 'Name'], 'PRICE' => ['TITLE' => 'Price']];
+        return $this->fields ??= ['NAME' => ['TITLE' => 'Название'], 'PRICE' => ['TITLE' => 'Цена']];
     }
 }
 ```
 
-Placeholders: `{Number}`, `{Date~d.m.Y}`, `{ItemsItemName}`, `{ItemsItemPrice}`, `{ItemsNumber}`.
+Поля подстановки: `{Number}`, `{Date~d.m.Y}`, `{ItemsItemName}`, `{ItemsItemPrice}`, `{ItemsNumber}`.
 
-## Rules
+## Правила
 
-- `$this->data` holds field values by code; `isLoaded()` = `data !== null`. A field with `VALUE` is computed: string = another field's code, `[$this, 'method']` or `[$object, 'method']` = callback with the placeholder as argument.
-- Field keys: `TITLE`, `VALUE`, `TYPE` (`FIELD_TYPE_DATE|IMAGE|STAMP|NAME|PHONE|TEXT`), `FORMAT`, `PROVIDER` + `OPTIONS` (nested provider), `REQUIRED => 'Y'`, `HIDE_ROW => 'Y'`.
-- Keep constructor and `getFields()` cheap and data-free: the field catalog builds providers with source `' '`.
-- Keep parameters untyped as in the base class (`$source`, `$userId`, `$name`); only return types may be added.
-- `hasAccess()` of the base class returns `false` unless a parent provider grants access — root providers must override it. Pass `$this` as parent to nested providers.
-- Use `[$this, 'method']`, not closures, in `VALUE` — provider values are serialized for the provider cache.
-- Optional: `getAdditionalDocumentInfo(Document $document)` (extra keys in `getFile()` data), `getLangPhrasesPath()`, `isPrintable(): Result`.
-- Numbering words `{CLIENT_ID}`, `{SELF_ID}`, `{SELF_COMPANY_ID}` need `Bitrix\DocumentGenerator\Integration\Numerator\DocumentNumerable` on the provider.
-- Entity-backed shortcut: `DataProvider\EntityDataProvider` (implement `getTableClass()`; fields from the ORM map).
+- `$this->data` хранит значения по кодам полей; `isLoaded()` означает `data !== null`. Поле с `VALUE` вычисляемое: строка — код другого поля; `[$this, 'method']` / `[$object, 'method']` — обработчик, принимающий поле подстановки.
+- Ключи поля: `TITLE`, `VALUE`, `TYPE` (`FIELD_TYPE_DATE|IMAGE|STAMP|NAME|PHONE|TEXT`), `FORMAT`, `PROVIDER` + `OPTIONS` (вложенный поставщик), `REQUIRED => 'Y'`, `HIDE_ROW => 'Y'`.
+- Конструктор и `getFields()` не должны загружать данные или выполнять тяжёлую работу: каталог создаёт поставщиков с исходным значением `' '`.
+- Не добавляй типы параметров базового класса (`$source`, `$userId`, `$name`); можно добавлять только возвращаемые типы.
+- Базовый `hasAccess()` возвращает `false`, если родитель не разрешил доступ. Корневой поставщик обязан переопределить его. Вложенным передавай `$this` как родителя.
+- В `VALUE` используй `[$this, 'method']`, не замыкания: значения сериализуются в кеш поставщика.
+- Необязательные методы: `getAdditionalDocumentInfo(Document $document)` (дополнительные ключи данных `getFile()`), `getLangPhrasesPath()`, `isPrintable(): Result`.
+- Слова нумерации `{CLIENT_ID}`, `{SELF_ID}`, `{SELF_COMPANY_ID}` требуют `Bitrix\DocumentGenerator\Integration\Numerator\DocumentNumerable` у поставщика.
+- Сущность ORM: `DataProvider\EntityDataProvider`, реализуй `getTableClass()`; поля берутся из карты ORM.
 
-## Registration
+## Регистрация
 
-Providers are found through the `documentgenerator:onGetDataProviderList` event. Register it persistently in your installer:
+Поставщики находятся через `documentgenerator:onGetDataProviderList`. Зарегистрируй постоянный обработчик в установщике:
 
 ```php
-// install/index.php DoInstall(); mirror with unRegisterEventHandler() on uninstall
+// DoInstall() в install/index.php; симметричный unRegisterEventHandler() при удалении
 \Bitrix\Main\EventManager::getInstance()->registerEventHandler(
     'documentgenerator', 'onGetDataProviderList', 'vendor.orders', Handler::class, 'onGetDataProviderList'
 );
 ```
 
-Handler method in `Vendor\Orders\DocumentGenerator\Handler`:
+Метод обработчика в `Vendor\Orders\DocumentGenerator\Handler`:
 
 ```php
 public static function onGetDataProviderList(): array
@@ -118,7 +118,7 @@ public static function onGetDataProviderList(): array
 }
 ```
 
-- The class must extend `DataProvider` and implement `Nameable`, or it is skipped silently.
-- `MODULE` must equal the template's `MODULE_ID` and be an installed module; otherwise `Template::setSourceType()` silently ignores the provider.
-- The registry is cached statically per hit — handlers added after the first lookup are not seen.
-- Avoid `_` in provider class names (template filters split on `_`).
+- Класс наследует `DataProvider`, реализует `Nameable`; иначе молча пропускается.
+- `MODULE` равен `MODULE_ID` шаблона и ID установленного модуля; иначе `Template::setSourceType()` молча игнорирует поставщика.
+- Реестр кешируется статически на хит; обработчики, добавленные после первого обращения, не видны.
+- Избегай `_` в именах классов поставщиков: фильтр шаблонов разделяет по `_`.

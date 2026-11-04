@@ -1,51 +1,54 @@
-# Rights, JWT, encryption, auth settings
+# Права, JWT, шифрование и авторизация
 
-## Rights checks
+## Проверки прав
 
 ```php
 use Bitrix\Main\Engine\CurrentUser;
 
 $user = CurrentUser::get();
-if (!$user->getId()) { /* guest */ }
+if (!$user->getId()) { /* гость */ }
 if ($user->isAdmin()) { /* ... */ }
 if ($user->canDoOperation('edit_own_profile')) { /* ... */ }
 
-$right = \CMain::GetUserRight('vendor.blog', $user->getUserGroups()); // 'D' < 'R' < 'W'; groups are IDs
-if ($right < 'W') { /* deny */ }
+$right = \CMain::GetUserRight('vendor.blog', $user->getUserGroups()); // 'D' < 'R' < 'W'; группы — ID
+if ($right < 'W') { /* отказ */ }
 ```
 
-- Complex ACL: the `access` module pattern (`Bitrix\Main\Access\BaseAccessController`, `AccessibleItem`, role/permission tables); lists filtered with `getEntityFilter()`.
-- Controllers: `#[ActionAccess]` (**Since main 26.600\***) when the module has an access controller, otherwise a small `ActionFilter\Base` subclass: skill `bitrix-controllers` → `rules/filters.md`. Don't copy `$USER` checks into every action.
-- Authorize on the record: load it by id, take its type/owner/section from the DB, then check. A client-sent type next to an id allows cross-type writes and existence probing. Answer "not found" and "forbidden" with the same error.
-- REST v3 (**Since rest 26.200\***): a method's scopes are every dot-prefix of its name plus `#[Scope]`; a token with any of them passes. `#[Scope(\CRestUtil::GLOBAL_SCOPE)]` means any authenticated caller, so check rights inside. `Idempotency-Key` is not a uniqueness guard: enforce uniqueness in the DB.
+- Сложные ACL: схема модуля `access` (`Bitrix\Main\Access\BaseAccessController`, `AccessibleItem`, таблицы ролей/разрешений); списки фильтруются `getEntityFilter()`.
+- Контроллеры: `#[ActionAccess]` (**Since main 26.600\***), если у модуля есть контроллер доступа; иначе небольшой подкласс `ActionFilter\Base` (`bitrix-controllers` → `rules/filters.md`). Не копируй проверки `$USER` по действиям.
+- Проверяй доступ по записи: загрузи по ID, возьми тип/владельца/раздел из БД, затем проверь. Тип от клиента рядом с ID позволяет запись в чужой тип и проверку существования. Ошибки отсутствия и запрета делай одинаковыми.
+- REST v3 (**Since rest 26.200\***): области метода — все точечные префиксы его имени плюс `#[Scope]`; токену достаточно любой. `#[Scope(\CRestUtil::GLOBAL_SCOPE)]` допускает любого авторизованного вызывающего: права проверяй внутри. `Idempotency-Key` не гарантирует уникальность: ограничивай её в БД.
 
 ## JWT / JWK
 
-Use `Bitrix\Main\Web\JWT` / `JWK`, not hand-rolled signing.
+Используй `Bitrix\Main\Web\JWT` / `JWK`, не реализуй подпись вручную.
 
 ```php
 use Bitrix\Main\Web\JWK;
 use Bitrix\Main\Web\JWT;
 
 $token = JWT::encode(['sub' => $userId, 'iat' => time(), 'exp' => time() + 3600], $secret, 'HS256');
-$claims = JWT::decode($token, $secret, ['HS256']);      // always pass the allowed algorithms
+$claims = JWT::decode($token, $secret, ['HS256']);      // всегда перечисляй разрешённые алгоритмы
 
-$claims = JWT::decode($idToken, JWK::parseKeySet($jwks), ['RS256']); // key picked by `kid`
+$claims = JWT::decode($idToken, JWK::parseKeySet($jwks), ['RS256']); // ключ выбирается по kid
 ```
 
-- Always set `exp` and `iat`; payload is JSON scalars/arrays.
+- Всегда задавай `exp` и `iat`; содержимое — скаляры/массивы JSON.
 - Base64url: `JWT::urlsafeB64Encode()` / `urlsafeB64Decode()`.
-- Secrets from env or `.settings_extra.php`, never in git, options or migrations.
+- Секреты бери из env или `.settings_extra.php`, не из git, настроек Option или миграций.
 
-## Encryption
+## Шифрование
 
-- ORM `CryptoField('SECRET')`: encrypted at rest with `crypto.crypto_key` from `.settings.php` (or `crypto_key` in field params).
-- `SecretField('TOKEN')`: a `CryptoField` that auto-fills a random binary secret (`secret_length`, default 20 bytes), stored base64.
-- Other data: `Bitrix\Main\Security\Cipher` `encrypt($data, $key)` / `decrypt($data, $key)`.
-- Token cookies: `HttpOnly` + `Secure` + `SameSite`, `CryptoCookie` for sensitive values (`bitrix-request-response`). Never keep access tokens in `localStorage`.
+- ORM `CryptoField('SECRET')` шифрует хранимое значение ключом `crypto.crypto_key` из `.settings.php` (либо `crypto_key` в параметрах поля).
+- `SecretField('TOKEN')` — `CryptoField`, автоматически создающий случайный двоичный секрет (`secret_length`, по умолчанию 20 байт), хранимый в base64.
+- Другие данные: `Bitrix\Main\Security\Cipher`, методы `encrypt($data, $key)` / `decrypt($data, $key)`.
+- Cookies токенов: `HttpOnly` + `Secure` + `SameSite`, `CryptoCookie` для чувствительных значений (`bitrix-request-response`). Не храни токены доступа в `localStorage`.
 
-## Auth settings
+## Настройки авторизации
 
-- 2FA (`security` module) is off by default (`otp_enabled` = N): enable it and make it mandatory for admins. security 26.200 adds an e-mail backup channel, off by default (`otp_allow_email`). Don't extend `Bitrix\Security\Mfa\Otp`: its signatures change between versions.
-- Proactive filter, redirect protection and frame protection (`X-Frame-Options: SAMEORIGIN`) live in the `security` module. Don't disable them without reason.
-- Public forms: `CCaptcha`.
+- 2FA модуля `security` по умолчанию выключена (`otp_enabled=N`); при задаче на усиление доступа включи и сделай обязательной для администраторов. В security 26.200 добавлен резервный канал e-mail, по умолчанию выключен (`otp_allow_email`). Не наследуй `Bitrix\Security\Mfa\Otp`: сигнатуры меняются между версиями.
+- Проактивный фильтр, защита перенаправлений и фреймов (`X-Frame-Options: SAMEORIGIN`) находятся в `security`. Не отключай без причины.
+- Публичные формы: `CCaptcha`.
+
+
+Требования PHP/Tokenizer и проверка окружения перед обновлением описаны в `bitrix-project-structure`. Отсутствие расширения нельзя обходить отключением проактивной защиты. Формат и совместимость зашифрованных cookies v2 — `bitrix-sessions`.

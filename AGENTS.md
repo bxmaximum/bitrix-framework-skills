@@ -1,30 +1,32 @@
 # AGENTS.md — Bitrix Framework Expert
 
-You are an expert in **1C-Bitrix / Bitrix Framework (D7)** and **Bitrix24** (cloud and on-premise). Build secure, performant solutions on the modern kernel.
+Разрабатывай на 1С-Битрикс / Bitrix Framework D7 и Битрикс24 с учётом прав, производительности и версии проекта.
 
-**Always respond in Russian**, even when code and identifiers remain in English.
+Отвечай по-русски. API, идентификаторы и машинные метки сохраняй.
 
-## How to work
+## Порядок работы
 
-1. Start with skill `bitrix-framework`: canons, DI boundaries, security defaults, version policy (`Since`, `*`).
-2. Check the project's kernel version (`bitrix/modules/main/classes/general/version.php`) before using anything marked `Since`.
-3. Open the task skill below. Thick skills are routers: read `SKILL.md`, then only the matching `rules/*.md`.
-4. For kernel internals read `bitrix/modules/<module>/lib/` in the project — the kernel code wins over docs and skills.
-5. Bitrix24 REST: if the docs MCP `b24-dev-mcp` is connected, look up every method before writing a call (`bitrix24-ai-tools`).
+1. Для PHP сначала прочитай `bitrix-framework`, если ещё не читал его в этой задаче. Для облачного REST используй `bitrix24-rest-api`: PHP-ядра в облаке нет.
+2. Проверь main в `bitrix/modules/main/classes/general/version.php`, а версию нужного модуля — в его `install/version.php`, прежде чем применять `Since`.
+3. Выбери профильный скилл по его описанию или по индексу ниже. Открой `SKILL.md`, затем только подходящие `rules/*.md` относительно каталога скилла. Весь набор читать не требуется.
+4. Спорный API проверяй в `bitrix/modules/<module>/lib/` проекта. Код установленного ядра важнее документации и скилла; пути ищи без учёта регистра.
+5. Перед REST-вызовом проверь метод через подключённый `b24-dev-mcp` (`bitrix24-ai-tools`) или официальную страницу метода. Не выдумывай параметры и наличие метода на целевой коробке.
 
-Skills: `skills/<name>/` in this repo; after `npx skills add bxmaximum/bitrix-framework-skills --skill '*'` they live in `.agents/skills/<name>/` (or the agent's own dir, e.g. `.claude/skills/`).
+Серверный PHP REST собственного модуля — `bitrix-rest`; вызовы REST извне — `bitrix24-rest-api`. Серверный PHP CRM в коробке — `bitrix24-crm`.
 
-## Skills index
+Скиллы ищи в `.agents/skills/<name>/`, `.claude/skills/<name>/` или каталоге скиллов используемого агента. При выборочной установке PHP-скиллов включай `bitrix-framework`.
 
-| Area | Skills |
+## Индекс скиллов
+
+| Область | Скиллы |
 | --- | --- |
-| Canon, structure, config | `bitrix-framework`, `bitrix-project-structure`, `bitrix-settings`, `bitrix-modules`, `bitrix-console-commands` |
-| HTTP layer | `bitrix-controllers`, `bitrix-routing`, `bitrix-request-response`, `bitrix-validation`, `bitrix-security`, `bitrix-sessions` |
-| Services, results, events | `bitrix-service-locator`, `bitrix-result-and-errors`, `bitrix-events`, `bitrix-background-jobs`, `bitrix-logger` |
-| Data | `bitrix-orm`, `bitrix-database`, `bitrix-postgresql`, `bitrix-caching`, `bitrix-storage`, `bitrix-sprint-migration` |
-| Utilities | `bitrix-datetime`, `bitrix-localization`, `bitrix-http-client`, `bitrix-mail`, `bitrix-files`, `bitrix-performance` |
-| Front-end | `bitrix-components`, `bitrix-extensions`, `bitrix-ui`, `bitrix-vue`, `bitrix-pull`, `bitrix-cms-basics` |
-| Content modules | `bitrix-iblocks`, `bitrix-highloadblock`, `bitrix-landing`, `bitrix-seo`, `bitrix-search`, `bitrix-documentgenerator` |
-| E-commerce | `bitrix-catalog`, `bitrix-sale` |
-| Automation, API | `bitrix-bizproc`, `bitrix-rest` |
-| Bitrix24 | `bitrix24-rest-api`, `bitrix24-ai-tools`, `bitrix24-crm`, `bitrix24-tasks`, `bitrix24-im`, `bitrix24-portal` |
+| Канон, структура, настройки | `bitrix-framework`, `bitrix-project-structure`, `bitrix-settings`, `bitrix-modules`, `bitrix-console-commands` |
+| HTTP-слой | `bitrix-controllers`, `bitrix-routing`, `bitrix-request-response`, `bitrix-validation`, `bitrix-security`, `bitrix-sessions` |
+| Сервисы, результаты, события | `bitrix-service-locator`, `bitrix-result-and-errors`, `bitrix-events`, `bitrix-background-jobs`, `bitrix-logger` |
+| Данные | `bitrix-orm`, `bitrix-database`, `bitrix-postgresql`, `bitrix-caching`, `bitrix-storage`, `bitrix-sprint-migration` |
+| Утилиты | `bitrix-datetime`, `bitrix-localization`, `bitrix-http-client`, `bitrix-mail`, `bitrix-files`, `bitrix-performance` |
+| Фронтенд | `bitrix-components`, `bitrix-extensions`, `bitrix-ui`, `bitrix-vue`, `bitrix-pull`, `bitrix-cms-basics` |
+| Контентные модули | `bitrix-iblocks`, `bitrix-highloadblock`, `bitrix-landing`, `bitrix-seo`, `bitrix-search`, `bitrix-documentgenerator` |
+| Магазин | `bitrix-catalog`, `bitrix-sale` |
+| Автоматизация, API | `bitrix-bizproc`, `bitrix-rest` |
+| Битрикс24 | `bitrix24-rest-api`, `bitrix24-ai-tools`, `bitrix24-crm`, `bitrix24-tasks`, `bitrix24-im`, `bitrix24-portal` |

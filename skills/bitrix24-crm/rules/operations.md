@@ -1,8 +1,8 @@
-# Operations: add, update, delete
+# Операции добавления, изменения и удаления
 
-`launch()` order: limits → rights of the context user → running-workflow check → field processing (defaults, stage fix-up, sums) → required fields → before-save actions → save → rights attributes, search, duplicates, counters → history, timeline → after-save actions (legacy events, live feed) → pull → business processes → robots.
+Порядок `launch()`: лимиты, права пользователя контекста, проверка запущенных БП, обработка полей (значения по умолчанию, стадия, суммы), обязательные поля, действия до сохранения, сохранение, атрибуты прав/поиск/дубли/счётчики, история/таймлайн, действия после сохранения (legacy-события, лента), pull, БП, роботы.
 
-## Add, update, delete
+## Добавление, изменение, удаление
 
 ```php
 use Bitrix\Crm\Item;
@@ -10,7 +10,7 @@ use Bitrix\Crm\Service\Container;
 use Bitrix\Crm\Service\Context;
 
 $factory = Container::getInstance()->getFactory(\CCrmOwnerType::Deal);
-$context = (new Context())->setUserId($userId); // rights check, CREATED_BY/UPDATED_BY
+$context = (new Context())->setUserId($userId); // проверка прав, CREATED_BY/UPDATED_BY
 
 $item = $factory->createItem([
     Item::FIELD_NAME_TITLE => 'Order #15',
@@ -19,7 +19,7 @@ $item = $factory->createItem([
 ]);
 $result = $factory->getAddOperation($item, $context)->launch();
 if (!$result->isSuccess()) {
-    return $result; // rights, required fields, handler cancel
+    return $result; // отказ в правах, обязательные поля, отмена обработчиком
 }
 $id = $item->getId();
 
@@ -27,38 +27,38 @@ $item = $factory->getItem($id);
 $item->setStageId($stageId);
 $result = $factory->getUpdateOperation($item, $context)->launch();
 
-// DANGER: moves to recycle bin if enabled for the type, otherwise deletes for good
+// ОПАСНО: перенос в корзину, если включена для типа; иначе безвозвратное удаление.
 $result = $factory->getDeleteOperation($item, $context)->launch();
 ```
 
-- Without `$context` the shared `Container::getInstance()->getContext()` is used: current `$USER`, user 0 in agents/CLI/queues → `CRM_ITEM_ADD_ACCESS_DENIED`. Don't mutate the shared context; create your own.
-- `setScope(Context::SCOPE_TASK)` (also `SCOPE_AUTOMATION`, `SCOPE_REST`, `SCOPE_MANUAL`) marks the origin.
-- `createItem()` keys are common field names; default UF values are applied.
-- Invalid `STAGE_ID` on update is silently reverted to the old stage. On category change an invalid stage becomes the first stage of the new category.
-- Category change fails with `CRM_ITEM_HAS_RUNNING_WORKFLOWS` while business processes run.
-- Update with no changes returns success and saves nothing (no actions, no events).
-- After-save errors land in the `Result`, but the item is already saved.
+- Без `$context` используется общий `Container::getInstance()->getContext()`: текущий `$USER`, в агенте/CLI/очереди — пользователь 0 и `CRM_ITEM_ADD_ACCESS_DENIED`. Создавай свой контекст, не меняй общий.
+- `setScope(Context::SCOPE_TASK)` (также `SCOPE_AUTOMATION`, `SCOPE_REST`, `SCOPE_MANUAL`) задаёт источник изменения.
+- Ключи `createItem()` — общие имена полей; применяются значения UF по умолчанию.
+- Недопустимый `STAGE_ID` при изменении молча возвращается к старой стадии. При смене категории становится первой стадией новой категории.
+- Смена категории при активных БП даёт `CRM_ITEM_HAS_RUNNING_WORKFLOWS`.
+- Изменение без фактических изменений успешно и ничего не сохраняет: без действий и событий.
+- Ошибки после сохранения входят в `Result`, но элемент уже записан.
 
-## Switching checks off
+## Отключение проверок
 
-Call on the operation before `launch()`; each has `enable*()`/`is*()` twins.
+Вызывай методы операции до `launch()`. У каждого есть парные `enable*()`/`is*()`.
 
-| Method | Skips |
+| Метод | Что отключает |
 | --- | --- |
-| `disableCheckAccess()` | rights of the context user |
-| `disableCheckFields()` | required fields, incl. stage-dependent |
-| `disableCheckRequiredUserFields()` | mandatory UF |
-| `disableCheckLimits()` | tariff restrictions |
-| `disableCheckWorkflows()` | running-BP check on category change |
-| `disableAllChecks()` | the five above |
-| `disableAutomation()` / `disableBizProc()` | robots / BP autostart |
-| `disableSaveToTimeline()` / `disableSaveToHistory()` | timeline / event history |
-| `disableFieldProcession()` | defaults, stage fix-up, calculated fields: avoid |
-| `disableBeforeSaveActions()` / `disableAfterSaveActions()` | all actions incl. legacy `OnBefore*`/`OnAfter*` events and cache cleanup: avoid |
+| `disableCheckAccess()` | права пользователя контекста |
+| `disableCheckFields()` | обязательные поля, включая стадии |
+| `disableCheckRequiredUserFields()` | обязательные UF |
+| `disableCheckLimits()` | тарифные ограничения |
+| `disableCheckWorkflows()` | проверку запущенных БП при смене категории |
+| `disableAllChecks()` | пять проверок выше |
+| `disableAutomation()` / `disableBizProc()` | роботов / автозапуск БП |
+| `disableSaveToTimeline()` / `disableSaveToHistory()` | таймлайн / историю событий |
+| `disableFieldProcession()` | значения по умолчанию, стадию, расчётные поля; обычно не отключать |
+| `disableBeforeSaveActions()` / `disableAfterSaveActions()` | все действия, включая legacy-события и очистку кеша; обычно не отключать |
 
-Mass import: `disableAllChecks()`, `disableAutomation()`, `disableBizProc()` on each operation; keep events and timeline unless profiling says otherwise.
+Для доверенного массового импорта допускается выборочное отключение проверок и автоматизации после определения прав и требований к данным. `disableAllChecks()` снимает также права и тарифные ограничения. События и таймлайн сохраняй, если замер не показал обоснованной необходимости отключения.
 
-## Custom actions
+## Свои действия операции
 
 ```php
 use Bitrix\Crm\Item;
@@ -72,7 +72,7 @@ final class RequireComment extends Operation\Action
     {
         $result = new Result();
         if ($item->isChangedStageId() && trim((string)$item->getComments()) === '') {
-            $result->addError(new Error('Fill in the comment', 'VENDOR_COMMENT_REQUIRED'));
+            $result->addError(new Error('Заполните комментарий', 'VENDOR_COMMENT_REQUIRED'));
         }
 
         return $result;
@@ -84,7 +84,7 @@ $operation->addAction(Operation::ACTION_BEFORE_SAVE, new RequireComment());
 $result = $operation->launch();
 ```
 
-- `ACTION_BEFORE_SAVE` runs only if the item changed; `isChanged()`/`remindActual()` give the diff; an error cancels the save.
-- `ACTION_AFTER_SAVE`: `$this->getItemBeforeSave()` is the previous state, `$this->getContext()` the context; an error is reported, nothing is rolled back.
-- Third argument `$sort` (default 500) orders actions; `removeAction($placement, $className)` drops a kernel action.
-- `addAction()` affects only this operation object. To hook UI and REST writes, override the factory (`rules/events-automation.md`).
+- `ACTION_BEFORE_SAVE` выполняется только при изменении Item. `isChanged()`/`remindActual()` дают различия; ошибка отменяет сохранение.
+- В `ACTION_AFTER_SAVE` метод `$this->getItemBeforeSave()` даёт прежнее состояние, `$this->getContext()` — контекст. Ошибка передаётся вызывающему, отката нет.
+- Третий аргумент `$sort` (по умолчанию 500) задаёт порядок; `removeAction($placement, $className)` удаляет действие ядра.
+- `addAction()` меняет только текущий объект операции. Для записей интерфейса и REST подменяй фабрику (`rules/events-automation.md`).

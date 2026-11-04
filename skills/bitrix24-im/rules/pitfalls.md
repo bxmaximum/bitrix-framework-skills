@@ -1,34 +1,36 @@
-# Pitfalls, breaking changes, REST mapping
+# Ограничения, несовместимость и соответствие REST
 
-## Runtime pitfalls
+## Ограничения исполнения
 
-- `Chat::sendMessage()` skips rights checks; `CIMMessenger::Add()` with `SKIP_USER_CHECK => 'Y'` too. Check `canDo(Action::Send)` for user-initiated posts.
-- `sendMessage()` defers push, counters, `OnAfterMessagesAdd`, bot and command handlers to `Application::addBackgroundJob()`. A CLI script that never reaches `Application::terminate()` loses them unless it calls `$result->getPromise()?->wait()`.
-- Group chat without `AUTHOR_ID` in an agent: the author falls back to the context user (`0`), which is logged as deprecated.
-- `NotifyChat::sendMessage()` is a stub: use `CIMNotify::Add()`.
-- Notification text closures get the request language on-premise, not the recipient's (`CIMNotify::getTextMessageByLang()` uses it only with the `bitrix24` module).
-- Confirm notifications without `NOTIFY_TAG` never fire `OnBeforeConfirmNotify`.
+- `Chat::sendMessage()` обходит проверку прав, как и `CIMMessenger::Add()` с `SKIP_USER_CHECK => 'Y'`. Для пользовательской отправки сначала проверяй `canDo(Action::Send)`.
+- `sendMessage()` откладывает push, счётчики, `OnAfterMessagesAdd`, ботов и команды через `Application::addBackgroundJob()`. CLI, не дошедший до `Application::terminate()`, потеряет эту работу без `$result->getPromise()?->wait()`.
+- Без `AUTHOR_ID` в агенте автором группы станет пользователь контекста 0; это журналируется как устаревший вариант.
+- `NotifyChat::sendMessage()` — заглушка; используй `CIMNotify::Add()`.
+- Текстовая Closure в коробке получает язык запроса, а не получателя; `CIMNotify::getTextMessageByLang()` использует язык получателя только с модулем `bitrix24`.
+- У подтверждения без `NOTIFY_TAG` событие `OnBeforeConfirmNotify` не сработает.
 
-## Breaking changes (im 26.700–26.900)
+## Несовместимые изменения
 
-| Since | Change | Do |
+| Since | Изменение | Действие |
 | --- | --- | --- |
-| im 26.700 | REST `im.v2.Guest.joinByCode` removed | use `im.v2.Guest.checkSession` (action `checkSessionAction(string $code, ?Token $token = null)`) |
-| im 26.700 | installer no longer writes the `/guest/{code}` urlrewrite rule | keep your own route if you relied on it |
-| im 26.800 | REST `im.v2.Chat.readByType` removed | `im.v2.Chat.readByRecentSection` (`readByRecentSectionAction(…, string $recentSection, ?int $parentId = null)`) |
-| im 26.900 | 10 `Bitrix\Im\V2\Chat\ExternalChat\Event\*` classes take `int $initiatorId` as 2nd constructor argument | only code that instantiates them breaks; read it via `InitiatedByUserInterface::getInitiatorId()`; on 26.800 use `$event->getChat()->getContext()->getUserId()` |
-| im 26.900 | `isChatFoldersAvailable()` → `Features::isChatFoldersWebAvailable()`, option `chat_folders_web_available` (old option ignored); `isCopilotSelectModelAvailable()`, `isCopilotReasoningAvailable()`, `isUnreadRecentModeAvailable()` removed | update calls and options; never build `Features` positionally |
-| im 26.900 | `BlocksBuilder\BuilderError` lost the constant `BLOCK_NOT_AVAILABLE` | drop the check (blocks are always on) |
-| im 26.900 | install via `UpdateSystem\Migration` (`install/migrations/`, SQL files gone); `UnInstallDB()` drops tables unless `savedata === 'Y'` | pass exactly `'Y'` in reinstall scripts |
+| im 26.700 | REST `im.v2.Guest.joinByCode` удалён | используй `im.v2.Guest.checkSession` (`checkSessionAction(string $code, ?Token $token = null)`) | <!-- verify:negative -->
+| im 26.700 | установщик больше не добавляет правило `/guest/{code}` в urlrewrite | сохрани свой маршрут, если он нужен |
+| im 26.800 | REST `im.v2.Chat.readByType` удалён | используй `im.v2.Chat.readByRecentSection` (`readByRecentSectionAction(…, string $recentSection, ?int $parentId = null)`) | <!-- verify:negative -->
+| im 26.900 | 10 классов `Bitrix\Im\V2\Chat\ExternalChat\Event\*` принимают `int $initiatorId` вторым аргументом | исправь создание событий; чтение: `InitiatedByUserInterface::getInitiatorId()`; в 26.800 — `$event->getChat()->getContext()->getUserId()` |
+| im 26.900 | `isChatFoldersAvailable()` заменён `Features::isChatFoldersWebAvailable()` и опцией `chat_folders_web_available`; старый ключ игнорируется. `isCopilotSelectModelAvailable()`, `isCopilotReasoningAvailable()`, `isUnreadRecentModeAvailable()` удалены | обнови вызовы/опции; не создавай `Features` позиционными аргументами | <!-- verify:negative -->
+| im 26.900 | удалена `BlocksBuilder\BuilderError::BLOCK_NOT_AVAILABLE` | убери проверку: блоки включены всегда | <!-- verify:negative -->
+| im 26.900 | установка через `UpdateSystem\Migration`, каталог `install/migrations/`, SQL-файлы удалены. `UnInstallDB()` удаляет таблицы, если `savedata !== 'Y'` | ОПАСНО: при сохранении данных в скрипте переустановки передавай именно строку `'Y'` |
 
-## REST ↔ PHP
+**Since im 26.1000** REST V2 удаления и изменения сообщений возвращает объект с `result.result: true`, а не один `bool`. Проверяй вложенный признак успеха; для старой версии разбирай её документированный ответ. Это не меняет возвращаемый PHP-тип обёрток `CIM*`.
 
-| REST (apps, cloud) | PHP in `/local` |
+## Соответствие REST и PHP
+
+| REST приложения/облака | PHP в `/local` |
 | --- | --- |
 | `im.message.add` | `CIMChat::AddMessage()` / `CIMMessage::Add()` / `Chat::sendMessage()` |
 | `im.chat.add` | `ChatFactory::getInstance()->addChat()` / `addUniqueChat()` |
-| `im.notify.system.add`, `im.notify.personal.add` | `CIMNotify::Add()` with `IM_NOTIFY_SYSTEM` / `IM_NOTIFY_FROM` |
+| `im.notify.system.add`, `im.notify.personal.add` | `CIMNotify::Add()` с `IM_NOTIFY_SYSTEM` / `IM_NOTIFY_FROM` |
 | `im.notify.delete` (by `TAG`, `SUB_TAG`) | `CIMNotify::DeleteByTag()`, `DeleteBySubTag()` |
-| `imbot.v2.Bot.register` | `Bot::register()` (module bot; REST bots go through `RestBot`) |
+| `imbot.v2.Bot.register` | `Bot::register()` для модульного бота; REST-бот использует `RestBot` |
 | `imbot.v2.Chat.Message.send` | `Bot::addMessage()` |
 | `imbot.v2.Command.register` | `Command::register()` |

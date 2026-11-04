@@ -1,13 +1,13 @@
-# Access, events, REST mapping
+# Доступ, события и REST
 
-## Access
+## Доступ
 
-`Bitrix\Tasks\Access\TaskAccessController::can($userId, string $action, $itemId = null, $params = null): bool` with `Bitrix\Tasks\Access\ActionDictionary` constants. Task models are cached per hit: after changing a task, call `TaskAccessController::dropItemCache($taskId)` before checking again in the same hit.
+`Bitrix\Tasks\Access\TaskAccessController::can($userId, string $action, $itemId = null, $params = null): bool`; действия — константы `Bitrix\Tasks\Access\ActionDictionary`. Модели кешируются в запросе: после изменения вызывай `TaskAccessController::dropItemCache($taskId)` до повторной проверки.
 
 ```php
 $canRead = \Bitrix\Tasks\Access\TaskAccessController::can($userId, \Bitrix\Tasks\Access\ActionDictionary::ACTION_TASK_READ, $taskId);
 
-// create from legacy array fields (what CTaskItem::add does)
+// Создание из legacy-массива, как в CTaskItem::add.
 $canCreate = \Bitrix\Tasks\Access\TaskAccessController::can(
     $userId,
     \Bitrix\Tasks\Access\ActionDictionary::ACTION_TASK_SAVE,
@@ -16,32 +16,32 @@ $canCreate = \Bitrix\Tasks\Access\TaskAccessController::can(
 );
 ```
 
-| Operation | Check |
+| Операция | Проверка |
 | --- | --- |
-| Read | `ACTION_TASK_READ` |
-| Create or patch with V2 entity | `(new TaskAccessService())->canSave($userId, $task)` (`ACTION_TASK_SAVE`, before/after models) |
-| Delete | `(new TaskAccessService())->canDelete($userId, $taskId)` (`ACTION_TASK_REMOVE`) |
-| Complete | `ACTION_TASK_COMPLETE` and `ACTION_TASK_COMPLETE_RESULT` (result required) |
-| Start, pause, defer, renew, approve, disapprove, take | `ACTION_TASK_START`, `_PAUSE`, `_DEFER`, `_RENEW`, `_APPROVE`, `_DISAPPROVE`, `_TAKE` |
-| Deadline | `ACTION_TASK_DEADLINE` |
-| Members | see `rules/details.md` |
-| Checklist | `ACTION_CHECKLIST_ADD`, `_EDIT`, `_TOGGLE` (facade checks itself) |
-| Template | `Bitrix\Tasks\Access\TemplateAccessController::can($userId, ActionDictionary::ACTION_TEMPLATE_READ, $templateId)`; `_SAVE`, `_REMOVE` |
+| Чтение | `ACTION_TASK_READ` |
+| Создание/изменение V2-сущности | `(new TaskAccessService())->canSave($userId, $task)` (`ACTION_TASK_SAVE`, модели до/после) |
+| Удаление | `(new TaskAccessService())->canDelete($userId, $taskId)` (`ACTION_TASK_REMOVE`) |
+| Завершение | `ACTION_TASK_COMPLETE`, а при обязательном результате также `ACTION_TASK_COMPLETE_RESULT` |
+| Начать, приостановить, отложить, возобновить, принять, отклонить, взять | `ACTION_TASK_START`, `_PAUSE`, `_DEFER`, `_RENEW`, `_APPROVE`, `_DISAPPROVE`, `_TAKE` |
+| Срок | `ACTION_TASK_DEADLINE` |
+| Участники | `rules/details.md` |
+| Чек-лист | `ACTION_CHECKLIST_ADD`, `_EDIT`, `_TOGGLE`; фасад проверяет сам |
+| Шаблон | `Bitrix\Tasks\Access\TemplateAccessController::can($userId, ActionDictionary::ACTION_TEMPLATE_READ, $templateId)`; `_SAVE`, `_REMOVE` |
 
-## Events (module `tasks`)
+## События модуля `tasks`
 
-Fired from the V2 services for every write path (commands, `Control\Task`, `CTaskItem`, REST). Dispatch is `ExecuteModuleEventEx`: the handler gets positional arguments whatever the registration version.
+Отправляются V2-сервисами независимо от пути записи: команды, `Control\Task`, `CTaskItem`, REST. Механизм `ExecuteModuleEventEx` передаёт позиционные аргументы независимо от версии регистрации.
 
-| Event | Handler arguments | Notes |
+| Событие | Аргументы | Поведение |
 | --- | --- | --- |
-| `OnBeforeTaskAdd` | `array &$fields` | return `false` to cancel; the message comes from `$APPLICATION->ThrowException()` |
-| `OnTaskAdd` | `int $id, array &$fields, array $params` (`USER_ID`) | task saved; handler exceptions are logged and swallowed |
-| `OnBeforeTaskUpdate` | `int $id, array &$fields, array &$taskBefore` | `false` cancels |
-| `OnTaskUpdate` | `int $id, array &$fields, array &$taskData` | after save; `$fields['META:PREV_FIELDS']` = previous row; an exception makes the caller get an error although data is saved |
-| `OnBeforeTaskDelete` | `int $id, array $taskData, array $byPass` | `false` stops deletion |
-| `OnTaskDelete` | `int $id, array $params` (`FLOW_ID`, `USER_ID`) | after recycle-bin move, before the row is deleted |
+| `OnBeforeTaskAdd` | `array &$fields` | `false` отменяет; сообщение через `$APPLICATION->ThrowException()` |
+| `OnTaskAdd` | `int $id, array &$fields, array $params` (`USER_ID`) | задача сохранена; исключения обработчика журналируются и подавляются |
+| `OnBeforeTaskUpdate` | `int $id, array &$fields, array &$taskBefore` | `false` отменяет |
+| `OnTaskUpdate` | `int $id, array &$fields, array &$taskData` | после сохранения; `$fields['META:PREV_FIELDS']` — прежняя строка. Исключение даёт ошибку вызывающему, хотя данные уже сохранены |
+| `OnBeforeTaskDelete` | `int $id, array $taskData, array $byPass` | `false` останавливает удаление |
+| `OnTaskDelete` | `int $id, array $params` (`FLOW_ID`, `USER_ID`) | после перемещения в корзину, до удаления строки |
 
-Status changes (complete, start, delegate …) go through update and fire `OnBeforeTaskUpdate`/`OnTaskUpdate`.
+Смена статуса (завершение, начало, делегирование …) проходит через изменение и отправляет `OnBeforeTaskUpdate`/`OnTaskUpdate`.
 
 ```php
 <?php
@@ -60,19 +60,19 @@ final class TaskEventHandler
         $was = (int)($fields['META:PREV_FIELDS']['REAL_STATUS'] ?? 0);
         $now = (int)($fields['STATUS'] ?? $was);
         if ($now === Status::COMPLETED && $was !== Status::COMPLETED) {
-            // enqueue follow-up work (bitrix-background-jobs); never throw here
+            // Поставь последующую работу в очередь (bitrix-background-jobs); не бросай исключение.
         }
     }
 }
 ```
 
-- The actor is `$params['USER_ID']` / `$fields['CHANGED_BY']`, not `$USER`.
-- Keep handlers fast; heavy work goes to Messenger or an agent. Registration on install/uninstall: `bitrix-events`.
-- Task chat messages: `im:OnAfterSendMessageExternalChatTasksTask`, see `rules/details.md`.
+- Инициатор — `$params['USER_ID']`/`$fields['CHANGED_BY']`, не `$USER`.
+- Обработчики должны быть короткими; тяжёлое — Messenger/агент. Регистрация при установке/удалении: `bitrix-events`.
+- Сообщения чата: `im:OnAfterSendMessageExternalChatTasksTask`, `rules/details.md`.
 
-## REST ↔ PHP
+## Соответствие REST и PHP
 
-| REST (apps, cloud) | PHP in `/local` |
+| REST приложения/облака | PHP в `/local` |
 | --- | --- |
 | `tasks.task.add` / `update` / `delete` | `AddTaskCommand` / `UpdateTaskCommand` / `DeleteTaskCommand` |
 | `tasks.task.complete`, `start`, `defer`, `renew`, `approve` | `Status\*TaskCommand` |
@@ -80,5 +80,10 @@ final class TaskEventHandler
 | `tasks.task.get` / `tasks.task.list` | `TaskProvider::get()` / `getList()` |
 | `task.checklistitem.add` / `complete` | `TaskCheckListFacade::add()` / `complete()` |
 | `tasks.task.chat.message.send` | `Chat\SendMessageCommand` |
-| `task.commentitem.add` (old card) | `CTaskCommentItem::add()` |
-| `OnTaskAdd` / `OnTaskUpdate` / `OnTaskDelete` | same `tasks` module events |
+| `task.commentitem.add` старой карточки | `CTaskCommentItem::add()` |
+| `OnTaskAdd`/`OnTaskUpdate`/`OnTaskDelete` | те же события модуля `tasks` |
+
+
+**Since tasks 26.800** V2-путь `OnTaskAdd` добавляет в `$params` признаки `FROM_AGENT`, `FROM_WORKFLOW`, `MANUAL_DEADLINE`. Они позволяют различить источник и вручную заданный срок. На старой версии считай отсутствие признака неизвестным, не доказательством ручного создания.
+
+В этой же версии вложенное изменение `STAGE_ID` при синхронизации Scrum не отправляет отдельные `OnBeforeTaskUpdate`/`OnTaskUpdate` и не запускает БП: стадия входит во внешнее изменение. Обработчик не должен ждать второго события; в старом ядре защищайся от повторных уведомлений.

@@ -1,15 +1,15 @@
-# Reacting to CRM changes
+# Реакция на изменения CRM
 
-UI, REST (`crm.item.*`, `crm.deal.*`), legacy `CCrmDeal::Update()` and your code all run the same Factory operations, so these events fire for every source. Register handlers on module install (`bitrix-events`): array events via `registerEventHandlerCompatible()`, `Main\Event` ones via `registerEventHandler()`.
+Интерфейс, REST (`crm.item.*`, `crm.deal.*`), совместимые `CCrmDeal::Update()` и свой код проходят операции Factory в проверенной версии. Регистрируй обработчики при установке (`bitrix-events`): массивные события — `registerEventHandlerCompatible()`, события `Main\Event` — `registerEventHandler()`.
 
-| Entity | Events (module `crm`) | Handler gets |
+| Сущность | События модуля `crm` | Аргументы |
 | --- | --- | --- |
-| Lead, Deal, Contact, Company, Quote | `OnBeforeCrm{Entity}Add`, `OnBeforeCrm{Entity}Update`, `OnAfterCrm{Entity}Add`, `OnAfterCrm{Entity}Update` | `array &$fields` |
-| same | `OnBeforeCrm{Entity}Delete`, `OnAfterCrm{Entity}Delete` | `$id` |
-| Deal, Lead, Quote | `OnAfterCrm{Entity}ProductRowsSave` (deal also `OnBefore…`) | `$id, array $rows` |
-| Smart processes, smart invoices/documents | `onCrmDynamicItemAdd`, `onCrmDynamicItemUpdate`, `onCrmDynamicItemDelete`, plus `…_{entityTypeId}` names | `Main\Event`: `item`, `id` |
-| Timeline comment | `OnAfterCrmTimelineCommentAdd`, `…Update`, `…Delete` | `Main\Event`: `ID` |
-| Activity | `OnActivityAdd`, `OnActivityUpdate` / `OnActivityDelete` | `$id, array &$fields` / `$id` |
+| Лид, сделка, контакт, компания, предложение | `OnBeforeCrm{Entity}Add`, `OnBeforeCrm{Entity}Update`, `OnAfterCrm{Entity}Add`, `OnAfterCrm{Entity}Update` | `array &$fields` |
+| Те же сущности | `OnBeforeCrm{Entity}Delete`, `OnAfterCrm{Entity}Delete` | `$id` |
+| Сделка, лид, предложение | `OnAfterCrm{Entity}ProductRowsSave` (у сделки также `OnBefore…`) | `$id, array $rows` |
+| Смарт-процессы, смарт-счета/документы | `onCrmDynamicItemAdd`, `onCrmDynamicItemUpdate`, `onCrmDynamicItemDelete` и варианты `…_{entityTypeId}` | `Main\Event`: `item`, `id` |
+| Комментарий таймлайна | `OnAfterCrmTimelineCommentAdd`, `…Update`, `…Delete` | `Main\Event`: `ID` |
+| Дело | `OnActivityAdd`, `OnActivityUpdate` / `OnActivityDelete` | `$id, array &$fields` / `$id` |
 
 ```php
 final class DealHandler
@@ -19,8 +19,8 @@ final class DealHandler
     public static function onBeforeUpdate(array &$fields): bool
     {
         if ((float)($fields['OPPORTUNITY'] ?? 0) < 0) {
-            $fields['RESULT_MESSAGE'] = 'Amount must not be negative';
-            return false; // cancels; message goes to the operation Result
+            $fields['RESULT_MESSAGE'] = 'Сумма не может быть отрицательной';
+            return false; // отмена; сообщение попадёт в Result операции
         }
         return true;
     }
@@ -28,11 +28,11 @@ final class DealHandler
     public static function onAfterUpdate(array &$fields): void
     {
         if (self::$busy) {
-            return; // our own update below re-enters this handler
+            return; // собственное изменение ниже повторно входит в обработчик
         }
         self::$busy = true;
         try {
-            // resolve a service and do the work, or enqueue it
+            // Получи сервис и выполни короткую работу либо поставь её в очередь.
         } finally {
             self::$busy = false;
         }
@@ -40,23 +40,23 @@ final class DealHandler
 }
 ```
 
-## Pitfalls
+## Ограничения
 
-- `$fields` is the whole item in legacy keys (`getCompatibleData()`), not just changed keys: `isset($fields['STAGE_ID'])` is always true. Detect changes in an operation action (`getItemBeforeSave()`).
-- `OnBefore*` handlers run after field processing and required checks: values written into `$fields` are saved unchecked.
-- Smart processes have no before-event, and `onCrmDynamicItemUpdate` carries the saved item without previous values. Validation or diffs → factory override.
-- Updating the same item from its own after-handler recurses (handlers and robots run again): guard with a flag.
-- Robots run after the events; a robot that changes fields starts another update.
-- HTTP calls, mail and other slow work: enqueue (`bitrix-background-jobs`).
+- `$fields` содержит весь элемент в legacy-ключах (`getCompatibleData()`), а не только изменения: `isset($fields['STAGE_ID'])` не доказывает смену стадии. Определяй изменения в действии операции (`getItemBeforeSave()`).
+- Обработчики `OnBefore*` идут после обработки и проверки обязательных полей. Записанные в `$fields` значения сохраняются без повторной проверки.
+- У смарт-процесса нет before-события; `onCrmDynamicItemUpdate` передаёт сохранённый Item без старых значений. Для валидации и сравнения подменяй фабрику.
+- Изменение того же элемента из after-обработчика повторно запускает обработчики и роботов. Защищай его флагом от рекурсии.
+- Роботы идут после событий; робот, меняющий поля, запускает новое изменение.
+- HTTP, почту и другую долгую работу ставь в очередь (`bitrix-background-jobs`).
 
-## Factory override (all write sources)
+## Подмена фабрики для всех источников записи
 
-The container and factories are ServiceLocator services. Global `services` win over crm's own: `registerByModuleSettings()` skips codes already registered.
+Контейнер и фабрики — сервисы ServiceLocator. Глобальные `services` имеют приоритет: `registerByModuleSettings()` пропускает уже зарегистрированный код.
 
 ```php
-// global .settings.php (`bitrix-settings`), section 'services' => ['value' => [...]]
+// Глобальная .settings.php (bitrix-settings), секция 'services' => ['value' => [...]]
 'crm.service.factory.deal' => ['className' => \Vendor\Crm\DealFactory::class],
-'crm.service.container' => ['className' => \Vendor\Crm\Container::class], // smart processes
+'crm.service.container' => ['className' => \Vendor\Crm\Container::class], // смарт-процессы
 ```
 
 ```php
@@ -77,20 +77,20 @@ final class DealFactory extends \Bitrix\Crm\Service\Factory\Deal
 
 final class Container extends \Bitrix\Crm\Service\Container
 {
-    // subclass of Factory\Dynamic; branch on $this->getEntityTypeId() inside
+    // Наследник Factory\Dynamic; внутри выбирай поведение по $this->getEntityTypeId().
     protected static $dynamicFactoriesClassName = DynamicFactory::class;
 }
 ```
 
-- The classes must autoload before your module is included (composer autoload or `Loader::registerNamespace()` in `init.php`): crm instantiates them lazily.
-- Same for `crm.service.factory.lead|contact|company|quote`. Smart invoices/documents keep their own factory classes.
-- Always call `parent::`; protected internals change between crm updates, retest after each.
+- Классы должны автозагружаться до подключения своего модуля: composer либо `Loader::registerNamespace()` в `init.php`. CRM создаёт их при первом обращении.
+- Аналогично: `crm.service.factory.lead|contact|company|quote`. Смарт-счета/документы используют собственные фабрики.
+- Вызывай `parent::`. Защищённые внутренние методы меняются при обновлениях CRM; перепроверяй наследников.
 
-## Automation
+## Автоматизация
 
-- Robots and triggers start from operations when `$factory->isAutomationEnabled()` and the operation did not `disableAutomation()`.
-- Custom robot = bizproc activity (`bitrix-bizproc`).
-- The trigger list is hard-coded (`Automation\Factory::getTriggerRegistry()`); a module cannot add trigger classes. From code, fire the "Webhook" trigger by its code (needs `rest`, see `WebHookTrigger::isEnabled()`):
+- Роботы и триггеры запускаются из операции, если `$factory->isAutomationEnabled()` и не вызван `disableAutomation()`.
+- Свой робот — действие bizproc (`bitrix-bizproc`).
+- Реестр триггеров задан в `Automation\Factory::getTriggerRegistry()`; модуль не может дополнить его классами. Из PHP запускай триггер «Вебхук» по коду (нужен `rest`, см. `WebHookTrigger::isEnabled()`):
 
 ```php
 \Bitrix\Crm\Automation\Trigger\WebHookTrigger::execute(

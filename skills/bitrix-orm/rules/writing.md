@@ -1,28 +1,28 @@
-# Writing
+# Запись
 
-| Need | Use |
+| Задача | Использовать |
 | --- | --- |
-| One row from an array | `add()` / `update()` / `delete()` |
-| Object state, relations | `EntityObject::save()`, collection `save()` |
-| Many homogeneous rows | `addMulti($rows, $ignoreEvents = false)` / `updateMulti($primaries, $data, $ignoreEvents = false)` |
-| Counter without read-modify-write | `update()` with `SqlExpression` |
-| Mass delete, no per-row lifecycle | `DeleteByFilterTrait::deleteByFilter()` with a narrow filter |
-| Upsert: update on conflict | `MergeTrait::merge()`, `AddMergeTrait::addMerge()` |
-| Upsert: keep existing row | `AddInsertIgnoreTrait::addInsertIgnore()` |
+| Одна строка из массива | `add()` / `update()` / `delete()` |
+| Состояние объекта, связи | `EntityObject::save()`, `save()` коллекции |
+| Много однородных строк | `addMulti($rows, $ignoreEvents = false)` / `updateMulti($primaries, $data, $ignoreEvents = false)` |
+| Счётчик без чтения перед записью | `update()` с `SqlExpression` |
+| Массовое удаление без обработки каждой строки | `DeleteByFilterTrait::deleteByFilter()` с узким фильтром |
+| Upsert: обновление при конфликте | `MergeTrait::merge()`, `AddMergeTrait::addMerge()` |
+| Upsert: сохранение существующей строки | `AddInsertIgnoreTrait::addInsertIgnore()` |
 
-## Arrays and objects
+## Массивы и объекты
 
 ```php
 $add = PostTable::add(['TITLE' => 'Hi', 'AUTHOR_ID' => $userId]);
 if (!$add->isSuccess())
 {
-    return $add;                        // pass errors up (bitrix-result-and-errors)
+    return $add;                        // передать ошибки выше (bitrix-result-and-errors)
 }
-$id = $add->getId();                    // array for a composite primary key
+$id = $add->getId();                    // массив при составном первичном ключе
 
 $upd = PostTable::update($id, ['TITLE' => 'Hello']);
 $changed = $upd->getAffectedRowsCount();
-PostTable::delete($id);                 // composite: delete(['POST_ID' => 1, 'TAG_ID' => 2])
+PostTable::delete($id);                 // составной ключ: delete(['POST_ID' => 1, 'TAG_ID' => 2])
 
 $post = PostTable::createObject();
 $post->setTitle('Title')->setAuthorId($userId);
@@ -31,9 +31,9 @@ $result = $post->save();
 PostTable::updateMulti([100, 101], ['ACTIVE' => 'N']);
 ```
 
-`ignoreEvents = true` on multi-writes is a deliberate trade-off, not a speed default.
+`ignoreEvents = true` при пакетной записи — осознанный компромисс, а не стандартное ускорение.
 
-## Atomic increment
+## Атомарное увеличение
 
 ```php
 use Bitrix\Main\DB\SqlExpression;
@@ -41,7 +41,7 @@ use Bitrix\Main\DB\SqlExpression;
 PostTable::update($id, ['VIEWS' => new SqlExpression('?# + ?i', 'VIEWS', 1)]);
 ```
 
-Placeholders: `bitrix-database`.
+Плейсхолдеры: `bitrix-database`.
 
 ## `deleteByFilter`
 
@@ -57,11 +57,11 @@ final class ArchivedPostTable extends DataManager
 ArchivedPostTable::deleteByFilter(['=AUTHOR_ID' => $authorId, '=ACTIVE' => 'N']);
 ```
 
-- An empty filter throws `ArgumentException` (truncate via the connection, deliberately).
-- No events, no UF cleanup; `cleanCache()` is called.
-- `ConditionTree` argument (`Query::filter()->where(...)`) **Since main 26.250\***; older kernels take arrays only.
+- Пустой фильтр вызывает `ArgumentException` (очистка таблицы через соединение — отдельное осознанное действие).
+- Нет событий и очистки UF; вызывается `cleanCache()`.
+- Аргумент `ConditionTree` (`Query::filter()->where(...)`) доступен **Since main 26.250\***; раньше принимался только массив.
 
-## Merge / insert-ignore
+## Merge / вставка с игнорированием конфликта
 
 ```php
 use Bitrix\Main\ORM\Data\Internal\MergeTrait;
@@ -72,9 +72,9 @@ final class PortalLinkTable extends DataManager
     use MergeTrait;
 }
 PortalLinkTable::merge(
-    ['PORTAL_ID' => $portalId, 'EXTERNAL_ID' => $externalId, 'TITLE' => $title],   // insert
-    ['TITLE' => $title],                                                          // update on duplicate
-);                                                                                // 3rd arg: unique columns, default PK
+    ['PORTAL_ID' => $portalId, 'EXTERNAL_ID' => $externalId, 'TITLE' => $title],   // вставка
+    ['TITLE' => $title],                                                          // обновление при конфликте
+);                                                                                // третий аргумент: уникальные столбцы, по умолчанию PK
 
 final class SyncMarkerTable extends DataManager
 {
@@ -83,6 +83,6 @@ final class SyncMarkerTable extends DataManager
 $added = SyncMarkerTable::addInsertIgnore(['ENTITY_ID' => $entityId, 'MARKER' => $marker]);
 ```
 
-- `merge()` (baseline) is raw SQL: no events, returns nothing, then `cleanCache()`.
-- `AddStrategy\Trait\*` (**Since main 26.250\***): `addMerge()`/`addMergeMulti()`, `addInsertIgnore()`/`addInsertIgnoreMulti()` return `AddResult`; `MergeByDefaultTrait` / `InsertIgnoreByDefaultTrait` switch plain `add()`/`addMulti()` to that strategy. They run the normal add pipeline: `OnBeforeAdd`/`OnAdd`/`OnAfterAdd` fire even when the row was ignored or merged (the kernel docblocks saying "never fired" are stale); for an ignored row `getId()` is re-read by the unique fields. Fallback: `merge()` or `SqlHelper::prepareMerge()`.
-- Ignore keeps the existing row, merge updates it: pick deliberately.
+- `merge()` (baseline) выполняет прямой SQL без событий, ничего не возвращает, затем вызывает `cleanCache()`.
+- `AddStrategy\Trait\*` (**Since main 26.250\***): `addMerge()`/`addMergeMulti()`, `addInsertIgnore()`/`addInsertIgnoreMulti()` возвращают `AddResult`; `MergeByDefaultTrait` / `InsertIgnoreByDefaultTrait` переключают обычные `add()`/`addMulti()` на эту стратегию. Проходит обычная цепочка добавления: `OnBeforeAdd`/`OnAdd`/`OnAfterAdd` срабатывают даже при игнорировании или слиянии строки (комментарии ядра "never fired" устарели); при игнорировании `getId()` повторно читается по уникальным полям. На старом ядре: `merge()` или `SqlHelper::prepareMerge()`.
+- Игнорирование сохраняет существующую строку, слияние обновляет её. Выбирай осознанно.

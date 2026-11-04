@@ -1,14 +1,14 @@
-# Generators and kernel commands
+# Генераторы и команды ядра
 
-## `make:*` availability and output (main 26.800)
+## Наличие и результат `make:*` (main 26.1000)
 
-`<Vendor>\<Module>` = namespace from `-m vendor.module`. Paths are `/local/modules/vendor.module/lib/<namespace tail>/`.
+`<Vendor>\<Module>` — пространство имён из `-m vendor.module`. Пути: `/local/modules/vendor.module/lib/<хвост пространства имён>/`.
 
-| Command | Since main | Creates |
+| Команда | Since main | Создаёт |
 | --- | --- | --- |
-| `make:module vendor.module [--name --description --module-version]` | 25.900 | `/local/modules/vendor.module/` installer skeleton (`bitrix-modules`) |
-| `make:controller Post -m vendor.blog [--actions=crud\|list,get] [--alias=api]` | 25.900 (new syntax) | `…\Infrastructure\Controller\Post` |
-| `make:tablet b_vendor_post vendor.blog [--namespace=…]` | ≤ 25.100.500 | `…\Tablet\BVendorPostTable`, fields read from the **existing** DB table |
+| `make:module vendor.module [--name --description --module-version]` | 25.900 | Каркас установщика в `/local/modules/vendor.module/` (`bitrix-modules`) |
+| `make:controller Post -m vendor.blog [--actions=crud\|list,get] [--alias=api]` | 25.900 (новый синтаксис) | `…\Infrastructure\Controller\Post` |
+| `make:tablet b_vendor_post vendor.blog [--namespace=…]` | ≤ 25.100.500 | `…\Tablet\BVendorPostTable`; поля берутся из **существующей** таблицы БД |
 | `make:entity Post -m vendor.blog [--fields=title,body]` | 25.900 | `…\Internals\Entity\Post` |
 | `make:service Post -m vendor.blog` | 25.900 | `…\Public\Service\PostService` |
 | `make:request CreatePost -m vendor.blog [--fields=…]` | 25.900 | `…\Infrastructure\Controller\Request\CreatePostRequest` |
@@ -19,24 +19,38 @@
 | `make:agent Sync -m vendor.blog` | 25.900 | `…\Infrastructure\Agent\SyncAgent` |
 | `make:component my:post.list --no-module` | ≤ 25.100.500 | `/local/components/my/post.list/` |
 
-- In `make:eventhandler`/`make:messagehandler` the argument is the **event/message** name and `-m` is the **handler** module.
-- Namespace options (26.800 generators except `make:tablet`, `make:component`, `make:module`): `-P/--prefix V2` → `…\V2\Public\Service\…`; `-C/--context Post` → `…\Public\Service\Post\…`; `--no-psr4` → lower-case paths.
-- `make:tablet` keeps its old options: `--namespace='Vendor\Blog\Model'` (e.g. for a `Model` layout), `--root`, `--show` (print only), `--no-psr4`.
-- One-word module ids map to `Bitrix\X` and the generator writes into `/bitrix/modules/x/lib/` — move the file if your module lives in `/local/modules`.
-- Generated code is a stub: events get no params, handlers lack the `use` for the event class, controllers need the module `controllers` section (`bitrix-controllers`).
+- В `make:eventhandler`/`make:messagehandler` аргумент — имя **события/сообщения**, а `-m` — модуль **обработчика**.
+- Параметры пространства имён (генераторы 26.800, кроме `make:tablet`, `make:component`, `make:module`): `-P/--prefix V2` → `…\V2\Public\Service\…`; `-C/--context Post` → `…\Public\Service\Post\…`; `--no-psr4` → пути в нижнем регистре.
+- У `make:tablet` прежние параметры: `--namespace='Vendor\Blog\Model'` (например, для структуры `Model`), `--root`, `--show` (только показать), `--no-psr4`.
+- Однословный ID модуля соответствует `Bitrix\X`, и генератор пишет в `/bitrix/modules/x/lib/`. Перенеси файл, если свой модуль находится в `/local/modules`.
+- Сгенерированный код — заготовка: у событий нет параметров, у обработчиков отсутствует `use` класса события, контроллерам нужна секция `controllers` модуля (`bitrix-controllers`).
 
-## Before main 25.900 (checked on 25.100.500)
+## До main 25.900 (проверено на 25.100.500)
 
-Only `make:controller`, `make:tablet`, `make:component`, `orm:annotate`, `dev:*`, `update:*`, `messenger:consume` exist. `make:controller` there: `make:controller Post vendor.blog [--namespace=…] [--root] [--show]` → `Vendor\Blog\Controller\Post`; no `-m`, `--actions`, `--alias`, `-P`, `-C`. Anything else: write the class by hand.
+Есть только `make:controller`, `make:tablet`, `make:component`, `orm:annotate`, `dev:*`, `update:*`, `messenger:consume`. Старый вызов `make:controller Post vendor.blog [--namespace=…] [--root] [--show]` создаёт `Vendor\Blog\Controller\Post`; нет `-m`, `--actions`, `--alias`, `-P`, `-C`. Остальные классы пиши вручную.
 
 ## `make:component`
 
-Name `namespace:component` (`my:post.list`; no prefix → `bitrix`). With `--module=vendor.blog` (default: part before the first dot) it goes to `<root>/modules/<module>/install/components/<ns>/`; `--no-module` → `<root>/components/<ns>/`; `<root>` is `/local` for a non-`bitrix` namespace or with `--local`, else `/bitrix`. `--root`, `--show` as above.
+Имя `namespace:component` (`my:post.list`; без префикса — `bitrix`). С `--module=vendor.blog` (по умолчанию — часть до первой точки) результат в `<root>/modules/<module>/install/components/<ns>/`; с `--no-module` — в `<root>/components/<ns>/`. `<root>` — `/local` для пространства имён кроме `bitrix` или с `--local`, иначе `/bitrix`. Параметры `--root`, `--show` описаны выше.
 
-## Kernel commands
+## Команды ядра
 
-- `orm:annotate [output] [-m main,vendor.blog] [-c/--clean] [--inside]` — PHPDoc for ORM classes (default file `bitrix/modules/orm_annotations.php`; `--inside` writes into the module, one module only).
+- `orm:annotate [output] [-m main,vendor.blog] [-c/--clean] [--inside]` — PHPDoc классов ORM (по умолчанию `bitrix/modules/orm_annotations.php`; `--inside` пишет внутрь одного выбранного модуля).
 - `messenger:consume [queue ...] [-t/--time-limit N] [--sleep N]` — `bitrix-background-jobs`.
-- `update:modules [-m list] [-i versions.json]`, `update:versions <file.json>`, `update:languages [-l codes]` — marketplace/kernel updates.
-- `dev:module-skeleton <module> [dir]` — empty `lib/` layer dirs; `dev:locator-codes <module> [code] [--show]` — `.phpstorm.meta.php` for `ServiceLocator::get()` codes from module `services`.
-- `translate:index` — only with the `translate` module installed.
+- `update:modules [-m list] [-i versions.json]`, `update:versions <file.json>`, `update:languages [-l codes]` — обновления ядра и Marketplace.
+- `dev:module-skeleton <module> [dir]` — пустые каталоги слоёв `lib/`; `dev:locator-codes <module> [code] [--show]` — `.phpstorm.meta.php` для кодов `ServiceLocator::get()` из секции `services` модуля.
+- `translate:index` — только при установленном модуле `translate`.
+
+
+## `main:*` и JSON (**Since main 26.900**)
+
+Доступны `main:option:get|set|delete|list`, `main:module:list`, `main:agent:list|get`, `main:site:list`, `main:language:list`, `main:event-handler:list`, `main:feature:enable|disable|reset`, `main:cache:clear`, `main:managed-cache:clear`, `main:tagged-cache:clear`, `main:settings:*`. Точный набор и параметры проверяй через `list`/`help` установленного ядра. Команды записи меняют состояние; полный сброс кеша затрагивает весь сайт.
+
+```bash
+php bitrix/bitrix.php main:module:list --format=json -n
+php bitrix/bitrix.php help main:cache:clear
+```
+
+`--format=json` возвращает `{success, data, meta, error: {code, message}}`; ошибки идут в stderr, успех — stdout. Проверяй и код выхода, и `success`. До 26.900 этих команд нет: используй свой CLI с D7 API и обычным выводом Symfony Console.
+
+`main:settings:crypto-get` и `main:settings:smtp-get` выводят значения секций, включая секреты: не направляй их в общие логи/CI. `main:sql` и `main:php-eval` выключены без `BX_LOCAL_CLI_ALLOW_UNSAFE_COMMANDS === true`; не включай их ради обычной диагностики. PHP выполняется с полными правами процесса, без изоляции; `exit`/фатальная ошибка могут оборвать JSON-ответ.

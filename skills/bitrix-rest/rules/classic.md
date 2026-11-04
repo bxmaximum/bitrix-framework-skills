@@ -1,8 +1,8 @@
-# Engine controllers and classic methods
+# Engine-контроллеры и классические методы
 
-Endpoint base: `CRestUtil::getEndpoint()` = site + option `rest:rest_server_path` (default `/rest`).
+База адреса: `CRestUtil::getEndpoint()` — сайт и опция `rest:rest_server_path` (по умолчанию `/rest`).
 
-## Engine controller as REST method
+## Engine-контроллер как REST-метод
 
 `/local/modules/vendor.module/.settings.php`:
 
@@ -13,8 +13,8 @@ return [
             'defaultNamespace' => '\\Vendor\\Module\\Controller',
             'restIntegration' => [
                 'enabled' => true,
-                // 'hideModuleScope' => true, // don't advertise the module id as a scope
-                // 'scopes' => ['vendor.extra'], // extra scopes for this module
+                // 'hideModuleScope' => true, // не публиковать ID модуля как scope
+                // 'scopes' => ['vendor.extra'], // дополнительные scopes модуля
             ],
         ],
         'readonly' => true,
@@ -22,22 +22,22 @@ return [
 ];
 ```
 
-`Bitrix\Rest\Engine\RestManager::onFindMethodDescription()` exposes controller actions only for modules with `restIntegration.enabled`. The REST name uses dots: `vendor.module.post.create` for AJAX `vendor:module.post.create`. `CRestServer` lower-cases method names, so the controller path resolves lower-case (`lib/controller/post.php`): PascalCase files (`lib/Controller/Post.php`) give "method not found" on case-sensitive file systems. Controller rules and filters: `bitrix-controllers`.
+`Bitrix\Rest\Engine\RestManager::onFindMethodDescription()` публикует действия только модулей с `restIntegration.enabled`. REST-имя: `vendor.module.post.create`, AJAX-имя: `vendor:module.post.create`. `CRestServer` приводит имя к нижнему регистру и ищет `lib/controller/post.php`. Файлы `lib/Controller/Post.php` на регистрозависимой ФС могут дать «method not found». Правила контроллеров: `bitrix-controllers`.
 
-Limit an action to or away from REST with a scope filter:
+Ограничь действие REST либо исключи его из REST фильтром области:
 
 ```php
 use Bitrix\Main\Engine\ActionFilter;
 
-new ActionFilter\Scope(ActionFilter\Scope::REST);     // REST only
-new ActionFilter\Scope(ActionFilter\Scope::NOT_REST); // AJAX/CLI only
+new ActionFilter\Scope(ActionFilter\Scope::REST);     // только REST
+new ActionFilter\Scope(ActionFilter\Scope::NOT_REST); // только AJAX/CLI
 ```
 
-The default `Csrf` prefilter is skipped for REST scope.
+Стандартный фильтр `Csrf` пропускается в области REST.
 
-## Classic description
+## Классическая карта
 
-Register on install, remove on uninstall (`bitrix-modules`):
+Регистрируй обработчик при установке, удаляй при деинсталляции (`bitrix-modules`):
 
 ```php
 \Bitrix\Main\EventManager::getInstance()->registerEventHandler(
@@ -68,7 +68,7 @@ final class Service
     {
         $id = (int)($query['id'] ?? 0);
         if ($id <= 0) {
-            throw new \Bitrix\Rest\RestException('id required', \Bitrix\Rest\RestException::ERROR_ARGUMENT);
+            throw new \Bitrix\Rest\RestException('Требуется id', \Bitrix\Rest\RestException::ERROR_ARGUMENT);
         }
 
         return ['id' => $id];
@@ -76,12 +76,19 @@ final class Service
 }
 ```
 
-- Handler args: request params, list offset (`start`), server. Top-level keys are scopes. `\CRestUtil::GLOBAL_SCOPE` (`_global`) needs no scope; use it sparingly.
-- `CRestProvider` collects all handlers of the event; method names must be globally unique, prefix them with the module id.
-- Kernel example of events in a description: `main/lib/Rest/Handlers.php`.
+- Аргументы обработчика: параметры запроса, смещение `start`, сервер. Верхние ключи — scopes. `\CRestUtil::GLOBAL_SCOPE` (`_global`) не требует scope; используй только при обоснованной необходимости.
+- `CRestProvider` собирает все обработчики события. Имена методов глобально уникальны; добавляй префикс ID модуля.
+- Образец событий в карте: `main/lib/Rest/Handlers.php`.
 
-## Scopes and placements
+## Scopes и встройки
 
-- `Bitrix\Rest\Engine\ScopeManager` builds the scope list from description keys, `restIntegration` and v3 `rest` sections, cached for 7 days: after adding a scope call `ScopeManager::cleanCache()` (e.g. in the module installer).
-- **Since rest 26.600** `placement.bind/unbind/get` work for non-admins when the app access check allows; `USER_ID` may be only self or `0`. Subclasses of `Bitrix\Rest\Api\Placement` must declare `protected static function checkPermission(\CRestServer $server, ?string $permission = null)` (Fatal otherwise).
-- **Since rest 26.650** on Bitrix24 cloud plans without the feature, REST events to local apps and user webhooks are silently not sent, and auth fails with `FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN` (403). Don't retry; tell the admin.
+- `Bitrix\Rest\Engine\ScopeManager` собирает scopes из ключей карты, `restIntegration` и V3 `rest`, кеширует на 7 дней. После добавления scope вызывай `ScopeManager::cleanCache()`, например в установщике.
+- **Since rest 26.600** `placement.bind/unbind/get` доступны обычным пользователям при разрешённом доступе к приложению; `USER_ID` — только свой ID либо `0`. Наследник `Bitrix\Rest\Api\Placement` обязан сохранить `protected static function checkPermission(\CRestServer $server, ?string $permission = null)`, иначе фатальная ошибка. На старой версии выполняй регистрацию администратором.
+- **Since rest 26.650** на облачном тарифе без возможности события локальных приложений и пользовательских вебхуков могут не отправляться, а авторизация отвечает `FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN` (403). Сообщи администратору; повтор не исправит тариф. На старой версии встречается `ACCESS_DENIED`.
+
+
+## Своя точка входа REST
+
+**Since rest 26.1000** `CRestServer::output()` возвращает `Main\HttpResponse|string|null`, а `outputJson()` — `Bitrix\Rest\Internal\Response\StreamedJsonResponse`. Старый наследник с `outputJson(): string` несовместим. Не выполняй `echo $server->output($data)`: у ответа нет строкового преобразования. Как в штатном `rest.server`, для `HttpResponse` вызывай `sendHeadersAdditional()` и `send()`, для строки — `sendHeaders()` и `echo`. На старом ядре сохраняй прежнюю строковую ветку.
+
+Потоковый JSON не гарантирует `Content-Length`; `send()` завершает запрос и очищает буферы. Доработки, меняющие тело ответа через эпилог, перенеси в обработчик до отправки. Предпочитай штатную точку входа вместо собственной.

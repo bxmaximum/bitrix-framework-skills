@@ -1,19 +1,19 @@
-# Install migrations (`install/migrations/`)
+# Миграции установщика (`install/migrations/`)
 
-**Since main 26.600\***. Fallback: `rules/installer.md` → "Fallback before main 26.600". 31 kernel modules (`sale`, `catalog`, `rest`, `bizproc`, `bitrixcloud` …) install this way; most no longer ship `install/db/*.sql`.
+**Since main 26.600\***. На старом ядре: раздел «До main 26.600» в `rules/installer.md`. Так устанавливается 31 модуль ядра (`sale`, `catalog`, `rest`, `bizproc`, `bitrixcloud` …); большинство уже не поставляют `install/db/*.sql`.
 
-`CModule::installMigrations(): Result` (protected) includes, if present, `install/migrations/tables.php` → `events.php` → `agents.php` of the module dir (`/local/modules/<id>` works as is). `uninstallMigrations(bool $dropTables): Result` re-runs `tables.php` (only when `$dropTables`) and `events.php` in reverse mode. A file may `return` a failed `Result` to stop.
+Защищённый `CModule::installMigrations(): Result` последовательно подключает существующие `install/migrations/tables.php` → `events.php` → `agents.php` из каталога модуля (`/local/modules/<id>` поддерживается). `uninstallMigrations(bool $dropTables): Result` повторяет `tables.php` (только при `$dropTables`) и `events.php` в обратном режиме. Файл может остановить процесс, вернув неуспешный `Result`.
 
-| Call in the file | Install | Uninstall |
+| Вызов в файле | Установка | Удаление модуля |
 | --- | --- | --- |
-| `table()->create()` | CREATE; existing table/index skipped | DROP TABLE (**data loss**) |
-| `table()->alter()` | skipped (fresh install = final schema) | skipped |
-| `event()->register()` / `registerCompatible()` | registers handler | unregisters it |
-| `agent()->add()`, `option()->set()`, `stepper()->add()` | adds | nothing — `unRegisterModule()` removes agents; delete options yourself |
+| `table()->create()` | CREATE; существующие таблица/индекс пропускаются | DROP TABLE (**потеря данных**) |
+| `table()->alter()` | Пропускается: новая установка получает итоговую схему | Пропускается |
+| `event()->register()` / `registerCompatible()` | Регистрирует обработчик | Удаляет регистрацию |
+| `agent()->add()`, `option()->set()`, `stepper()->add()` | Добавляет | Ничего: `unRegisterModule()` удаляет агенты, настройки удаляй самостоятельно |
 
-Errors: **Since main 26.800** a `Migration\Exception` comes back as an `Error` in the `Result`; on 26.600–26.750 it is thrown — also wrap the call in `try/catch (\Bitrix\Main\UpdateSystem\Migration\Exception $e)`.
+Ошибки: **Since main 26.800** `Migration\Exception` возвращается как `Error` в `Result`; на 26.600–26.750 выбрасывается — также оборачивай вызов в `try/catch (\Bitrix\Main\UpdateSystem\Migration\Exception $e)`.
 
-## `tables.php` — one schema for MySQL and PostgreSQL
+## `tables.php`: одна схема для MySQL и PostgreSQL
 
 ```php
 <?php
@@ -33,10 +33,10 @@ Migration::getInstance()->table('b_vendor_module_post')->create(function (Create
 });
 ```
 
-- Columns: `int`/`tinyInt`/`smallInt`/`mediumInt`/`bigInt($name, ?$size)`, `varchar($name, $len)`, `char($name, $len)`, `text`/`mediumText`/`longText`, `date`, `datetime`, `boolean`, `decimal($name, $m, $e)`, `float`, `double`, `blob`, `varbinary($name, $len)`. Modifiers: `notNull()`, `default(?string)`, ints `autoincrement()`, `unsigned()`.
-- Keys: `addPrimaryKey($col)`, `addPrimaryKeys([...])`, `addIndex`, `addUniqueIndex`, `addFulltextIndex($name, [...])`.
-- Use `datetime`, never `timestamp` (unsupported on PostgreSQL). Name indexes `ix_<table>_<purpose>`, `ux_…` (unique), `ixf_…` (fulltext); PostgreSQL names are normalized to that form anyway.
-- Schema change for already-installed copies of a `/local` module: no updater runs `alter()` — ship it as a project migration (`bitrix-sprint-migration`).
+- Столбцы: `int`/`tinyInt`/`smallInt`/`mediumInt`/`bigInt($name, ?$size)`, `varchar($name, $len)`, `char($name, $len)`, `text`/`mediumText`/`longText`, `date`, `datetime`, `boolean`, `decimal($name, $m, $e)`, `float`, `double`, `blob`, `varbinary($name, $len)`. Модификаторы: `notNull()`, `default(?string)`, для целых `autoincrement()`, `unsigned()`.
+- Ключи: `addPrimaryKey($col)`, `addPrimaryKeys([...])`, `addIndex`, `addUniqueIndex`, `addFulltextIndex($name, [...])`.
+- Используй `datetime`, не `timestamp` (не поддерживается в PostgreSQL). Имена индексов: `ix_<table>_<purpose>`, `ux_…` (уникальный), `ixf_…` (полнотекстовый); PostgreSQL всё равно нормализует имена к такому виду.
+- Обновление схемы установленной копии `/local`-модуля: обновляющая система не запускает `alter()`. Поставляй изменение миграцией проекта (`bitrix-sprint-migration`).
 
 ## `events.php`
 
@@ -48,11 +48,11 @@ Migration::getInstance()->table('b_vendor_module_post')->create(function (Create
     ->registerCompatible('main', 'OnAfterUserAdd', \Vendor\Module\Internals\Integration\Main\UserHandler::class, 'onAfterAdd');
 ```
 
-- `register()` = `registerEventHandler()` (VERSION 2), `registerCompatible()` = `registerEventHandlerCompatible()` (VERSION 1). Legacy `ExecuteModuleEventEx` events pass raw args either way (`bitrix-events`).
-- Handler: `[Class::class, 'method']` or class + method as 3rd/4th arg; order via 5th arg `$sort` (**Since main 26.650**; before: always 100).
-- Handlers are matched on uninstall by the stored class string: when moving old handlers here, keep the exact `toClass` spelling used before.
+- `register()` соответствует `registerEventHandler()` (VERSION 2), `registerCompatible()` — `registerEventHandlerCompatible()` (VERSION 1). Старые события `ExecuteModuleEventEx` в обоих случаях передают исходные аргументы (`bitrix-events`).
+- Обработчик: `[Class::class, 'method']` либо класс и метод третьим/четвёртым аргументами. Порядок задаёт пятый аргумент `$sort` (**Since main 26.650**; раньше всегда 100).
+- При удалении обработчик сопоставляется с сохранённой строкой класса: при переносе старой регистрации сохраняй точное написание `toClass`.
 
-## `agents.php` (options and steppers may go in any file)
+## `agents.php` (настройки и steppers допустимы в любом файле)
 
 ```php
 <?php
@@ -62,16 +62,16 @@ $migration->agent()->add([\Vendor\Module\Infrastructure\Agent\SyncAgent::class, 
 $migration->option()->set('vendor.module', 'sync_enabled', 'Y');
 ```
 
-- First run is delayed by `max(60, execDelay)` s; `execDelay` can only postpone.
-- `option()->set()` and `stepper()->add()` run only if the module is registered **or** its default table exists. While `installMigrations()` runs the module is not registered yet, so add `install/migration_config.json`: `{"defaultTableName": "b_vendor_module_post"}` — without it these calls are **silently skipped** (kernel modules keep the file in the module root; `/local` modules must use `install/`).
+- Первый запуск откладывается на `max(60, execDelay)` секунд; `execDelay` может лишь отложить его.
+- `option()->set()` и `stepper()->add()` выполняются, только если модуль зарегистрирован **либо** существует его основная таблица. Во время `installMigrations()` регистрации ещё нет: добавь `install/migration_config.json` с `{"defaultTableName": "b_vendor_module_post"}`. Без него вызовы **молча пропускаются** (ядро держит файл в корне модуля; для `/local` нужен `install/`).
 
-## Separate DB connection — **Since main 26.800**
+## Отдельное соединение БД (**Since main 26.800**)
 
 ```php
 protected function configureMigrationContext(\Bitrix\Main\UpdateSystem\Migration\Context $context): void
 {
-    $context->setConnection(\Bitrix\Main\Application::getConnection('stats')); // from .settings.php connections
+    $context->setConnection(\Bitrix\Main\Application::getConnection('stats')); // из секции connections в .settings.php
 }
 ```
 
-`tables.php` DDL goes to that connection; handlers, agents and options stay in the main DB. All migration table operations run master-only. Older: create those tables yourself on `Application::getConnection('stats')` in `InstallDB()`.
+DDL файла `tables.php` идёт в это соединение; обработчики, агенты и настройки остаются в основной БД. Все табличные операции миграций выполняются только на master. На старом ядре создавай таблицы через `Application::getConnection('stats')` в `InstallDB()`.

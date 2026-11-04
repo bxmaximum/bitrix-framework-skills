@@ -1,13 +1,13 @@
-# Selections, SEO, performance
+# Выборки, SEO, производительность
 
-## Selections and property filters
+## Выборки и фильтры свойств
 
 ```php
 $elements = $elementClass::query()
     ->setSelect(['ID', 'NAME', 'PREVIEW_TEXT', 'AUTHOR', 'SOURCE.ITEM'])
     ->where('ACTIVE', 'Y')
     ->where('IBLOCK_SECTION_ID', $sectionId)
-    ->where('AUTHOR.VALUE', 'Jane Smith')          // property value
+    ->where('AUTHOR.VALUE', 'Анна Иванова') // значение свойства
     ->whereIn('SOURCE.VALUE', [$enumId1, $enumId2])
     ->setOrder(['SORT' => 'ASC', 'ID' => 'DESC'])
     ->setLimit(10)
@@ -15,30 +15,30 @@ $elements = $elementClass::query()
 
 foreach ($elements as $el) {
     $el->getName();
-    $el->getAuthor()?->getValue();              // S: value object → VALUE
-    $el->getSource()?->getItem()?->getXmlId();  // L: enum row via ITEM
+    $el->getAuthor()?->getValue(); // S: объект значения → VALUE
+    $el->getSource()?->getItem()?->getXmlId(); // L: вариант списка через ITEM
 }
 ```
 
-- Multiple property → collection: `foreach ($el->getTags()->getAll() as $value) { $value->getValue(); }`. Filtering by it JOINs and may repeat elements; add `->setDistinct()` or collect IDs.
-- Sections of an element: select `SECTIONS` (ManyToMany, direct links only).
-- ORM `getList` ignores rights and active dates: filter `ACTIVE`, `ACTIVE_FROM`/`ACTIVE_TO` yourself, check rights per `rules/basics.md`.
+- Множественное свойство — коллекция: `foreach ($el->getTags()->getAll() as $value) { $value->getValue(); }`. Фильтр добавляет JOIN, возможны повторы; используй `->setDistinct()` либо собери ID.
+- Разделы элемента: `select SECTIONS`, ManyToMany только прямых связей.
+- ORM `getList` игнорирует права и даты активности: фильтруй `ACTIVE`, `ACTIVE_FROM`/`ACTIVE_TO`, проверяй права по `rules/basics.md`.
 
-## SEO values
+## Значения SEO
 
-Templates are set via `IPROPERTY_TEMPLATES` in `CIBlock`/`CIBlockSection`/`CIBlockElement` `Add/Update`. Computed values:
+Шаблоны задаются через `IPROPERTY_TEMPLATES` в `Add/Update` классов `CIBlock`/`CIBlockSection`/`CIBlockElement`. Вычисленные значения:
 
 ```php
 $values = (new \Bitrix\Iblock\InheritedProperty\ElementValues($iblockId, $elementId))->getValues();
 $title = $values['ELEMENT_META_TITLE'] ?? '';
 ```
 
-Also `SectionValues($iblockId, $sectionId)`, `IblockValues($iblockId)`. Computed values are cached per entity; setting templates resets them. ORM writes never touch templates or cached values.
+Также `SectionValues($iblockId, $sectionId)`, `IblockValues($iblockId)`. Значения кешируются на сущность; установка шаблонов сбрасывает кеш. ORM-запись не меняет шаблоны и кеш значений.
 
-## Performance
+## Производительность
 
-- Select only needed fields and properties; avoid `['*']` on iblocks with many properties. Each property in `select`/`where` is a JOIN (v1: into the shared table).
-- ORM cache: `->setCacheTtl(3600)` plus `->cacheJoins(true)` (property fields are JOINs). ORM element/section writes clear the iblock tag cache; component caches follow tagged cache (`bitrix-caching`).
-- Avoid N+1: one query with properties in `select`, or collect IDs and load in one `whereIn('ID', $ids)`.
-- `ElementTable` is fine for ID/NAME lists; properties need the compiled class.
-- Bulk imports via `CIBlockElement`: `Add($fields, false, false)` / `Update($id, $fields, false, false)` skip per-element search reindex (`$bUpdateSearch = false`); reindex once after the run.
+- Выбирай нужные поля и свойства, избегай `['*']` при множестве свойств. Каждое свойство в `select`/`where` — JOIN, в v1 к общей таблице.
+- Кеш ORM: `->setCacheTtl(3600)` и `->cacheJoins(true)` (свойства — JOIN). Запись элементов / разделов ORM чистит теги инфоблока; кеш компонентов использует тегированный кеш (`bitrix-caching`).
+- Без N+1: один запрос со свойствами в `select` либо собрать ID и загрузить одним `whereIn('ID', $ids)`.
+- `ElementTable` подходит для списков ID/NAME; свойствам нужен компилируемый класс.
+- Массовый импорт `CIBlockElement`: `Add($fields, false, false)` / `Update($id, $fields, false, false)` отключают поэлементную индексацию (`$bUpdateSearch = false`). После запуска переиндексируй один раз.

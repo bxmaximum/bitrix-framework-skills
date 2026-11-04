@@ -1,8 +1,8 @@
-# Custom rules, errors
+# Свои правила и ошибки
 
-## Property/parameter rule
+## Правило свойства/параметра
 
-An attribute extends `AbstractPropertyValidationAttribute` and returns validators; a validator implements `ValidatorInterface::validate(mixed $value): ValidationResult`. No registration step.
+Атрибут наследует `AbstractPropertyValidationAttribute` и возвращает валидаторы; валидатор реализует `ValidatorInterface::validate(mixed $value): ValidationResult`. Регистрация не нужна.
 
 ```php
 <?php declare(strict_types=1);
@@ -20,13 +20,13 @@ use Bitrix\Main\Validation\Validator\ValidatorInterface;
 final class EvenNumber extends AbstractPropertyValidationAttribute
 {
     public function __construct(
-        // must match the trait property type exactly (PHP property types are invariant)
+        // тип должен точно совпадать со свойством трейта: типы свойств PHP инвариантны
         protected string|LocalizableMessageInterface|null $errorMessage = null,
     ) {}
 
     protected function getValidators(): array
     {
-        return [new EvenNumberValidator()]; // errorMessage replaces their errors automatically
+        return [new EvenNumberValidator()]; // errorMessage автоматически заменяет их ошибки
     }
 }
 
@@ -37,8 +37,8 @@ final class EvenNumberValidator implements ValidatorInterface
         $result = new ValidationResult();
         if (!is_int($value) || $value % 2 !== 0)
         {
-            // code gets the property path prepended: 'age.EVEN_NUMBER'
-            $result->addError(new ValidationError('Number must be even', 'EVEN_NUMBER', failedValidator: $this));
+            // к коду добавится путь свойства: 'age.EVEN_NUMBER'
+            $result->addError(new ValidationError('Число должно быть чётным', 'EVEN_NUMBER', failedValidator: $this));
         }
 
         return $result;
@@ -46,18 +46,18 @@ final class EvenNumberValidator implements ValidatorInterface
 }
 ```
 
-Usage: `#[EvenNumber(errorMessage: 'Age must be even')] public ?int $age = null;`.
+Применение: `#[EvenNumber(errorMessage: 'Возраст должен быть чётным')] public ?int $age = null;`.
 
-- `TARGET_PARAMETER` matters only on main 26.250\* and later, where action params are validated.
-- Group support (**Since main 26.250\***): implement `Rule\ValidateByGroupInterface::getGroups(): array` and accept `protected array $groups = []`.
-- Rule across several properties: extend `AbstractClassValidationAttribute` (target class) or implement `ClassValidationAttributeInterface` with `validateObject(object $object): ValidationResult`.
+- `TARGET_PARAMETER` важен только с main 26.250\*, где проверяются параметры действий.
+- Поддержка групп (**Since main 26.250\***): реализуй `Rule\ValidateByGroupInterface::getGroups(): array` и принимай `protected array $groups = []`.
+- Правило нескольких свойств: наследуй `AbstractClassValidationAttribute` (цель — класс) либо реализуй `ClassValidationAttributeInterface` с `validateObject(object $object): ValidationResult`.
 
-## Reading errors
+## Чтение ошибок
 
-`ValidationResult` extends `Bitrix\Main\Result`; errors are `ValidationError` (extends `Error`):
+`ValidationResult` наследует `Bitrix\Main\Result`; ошибки — `ValidationError` (наследник `Error`):
 
-- `getMessage()`: text (localized kernel phrases).
-- `getCode()`: property path (`email`, `items.0.name`) plus the validator's own code after a dot.
-- `getFailedValidator()`: the validator instance or `null`.
+- `getMessage()`: текст (локализованные фразы ядра).
+- `getCode()`: путь свойства (`email`, `items.0.name`) и собственный код валидатора после точки.
+- `getFailedValidator()`: экземпляр валидатора либо `null`.
 
-Map them into your module's error codes at the boundary if clients need stable codes (`bitrix-result-and-errors`).
+Если клиенту нужны стабильные коды, преобразуй в коды своего модуля на границе (`bitrix-result-and-errors`).

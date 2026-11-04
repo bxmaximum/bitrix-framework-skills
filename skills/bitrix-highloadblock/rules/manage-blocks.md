@@ -1,12 +1,12 @@
-# Manage blocks, fields, storage
+# Управление блоками, полями и хранением
 
-## Naming and limits
+## Имена и ограничения
 
-- `NAME`: `^[A-Z][A-Za-z0-9]*$`, ≤ 100 chars, must not end with `Table`. `Collection` (any case) is rejected **Since highloadblock 25.100\***; on older versions avoid it yourself.
-- `TABLE_NAME`: `^[a-z0-9_]+$`, ≤ 64 chars. Both unique; the table must not exist yet.
-- `HighloadBlockLangTable`: `LID` ≤ 2, `NAME` ≤ 100. `HighloadBlockRightsTable.ACCESS_CODE` ≤ 50.
+- `NAME`: `^[A-Z][A-Za-z0-9]*$`, до 100 символов, не заканчивается `Table`. `Collection` в любом регистре запрещён **Since highloadblock 25.100\***; на старом ядре избегай сам.
+- `TABLE_NAME`: `^[a-z0-9_]+$`, до 64 символов. Оба уникальны; таблица ещё не должна существовать.
+- `HighloadBlockLangTable`: `LID` до 2, `NAME` до 100. `HighloadBlockRightsTable.ACCESS_CODE` до 50.
 
-## Create, look up, change
+## Создание, поиск, изменение
 
 ```php
 use Bitrix\Highloadblock\HighloadBlockTable;
@@ -21,21 +21,21 @@ if (!$hl) {
 }
 ```
 
-- `add()` creates the table with a BIGINT `ID`. If `CREATE TABLE` fails it deletes the description row and returns an error **Since highloadblock 25.100\***. Older versions throw and leave the row behind: delete it before retrying.
-- Non-throwing lookup: `HighloadBlockTable::resolveHighloadblock($idOrName): ?array` (int or digit-leading string = ID, other string = `NAME`). ID/NAME lookups are ORM-cached for 86400 s **Since highloadblock 25.100\***. The cache goes stale only if `b_hlblock_entity` is edited bypassing ORM.
-- Object API: `HighloadBlockTable::getById($id)->fetchObject()?->getEntityDataClass()`. A compiled class exposes its row: `$dataClass::getHighloadBlock()['ID']`.
-- `getList` extras: `FIELDS_COUNT`, `'LANG_NAME' => 'LANG.NAME'`. Lang titles: `HighloadBlockLangTable::add(['ID' => $hlId, 'LID' => 'en', 'NAME' => '…'])`.
-- `update()`: a new `NAME` renames the class and every event name (handlers orphaned). A new `TABLE_NAME` renames the table and its multiple-value tables; then update each directory property's `TABLE_NAME` (`rules/relations-directory.md`).
-- `delete()` removes records, files, UFs, lang rows, rights and tables. Irreversible, back up first. UF registry rows go by raw SQL, so `OnBeforeUserTypeDelete`/`OnAfterUserTypeDelete` do not fire.
-- `HighloadBlockTable::cleanCache()` also resets `CIBlockPropertyDirectory` static caches.
+- `add()` создаёт таблицу с BIGINT `ID`. При ошибке `CREATE TABLE` удаляет строку описания и возвращает ошибку **Since highloadblock 25.100\***. Раньше бросает исключение и оставляет строку: удали перед повтором.
+- Поиск без исключения: `HighloadBlockTable::resolveHighloadblock($idOrName): ?array` (int / строка с цифры — ID, другая строка — `NAME`). Поиск ID/NAME кешируется ORM на 86400 с **Since highloadblock 25.100\***. Кеш устаревает только при обходе ORM в `b_hlblock_entity`.
+- Объектный API: `HighloadBlockTable::getById($id)->fetchObject()?->getEntityDataClass()`. Данные блока: `$dataClass::getHighloadBlock()['ID']`.
+- Дополнительные поля `getList`: `FIELDS_COUNT`, `'LANG_NAME' => 'LANG.NAME'`. Названия: `HighloadBlockLangTable::add(['ID' => $hlId, 'LID' => 'ru', 'NAME' => '…'])`.
+- Новый `NAME` в `update()` меняет класс и имена событий; старые обработчики теряются. `TABLE_NAME` меняет имя основной и множественных таблиц; обнови `TABLE_NAME` каждого свойства-справочника (`rules/relations-directory.md`).
+- `delete()` удаляет записи, файлы, UF, языковые строки, права и таблицы. Необратимо: сначала резервная копия. Реестр UF удаляется прямым SQL, без `OnBeforeUserTypeDelete`/`OnAfterUserTypeDelete`.
+- `HighloadBlockTable::cleanCache()` также сбрасывает статические кеши `CIBlockPropertyDirectory`.
 
-## User fields
+## Пользовательские поля
 
-Attach via `CUserTypeEntity`, `ENTITY_ID = HighloadBlockTable::compileEntityId($hlId)` (`HLBLOCK_7`).
+Создавай через `CUserTypeEntity`, `ENTITY_ID = HighloadBlockTable::compileEntityId($hlId)` (`HLBLOCK_7`).
 
-- `FIELD_NAME`: `UF_` + uppercase Latin/digits/`_`, 4–50 chars. A `_REF` suffix is rejected for `HLBLOCK_*` entities (reserved for references). Read the error from `$APPLICATION->GetException()`.
-- Types (`USER_TYPE_ID`): `string`, `integer`, `double`, `boolean`, `datetime`, `date`, `file`, `enumeration`, `hlblock`, … `rich_text` (BBCode, ui module) **Since ui 26.600**. Older kernels: `string` with your own BBCode handling.
-- `Add()` defaults: `SORT` 100, `MULTIPLE`/`MANDATORY` `N`, `SHOW_IN_LIST` `Y` (columns in `highloadblock.list`), `EDIT_IN_LIST` `Y`, `IS_SEARCHABLE` `N`, `SHOW_FILTER` `N` (`N|I|E|S` = none/exact/mask/substring).
+- `FIELD_NAME`: `UF_` + заглавная латиница / цифры / `_`, 4–50 символов. Суффикс `_REF` у `HLBLOCK_*` запрещён: зарезервирован для связей. Ошибка в `$APPLICATION->GetException()`.
+- Типы `USER_TYPE_ID`: `string`, `integer`, `double`, `boolean`, `datetime`, `date`, `file`, `enumeration`, `hlblock`, …; `rich_text` (BBCode, ui) **Since ui 26.600**. На старом ядре `string` со своей обработкой BBCode.
+- По умолчанию `Add()`: `SORT` 100, `MULTIPLE`/`MANDATORY` `N`, `SHOW_IN_LIST` `Y` (колонки `highloadblock.list`), `EDIT_IN_LIST` `Y`, `IS_SEARCHABLE` `N`, `SHOW_FILTER` `N` (`N|I|E|S` — нет / точное / маска / подстрока).
 
 ```php
 $entityId = HighloadBlockTable::compileEntityId($hlId);
@@ -46,24 +46,24 @@ if (!$existing) {
     ]);
     // $id === false → $APPLICATION->GetException()?->GetString()
 } elseif ($existing['USER_TYPE_ID'] !== 'string' || $existing['MULTIPLE'] !== 'N') {
-    throw new \RuntimeException('UF_CODE exists with another type'); // never silently reuse
+    throw new \RuntimeException('UF_CODE существует с другим типом'); // не переиспользуй молча
 }
 ```
 
-- `Update()` cannot change `ENTITY_ID`, `FIELD_NAME`, `USER_TYPE_ID`, `MULTIPLE`: add a new field, copy values, delete the old one. Label updates replace all stored labels.
-- `Delete()` drops the column/table; file fields delete their files.
+- `Update()` не меняет `ENTITY_ID`, `FIELD_NAME`, `USER_TYPE_ID`, `MULTIPLE`: создай новое поле, перенеси значения, удали старое. Обновление подписей заменяет все сохранённые подписи.
+- `Delete()` удаляет данные поля и файлы. **Since main 26.1000** в стандартном UF-хранилище удаление столбца может быть отложено агентом. У highloadblock собственные обработчики хранения: проверяй результат CUserTypeEntity, не считай физический DROP гарантированно немедленным. На старом ядре структура меняется прежним обработчиком удаления.
 
-## Storage layout
+## Хранение
 
-- `TABLE_NAME`: `ID` + one column per single UF (`ALTER TABLE ADD` on field add). `string` UF → `TEXT` column (not varchar); `integer`/`boolean`/`hlblock` → int.
-- Multiple UF → table `<TABLE_NAME>_<lowercase field>` (`HighloadBlockTable::getMultipleValueTableName()`) with `ID`, `VALUE` and indexes `IX_UTM_HL<hlId>_<ufId>_ID/_VALUE`. ORM class `<Name>Utm<CamelField>`. The main table also keeps a serialized copy. `DataManager` syncs both.
+- `TABLE_NAME`: `ID` и столбец на одиночное UF (`ALTER TABLE ADD` при добавлении). `string` хранится как `TEXT`, не varchar; `integer`/`boolean`/`hlblock` — int.
+- Множественное UF: `<TABLE_NAME>_<lowercase field>` (`HighloadBlockTable::getMultipleValueTableName()`), `ID`, `VALUE`, индексы `IX_UTM_HL<hlId>_<ufId>_ID/_VALUE`; класс ORM `<Name>Utm<CamelField>`. Основная таблица хранит сериализованную копию. `DataManager` синхронизирует обе.
 
-## Recompile
+## Перекомпиляция
 
-The first `compileEntity()` per request builds the class; later calls return it. After UF changes use a new request. In the same request: re-fetch the row, call `compileEntity($row, true)` (rebuilds the map but cannot redefine the PHP class), then check `$entity->hasField('UF_X')`. `NAME`/`TABLE_NAME` changes always need a new request.
+Первый `compileEntity()` запроса создаёт класс, остальные возвращают его. После изменения UF используй новый запрос. В том же запросе: перечитай строку, `compileEntity($row, true)` пересоберёт карту, но не переопределит PHP-класс; проверь `$entity->hasField('UF_X')`. Изменения `NAME`/`TABLE_NAME` всегда требуют нового запроса.
 
-## Migrations and transfer
+## Миграции и перенос
 
-- Use `sprint.migration` (`Hlblock` helper, skill `bitrix-sprint-migration`). Order: find/create block by `NAME` → each UF by `ENTITY_ID`+`FIELD_NAME` (add missing, fail on type mismatch) → copy values before replacing a field → records in a new request. Stop on the first error; never run the same migration concurrently.
-- Post-check: `getById()` `NAME`/`TABLE_NAME`, `CUserTypeEntity::GetList(['ENTITY_ID' => …])` codes/types/`MULTIPLE`, `compileEntity()` fields, a test add/read.
-- XML export/import is admin UI only (`/bitrix/admin/highloadblock_export.php`, `highloadblock_import.php`; no PHP API). On import, pick an external key field (`ID` or a string/int UF). Without one, every row is added again as a duplicate. Move the sibling files directory with the XML.
+- Используй `sprint.migration`, помощник `Hlblock` (`bitrix-sprint-migration`). Порядок: найти / создать по `NAME` → UF по `ENTITY_ID` + `FIELD_NAME` (добавить отсутствующие, ошибка при несовпадении типа) → скопировать значения до замены поля → записи в новом запросе. Останавливайся на первой ошибке; не запускай одну миграцию параллельно.
+- После: `getById()` для `NAME`/`TABLE_NAME`, `CUserTypeEntity::GetList([], ['ENTITY_ID' => …])` для кодов / типов / `MULTIPLE`, поля `compileEntity()`, пробное добавление и чтение.
+- XML-экспорт / импорт — только административные `/bitrix/admin/highloadblock_export.php`, `highloadblock_import.php`, PHP API нет. При импорте выбери внешний ключ (ID либо строковое / целое UF); без него все строки добавятся дублями. Переноси XML вместе с соседним каталогом файлов.

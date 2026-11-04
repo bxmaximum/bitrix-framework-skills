@@ -1,6 +1,6 @@
-# Properties, sections, elements
+# Свойства, разделы, элементы
 
-## Properties
+## Свойства
 
 ```php
 use Bitrix\Iblock\PropertyTable;
@@ -8,9 +8,9 @@ use Bitrix\Iblock\PropertyTable;
 $property = new \CIBlockProperty();
 $propId = $property->Add([
     'IBLOCK_ID'     => $iblockId,
-    'NAME'          => 'Source',
-    'CODE'          => 'SOURCE',                  // required: ORM skips properties without CODE
-    'PROPERTY_TYPE' => PropertyTable::TYPE_LIST,  // S, N, F, L, E (element), G (section)
+    'NAME'          => 'Источник',
+    'CODE'          => 'SOURCE',                  // обязателен: ORM пропускает свойства без CODE
+    'PROPERTY_TYPE' => PropertyTable::TYPE_LIST,  // S, N, F, L, E (элемент), G (раздел)
     'MULTIPLE'      => 'N',
 ]);
 if (!$propId) { throw new \RuntimeException($property->LAST_ERROR); }
@@ -20,14 +20,14 @@ $enumId = (new \CIBlockPropertyEnum())->Add([
 ]);
 ```
 
-User types (`PROPERTY_TYPE` + `USER_TYPE`, constants on `PropertyTable`):
+Пользовательские типы (`PROPERTY_TYPE` + `USER_TYPE`, константы `PropertyTable`):
 
-- `S` + `USER_TYPE_HTML` — HTML editor; `S` + `USER_TYPE_DATE` / `USER_TYPE_DATETIME` — date.
-- `E` + `USER_TYPE_SKU` — SKU link (`bitrix-catalog`).
-- `S` + `USER_TYPE_DIRECTORY` (`directory`) — HL dictionary. `USER_TYPE_SETTINGS => ['TABLE_NAME' => $hl['TABLE_NAME']]` must equal the HL block's `TABLE_NAME` exactly (`b_hlbd_*` only for blocks created from the property UI). Stores `UF_XML_ID` (string); multiplicity via property `MULTIPLE`. The type class lives in module `highloadblock` → `bitrix-highloadblock` `rules/relations-directory.md`.
-- Custom property types: keep `USER_TYPE_SETTINGS` an array of scalars. **Since iblock 26.0.100** `PropertyTable` reads `USER_TYPE_SETTINGS_LIST` with `allowed_classes => false`: stored objects come back as `__PHP_Incomplete_Class` (classic `CIBlockProperty*` already did this). Build DTOs after reading.
+- `S` + `USER_TYPE_HTML` — HTML-редактор; `S` + `USER_TYPE_DATE` / `USER_TYPE_DATETIME` — дата.
+- `E` + `USER_TYPE_SKU` — связь SKU (`bitrix-catalog`).
+- `S` + `USER_TYPE_DIRECTORY` (`directory`) — HL-справочник. `USER_TYPE_SETTINGS => ['TABLE_NAME' => $hl['TABLE_NAME']]` точно совпадает с `TABLE_NAME` блока (`b_hlbd_*` только для блоков интерфейса свойств). Хранит строку `UF_XML_ID`; множественность — `MULTIPLE` свойства. Класс типа — в highloadblock: `bitrix-highloadblock`, `rules/relations-directory.md`.
+- Настройки своих типов: массив скаляров `USER_TYPE_SETTINGS`. **Since iblock 26.0.100** `PropertyTable` читает `USER_TYPE_SETTINGS_LIST` с `allowed_classes => false`: сохранённый объект становится `__PHP_Incomplete_Class`; классический `CIBlockProperty*` уже так делал. Создавай DTO после чтения.
 
-## Sections via ORM
+## Разделы через ORM
 
 ```php
 use Bitrix\Iblock\Model\Section;
@@ -36,15 +36,15 @@ $sectionClass = Section::compileEntityByIblock('News'); // '\Bitrix\Iblock\Secti
 
 $parent = $sectionClass::createObject()
     ->setIblockId($iblockId)
-    ->setName('Events')
+    ->setName('События')
     ->setCode('events')
-    ->set('UF_MANAGER', 'John Doe')   // section UF via set('UF_*', …)
+    ->set('UF_MANAGER', 'Иван Иванов') // UF раздела через set('UF_*', …)
     ->save();
 if (!$parent->isSuccess()) { /* $parent->getErrorMessages() */ }
 
 $sectionClass::createObject()
     ->setIblockId($iblockId)
-    ->setName('Exhibitions')
+    ->setName('Выставки')
     ->setCode('exhibitions')
     ->setIblockSectionId($parent->getId())
     ->save();
@@ -56,37 +56,37 @@ $section = $sectionClass::query()
 $section?->getParentSection()?->getName();
 ```
 
-Delete with `CIBlockSection::Delete($id)` (cascades). ORM `delete()` orphans children — see `rules/orm-entities.md`.
+Удаляй через `CIBlockSection::Delete($id)` каскадно; ORM оставляет потомков без родителя (`rules/orm-entities.md`).
 
-## Elements via ORM
+## Элементы через ORM
 
 ```php
 use Bitrix\Iblock\Elements\ElementNewsTable;
 use Bitrix\Iblock\ORM\PropertyValue;
 
 $element = ElementNewsTable::createObject()
-    ->setName('Security Update')
+    ->setName('Обновление безопасности')
     ->setCode('security-update')
     ->setActive(true)
-    ->setIblockSectionId($sectionId)                        // also syncs SECTIONS
-    ->set('AUTHOR', 'Jane Smith')                           // S
-    ->set('SOURCE', $enumId)                                // L: enum value ID
-    ->set('RELATED', $otherElementId)                       // E: element ID
-    ->set('PHOTO', new PropertyValue($fileId, 'Main photo')) // F: file ID (+ description)
-    ->addTo('TAGS', 'security')                             // multiple
+    ->setIblockSectionId($sectionId)                        // синхронизирует SECTIONS
+    ->set('AUTHOR', 'Анна Иванова')                         // S
+    ->set('SOURCE', $enumId)                                // L: ID варианта списка
+    ->set('RELATED', $otherElementId)                       // E: ID элемента
+    ->set('PHOTO', new PropertyValue($fileId, 'Главное фото')) // F: ID файла и описание
+    ->addTo('TAGS', 'security')                             // множественное
     ->addTo('TAGS', '2026');
 
 $result = $element->save();
 if (!$result->isSuccess()) { /* $result->getErrorMessages() */ }
 
-$element->removeFrom('TAGS', 'security'); // by value
+$element->removeFrom('TAGS', 'security'); // по значению
 $element->removeAll('TAGS');
 ```
 
-- Scalars work for any property; `PropertyValue($value, $description)` only when a description is needed.
-- Files: save first, `$fileId = \CFile::SaveFile(\CFile::MakeFileArray($path), 'iblock')`; set the ID.
-- `addTo()` skips duplicates for `L/E/G/F`, allows them for `S/N`.
+- Скаляры подходят для любого свойства; `PropertyValue($value, $description)` нужен для описания.
+- Файл сначала сохрани: `$fileId = \CFile::SaveFile(\CFile::MakeFileArray($path), 'iblock')`, затем установи ID.
+- `addTo()` пропускает дубли `L/E/G/F`, разрешает для `S/N`.
 
-## Symbolic code (`CODE`)
+## Символьный код (`CODE`)
 
-ORM does not generate `CODE`. `(new \CIBlockElement())->generateMnemonicCode($name, $iblockId)` (same on `CIBlockSection`; `null` when transliteration is off) uses the iblock `CODE` field settings and `CUtil::translit`. **Since main 26.800** a name ending in punctuation keeps a trailing separator (`Скидка 10%` → `skidka_10_`). Existing codes don't change, but new ones differ. If codes must stay stable: `rtrim($code, '_')` (your `TRANS_OTHER`), then check uniqueness.
+ORM не генерирует `CODE`. `(new \CIBlockElement())->generateMnemonicCode($name, $iblockId)` (также `CIBlockSection`, `null` при отключённой транслитерации) использует настройки `CODE` и `CUtil::translit`. **Since main 26.800** конечная пунктуация оставляет разделитель: `Скидка 10%` → `skidka_10_`. Старые коды не меняются, новые отличаются. Для стабильности — `rtrim($code, '_')` с учётом своего `TRANS_OTHER`, затем проверка уникальности.

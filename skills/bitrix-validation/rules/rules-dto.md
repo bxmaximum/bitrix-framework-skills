@@ -1,24 +1,24 @@
-# Rule attributes and DTOs
+# Атрибуты правил и DTO
 
-Namespace `Bitrix\Main\Validation\Rule\`.
+Пространство имён `Bitrix\Main\Validation\Rule\`.
 
-| Attribute | Checks |
+| Атрибут | Проверка |
 | --- | --- |
 | `NotEmpty` | `!empty`; `allowZero`, `allowSpaces` |
-| `Length(min, max)` | string length |
-| `Min(n)` / `Max(n)` / `Range(min, max)` | numbers (int bounds) |
-| `PositiveNumber` | >= 1 (`0.5` fails) |
-| `Email` / `PhoneOrEmail` | `strict`, `domainCheck` (passed to `check_email()`) |
-| `Phone`, `Url` | format |
+| `Length(min, max)` | Длина строки |
+| `Min(n)` / `Max(n)` / `Range(min, max)` | Числа (целочисленные границы) |
+| `PositiveNumber` | >= 1 (`0.5` не подходит) |
+| `Email` / `PhoneOrEmail` | `strict`, `domainCheck` передаются в `check_email()` |
+| `Phone`, `Url` | Формат |
 | `RegExp('/…/')` | `preg_match`; `flags`, `offset` |
-| `InArray([...])` | `strict`, `showValues` (list allowed values in the error) |
-| `Json` (**26.250\***) | valid JSON string |
-| `ElementsType(typeEnum: Type::Integer)` / `ElementsType(className: Dto::class)` | array element type; `Rule\Enum\Type`: `Integer`, `String`, `Float`, `Numeric` (`is_numeric`) |
-| `Recursive\Validatable` | validate a nested object; `iterable: true` → each element |
-| `AtLeastOnePropertyNotEmpty([...])` (class) | one of the listed properties filled; `allowZero`, `allowEmptyString` |
-| `OnlyOneOfPropertyRequired([...])` (class, **26.250\***) | exactly one filled |
+| `InArray([...])` | `strict`, `showValues` (перечень разрешённых значений в ошибке) |
+| `Json` (**26.250\***) | Корректная строка JSON |
+| `ElementsType(typeEnum: Type::Integer)` / `ElementsType(className: Dto::class)` | Тип элемента массива; `Rule\Enum\Type`: `Integer`, `String`, `Float`, `Numeric` (`is_numeric`) |
+| `Recursive\Validatable` | Проверка вложенного объекта; `iterable: true` — каждого элемента |
+| `AtLeastOnePropertyNotEmpty([...])` (класс) | Заполнено одно из свойств; `allowZero`, `allowEmptyString` |
+| `OnlyOneOfPropertyRequired([...])` (класс, **26.250\***) | Заполнено ровно одно |
 
-Every rule takes `errorMessage`: a string or `new LocalizableMessage('PHRASE_CODE', phraseSrcFile: __FILE__)` (`Bitrix\Main\Localization`). **Since main 26.250\***, every rule also takes `groups: [...]` (strings, enums, `Stringable`).
+Любое правило принимает `errorMessage`: строку или `new LocalizableMessage('PHRASE_CODE', phraseSrcFile: __FILE__)` (`Bitrix\Main\Localization`). **Since main 26.250\*** также принимает `groups: [...]` (строки, enum, `Stringable`).
 
 ## DTO
 
@@ -44,14 +44,14 @@ final class CreateUserDto
 }
 ```
 
-Initialization rules:
+Правила инициализации:
 
-- An uninitialized nullable property is skipped.
-- An uninitialized non-nullable property gives `MAIN_VALIDATION_EMPTY_PROPERTY`.
-- An explicit `null` counts as a value and goes to the validators. Every kernel value rule rejects it (`Length`, `Range`, `Email`… too, not only `NotEmpty`; only `Validatable` skips `null`), so a `null` default doesn't make a ruled property optional.
-- Build DTOs with nullable `null` defaults, so construction from raw input never throws.
+- Неинициализированное nullable-свойство пропускается.
+- Неинициализированное свойство, не допускающее null, даёт `MAIN_VALIDATION_EMPTY_PROPERTY`.
+- Явный `null` передаётся правилам как значение: nullable-тип не отменяет проверку. Например, `NotEmpty` и `Length` отвергают null, а `Validatable` пропускает его; у `InArray` результат зависит от разрешённых значений и `strict`. Значение по умолчанию null само по себе не делает свойство с правилом необязательным.
+- Создавай DTO с nullable-свойствами и значениями по умолчанию null, чтобы конструирование из исходного ввода не бросало исключение.
 
-## Validating in a service
+## Проверка в сервисе
 
 ```php
 use Bitrix\Main\Error;
@@ -68,7 +68,7 @@ final class UserService
         $validation = $this->validator->validate($dto); // ($object, $group = null)
         if (!$validation->isSuccess())
         {
-            return $result->addErrors($validation->getErrors()); // ValidationError extends Error
+            return $result->addErrors($validation->getErrors()); // ValidationError наследует Error
         }
         // ...
         return $result;
@@ -76,9 +76,9 @@ final class UserService
 }
 ```
 
-Groups (**Since main 26.250\***): `validate($dto, 'create')` runs rules with `groups` containing `create` plus all rules without groups. Without a group, every rule runs.
+Группы (**Since main 26.250\***): `validate($dto, 'create')` выполняет правила с `create` в `groups` и все правила без групп. Без указания группы выполняются все.
 
-## Nested and collections
+## Вложенные объекты и коллекции
 
 ```php
 use Bitrix\Main\Validation\Rule\AtLeastOnePropertyNotEmpty;
@@ -98,4 +98,4 @@ final class OrderDto
 }
 ```
 
-Error codes are paths: `items.0.name`. `Validatable` on a non-object (or `iterable` on a non-iterable) throws `ArgumentException`; `null` is skipped.
+Коды ошибок — пути (`items.0.name`). `Validatable` на не-объекте или `iterable` на неперебираемом значении вызывает `ArgumentException`; `null` пропускается.

@@ -1,25 +1,28 @@
 ---
 name: bitrix-mail
-description: 'Mail events and templates (CEventType, CEventMessage), Mail\Event::send/sendImmediate and the b_event queue, #FIELD# macros, attachments, Mail::sendResult, sender Identity, mail hooks. Use when sending e-mail from code or debugging lost mail.'
+description: 'Почта Битрикс: Mail\Event::send, шаблоны CEventMessage, очередь b_event, вложения и SMTP. Используй при отправке писем из кода, выборе отправителя и диагностике доставки.'
 ---
 
-# Bitrix mail
+# Почта Битрикс
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
+
+| Задача | Читать |
 | --- | --- |
-| Event types, templates, `#FIELD#` macros, HTML escaping | `rules/templates.md` |
-| Send (queue or immediate), attachments, `Mail::sendResult()`, sender identity, SMTP choice | `rules/sending.md` |
-| Hooks, queue processing and cron, testing, delivery diagnostics | `rules/hooks-testing.md` |
+| Типы событий, шаблоны, макросы `#FIELD#`, экранирование HTML | `rules/templates.md` |
+| Очередь и немедленная отправка, вложения, `Mail::sendResult()`, отправитель, выбор SMTP | `rules/sending.md` |
+| События, обработка очереди и cron, тестирование, диагностика доставки | `rules/hooks-testing.md` |
+| Подписи текста в main.mail.form, OnMailSenderListBuild | `rules/signatures.md` |
 
-SMTP servers and the `smtp` section of `.settings.php`: `bitrix-settings`. Types and templates in migrations: `bitrix-sprint-migration`.
+SMTP и секция `smtp` в `.settings.php`: `bitrix-settings`. Типы и шаблоны в миграциях: `bitrix-sprint-migration`.
 
-## Invariants
+## Общие правила
 
-- Send through a mail event with an admin-editable template (`Mail\Event::send()`); build a raw message with `Mail::sendResult()` only when no template fits.
-- The queue (`b_event`) is the default; it is drained after hits or by cron. Use `sendImmediate()` only when the caller needs the outcome now.
-- `C_FIELDS` values: strings or arrays of strings. The queue stores objects as `(string)` via `__toString()`, or `''` without it.
-- In HTML templates print user data as `#HTML_FIELD#`; `#FIELD#` is inserted raw.
-- Validate every address that comes from user input (`check_email()`) before it reaches a field used in `EMAIL_TO`, `CC` or headers.
-- A template must be bound to the site: create it with `CEventMessage`, not `EventMessageTable::add()`.
+- Отправляй почтовым событием с редактируемым шаблоном (`Mail\Event::send()`). Письмо через `Mail::sendResult()` собирай, когда шаблон не подходит.
+- По умолчанию — очередь `b_event`, обработка после хитов или cron. `sendImmediate()` — когда результат нужен вызывающему коду сразу.
+- Значения `C_FIELDS`: строки либо массивы строк. Очередь превращает объект в `(string)` через `__toString()`, без него — в `''`.
+- Данные пользователя в HTML-шаблоне: `#HTML_FIELD#`; `#FIELD#` вставляется без экранирования.
+- Проверяй пользовательские адреса (`check_email()`) до подстановки в `EMAIL_TO`, `CC` и заголовки.
+- Шаблон должен быть привязан к сайту: создавай через `CEventMessage`, не `EventMessageTable::add()`.

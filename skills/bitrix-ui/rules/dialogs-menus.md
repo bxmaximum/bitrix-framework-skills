@@ -1,73 +1,73 @@
-# Dialogs, confirms, menus
+# Диалоги, подтверждения, меню
 
-| Need | Extension → export (global) | Since |
+| Задача | Расширение → экспорт (глобальный объект) | Since |
 | --- | --- | --- |
-| Modal: title, content, buttons | `ui.system.dialog` → `Dialog` (`BX.UI.System.Dialog`) | ui 26.200* |
-| Confirm / alert box | `ui.dialogs.messagebox` → `MessageBox`, `MessageBoxButtons` (`BX.UI.Dialogs`) | baseline |
-| Dropdown / context menu, new design | `ui.system.menu` → `Menu`, `MenuItemDesign` (`BX.UI.System.Menu`) | ui 26.200* |
-| Anchored popover (floating-ui) | `ui.system.popover` → `Popover`; Vue `BPopover` from `ui.system.popover.vue` | ui 26.600 |
-| User reorders / hides items, saves | `ui.menu-configurable` → `Menu` (`BX.UI.MenuConfigurable.Menu`) | baseline |
+| Модальное окно: заголовок, содержимое, кнопки | `ui.system.dialog` → `Dialog` (`BX.UI.System.Dialog`) | ui 26.200* |
+| Подтверждение / сообщение | `ui.dialogs.messagebox` → `MessageBox`, `MessageBoxButtons` (`BX.UI.Dialogs`) | baseline |
+| Выпадающее / контекстное меню, новый дизайн | `ui.system.menu` → `Menu`, `MenuItemDesign` (`BX.UI.System.Menu`) | ui 26.200* |
+| Привязанный всплывающий блок (floating-ui) | `ui.system.popover` → `Popover`; Vue BPopover из `ui.system.popover.vue` | ui 26.600 |
+| Перестановка / скрытие пунктов пользователем | `ui.menu-configurable` → `Menu` (`BX.UI.MenuConfigurable.Menu`) | baseline |
 
-Fallback on older ui: `Popup` / `Menu` from `main.popup` (`rules/popups-sidepanel.md`).
+Старое ui: Popup / Menu из main.popup (`rules/popups-sidepanel.md`).
 
-## Dialog
+## Модальное окно Dialog
 
 ```js
 import { Dialog } from 'ui.system.dialog';
-import { Button, ButtonColor } from 'ui.buttons'; // not in the dialog's rel: load both
+import { Button, ButtonColor } from 'ui.buttons'; // нет в rel диалога: загрузи оба
 
 const dialog = new Dialog({
-    title: 'Archive order',       // rendered as text
-    content: formNode,            // HTMLElement only
+    title: 'Архивировать заказ',  // выводится текстом
+    content: formNode,            // только HTMLElement
     rightButtons: [new Button({
-        text: 'Archive',
+        text: 'Архивировать',
         color: ButtonColor.PRIMARY,
         onclick: () => archive().then(() => dialog.hide()),
     })],
-    hasOverlay: true,             // default false
+    hasOverlay: true,             // по умолчанию false
     events: { onAfterHide: () => {} },
 });
 dialog.show();
 ```
 
-Other options: `subtitle`, `leftButtons`, `centerButtons`, `hasCloseButton` (true), `closeByEsc` / `closeByClickOutside` (true), `width`, `hasVerticalPadding` / `hasHorizontalPadding` (true), `background: DialogBackground.vibrant`, `disableScrolling`. Events: `onShow`, `onAfterShow`, `onHide`, `onAfterHide`. Methods `setTitle()`, `setContent(node)`, `set*Buttons()`.
+Другие параметры: subtitle, leftButtons, centerButtons, hasCloseButton (true), closeByEsc / closeByClickOutside (true), width, hasVerticalPadding / hasHorizontalPadding (true), background: DialogBackground.vibrant, disableScrolling. События: onShow, onAfterShow, onHide, onAfterHide. Методы: `setTitle()`, setContent(node), set*Buttons().
 
-## MessageBox
+## Подтверждение MessageBox
 
 ```js
 import { Text } from 'main.core';
 import { MessageBox, MessageBoxButtons } from 'ui.dialogs.messagebox';
 
 MessageBox.confirm(
-    `Delete ${Text.encode(name)}?`,           // message is HTML
-    () => api.remove(id).then(() => true),  // resolved Promise or true closes the box
+    `Удалить ${Text.encode(name)}?`, // сообщение — HTML
+    () => api.remove(id).then(() => true), // успешный Promise либо true закрывает окно
 );
-MessageBox.show({ title: 'Export', message: node, buttons: MessageBoxButtons.YES_NO, onYes: (box) => { box.close(); } });
-MessageBox.alert('Done');
+MessageBox.show({ title: 'Экспорт', message: node, buttons: MessageBoxButtons.YES_NO, onYes: (box) => { box.close(); } });
+MessageBox.alert('Готово');
 ```
 
-- Callbacks get `(messageBox, button, event)`. Return `true` or a Promise to close, `false` to stay open. Returning nothing leaves the box open with the button disabled: call `box.close()` yourself.
-- Signatures: `confirm(message, [title,] onOk, okCaption, onCancel, cancelCaption)`, `alert(message, [title,] onOk, okCaption)`.
-- Buttons: `OK`, `CANCEL`, `YES`, `NO`, `OK_CANCEL`, `YES_NO`, `YES_CANCEL`, `YES_NO_CANCEL`; callbacks `onOk`, `onCancel`, `onYes`, `onNo`.
+- Аргументы обработчиков: `(messageBox, button, event)`. true либо Promise закрывает, false оставляет. Без возврата окно остаётся с заблокированной кнопкой: вызови box.close() сам.
+- Сигнатуры: `confirm(message, [title,] onOk, okCaption, onCancel, cancelCaption)`, `alert(message, [title,] onOk, okCaption)`.
+- Кнопки: OK, CANCEL, YES, NO, OK_CANCEL, YES_NO, YES_CANCEL, YES_NO_CANCEL; обработчики onOk, onCancel, onYes, onNo.
 
-## System menu
+## Системное меню
 
 ```js
 import { Menu, MenuItemDesign } from 'ui.system.menu';
 
 const menu = new Menu({
-    bindElement: button,          // the control itself: the menu sets aria-expanded on it
+    bindElement: button, // сам контрол: меню устанавливает ему aria-expanded
     items: [
-        { id: 'edit', title: 'Edit', onClick: () => edit() },
-        { id: 'delete', title: 'Delete', design: MenuItemDesign.Alert, onClick: () => remove() },
+        { id: 'edit', title: 'Изменить', onClick: () => edit() },
+        { id: 'delete', title: 'Удалить', design: MenuItemDesign.Alert, onClick: () => remove() },
     ],
 });
 menu.show();
 ```
 
-Item keys: `title`, `subtitle` (escaped), `icon`, `isSelected`, `disabled` (still clickable, aria-disabled), `subMenu`, `sectionCode` + menu `sections`, `counter`. `updateItems()`, `close()`, `destroy()` (call it when the trigger node outlives the menu). Buttons get it via `systemMenu` (`rules/buttons.md`).
+Пункт: title, subtitle (экранируются), icon, isSelected, disabled (всё ещё нажимается, aria-disabled), subMenu, sectionCode + sections меню, counter. `updateItems()`, close(), `destroy()` — вызови, когда узел открытия живёт дольше меню. Для кнопок — systemMenu (`rules/buttons.md`).
 
-## Popover
+## Всплывающий блок Popover
 
 ```js
 import { Popover, PopoverPosition } from 'ui.system.popover';
@@ -76,16 +76,35 @@ const popover = new Popover({ content: node, target: button, positioning: { posi
 popover.show(); // hide(), destroy(), setTarget(), setPositioning(), adjustPosition()
 ```
 
-String `content` is parsed as HTML. Hiding does not return focus: move it back to the trigger when content is interactive.
+Строковый content разбирается как HTML. Скрытие не возвращает фокус: для интерактивного содержимого верни его на элемент открытия.
 
-## Configurable menu
+## Настраиваемое меню
 
 ```js
-import { Menu as ConfigurableMenu } from 'ui.menu-configurable'; // name clashes with main.popup Menu
+import { Menu as ConfigurableMenu } from 'ui.menu-configurable'; // имя совпадает с Menu main.popup
 
-const menu = new ConfigurableMenu({ items: [{ id: 'price', text: 'Price', isHidden: false }], maxVisibleItems: 5 });
+const menu = new ConfigurableMenu({ items: [{ id: 'price', text: 'Цена', isHidden: false }], maxVisibleItems: 5 });
 const result = await menu.open(button);
-if (!result.isCanceled) { await saveColumns(result.items); } // it does not persist anything
+if (!result.isCanceled) { await saveColumns(result.items); } // само ничего не сохраняет
 ```
 
-Item `text` is escaped, `html` is raw; `onclick`, `href`, submenus are ignored. Give `id` only for a menu you do not recreate (instances are cached by id).
+text экранируется, html — сырой. onclick, href и подменю игнорируются. Задавай id только меню, которое не пересоздаёшь: экземпляры кешируются по id.
+
+## Список флажков ui.dialogs.checkbox-list
+
+```js
+import { CheckboxList } from 'ui.dialogs.checkbox-list';
+
+const dialog = new CheckboxList({
+    categories: [{ key: 'main', title: 'Основные' }],
+    options: [{ id: 'NAME', title: 'Название', categoryKey: 'main', value: true, defaultValue: true }],
+    params: { destroyPopupAfterClose: false },
+    events: { onApply: (event) => saveColumns(event.getData().fields) },
+});
+dialog.show();
+```
+
+- fields — массив выбранных ID; сохранение выполняет обработчик. При разрешённом переименовании подписи лежат в data.titles, отдельно от fields.
+- closeAfterApply задаётся **внутри params**. По умолчанию окно закрывается и уничтожается; destroyPopupAfterClose: false позволяет повторное открытие без пересоздания разметки. `destroy()` уничтожает окно, последующий `show()` строит его заново.
+- selectOption(id, false) снимает флажок; `getSelectedOptions()` возвращает выбор. saveColumns(ids) отмечает перечисленное и вызывает `apply()`, остальные флажки не снимает.
+- locked и видимость флажков не заменяют серверную проверку допустимых ID. ui.dialogs.messagebox не входит в зависимости; для собственного подтверждения подключай отдельно.

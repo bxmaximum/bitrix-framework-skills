@@ -1,24 +1,24 @@
-# Templates: rights, import, services
+# Шаблоны: права, импорт и сервисы
 
-## Rights on Nodes templates (**Since bizproc 26.1200**)
+## Права узловых шаблонов (**Since bizproc 26.1200**)
 
-`TYPE=nodes` templates use `Main\Access` permissions: create, edit, publish (includes edit), delete, configure rights. Default roles are bound to nobody, so non-admins see nothing until an admin assigns roles (saving roles needs option `designer_v2=Y`). Classic templates still use the document type operation `CreateWorkflow`.
+Шаблоны `TYPE=nodes` используют права `Main\Access`: создание, изменение, публикация (включает изменение), удаление, настройка прав. Роли по умолчанию никому не назначены: обычный пользователь ничего не увидит до назначения администратором. Для сохранения ролей нужен включённый новый дизайнер. Классические шаблоны используют `CreateWorkflow` типа документа. На старом модуле проверяй права через API документа.
 
 ```php
 $access = new \Bitrix\Bizproc\Public\Service\TemplateAccessService();
 $access->canAccessTemplates($userId);
 $access->canCreate($userId);
-$access->canEdit($templateId, $userId);   // also canPublish(), canDelete()
+$access->canEdit($templateId, $userId);   // также canPublish(), canDelete()
 
-// Row filter for your own template lists: [] = all, ['=ID' => -1] = none
+// Фильтр списка: [] — всё, ['=ID' => -1] — ничего.
 $filter = (new \Bitrix\Bizproc\Public\Provider\TemplateAccessProvider())->getEntityFilter($userId);
 ```
 
-REST `bizproc.workflow.template.list` no longer returns an access error to non-admins (**Since bizproc 26.1200**): they get their editable/publishable Nodes templates or an empty list. Don't infer admin rights from it.
+**Since bizproc 26.1200** REST `bizproc.workflow.template.list` возвращает обычному пользователю доступные для редактирования/публикации узловые шаблоны либо пустой список. Это не признак административных прав. На старом модуле такой вызов может вернуть отказ.
 
-## Custom designer controllers (**Since bizprocdesigner 26.600**)
+## Свои контроллеры дизайнера (**Since bizprocdesigner 26.600**)
 
-Never trust `documentType` from the request next to `templateId`: take it from the template.
+Бери `documentType` из шаблона, а не из запроса вместе с `templateId`. На старой версии применяй ту же проверку в собственном обработчике.
 
 ```php
 use Bitrix\Bizproc\Workflow\Template\Entity\WorkflowTemplateTable;
@@ -34,15 +34,35 @@ try {
 } catch (\Throwable) {
     $allowed = false;
 }
-// one ACCESS_DENIED for "missing" and "foreign" — no existence oracle
+// Одинаковый ACCESS_DENIED для отсутствующего и чужого шаблона скрывает его существование.
 ```
 
-Controller filters and errors: `bitrix-controllers`.
+Фильтры и ошибки контроллера: `bitrix-controllers`.
 
-## Importing templates
+## Импорт шаблонов
 
-Custom importers call `\CBPWorkflowTemplateLoader::checkImportedTemplateActivities($template, $user)` → `Main\Result` before saving (**Since bizproc 26.1100**). Without it a non-admin could import `CBPCodeActivity` (arbitrary PHP).
+**Since bizproc 26.1100** перед сохранением вызывай `\CBPWorkflowTemplateLoader::checkImportedTemplateActivities($template, $user)` и проверяй `Main\Result`. Иначе обычный пользователь может импортировать `CBPCodeActivity` с произвольным PHP. На старой версии разрешай импорт только доверенному администратору либо проверяй действия собственным белым списком.
 
-## WorkflowTemplateService
+## Сервис WorkflowTemplateService
 
-`Bitrix\Bizproc\Api\Service\WorkflowTemplateService` gained optional dependencies twice (26.1300, 26.1400): the constants-policy argument moved from 4th to 10th. Construct it with no arguments; positional arguments give a TypeError.
+`Bitrix\Bizproc\Api\Service\WorkflowTemplateService` дважды получил необязательные зависимости (26.1300, 26.1400): аргумент политики констант переместился с позиции 4 на 10. Создавай сервис без аргументов; старые позиционные вызовы могут дать `TypeError`.
+
+
+## Фильтр своих шаблонов и новый дизайнер
+
+**Since bizproc 26.1500** при включённой возможности своих шаблонов `TemplateAccessProvider::getEntityFilter()` может вернуть `ConditionTree` под `SCOPE_CONDITION_KEY`. Вынеси условие из массива и передай в `Query::where()`. Не теряй его при объединении фильтров: иначе расширится доступ. На старом модуле достаточно обычного массива провайдера.
+
+```php
+$provider = new \Bitrix\Bizproc\Public\Provider\TemplateAccessProvider();
+$filter = $provider->getEntityFilter($userId);
+$scope = $filter[$provider::SCOPE_CONDITION_KEY] ?? null;
+unset($filter[$provider::SCOPE_CONDITION_KEY]);
+$query = \Bitrix\Bizproc\Workflow\Template\Entity\WorkflowTemplateTable::query()
+    ->setSelect(['ID', 'NAME'])->setFilter($filter);
+if ($scope !== null) {
+    $query->where($scope);
+}
+$templates = $query->fetchAll();
+```
+
+**Since bizproc 26.1700** новый дизайнер включён по умолчанию через `Bitrix\Bizproc\Public\Feature\Designer\DesignerV2Flag`. Опция `designer_v2` синхронизируется с флагом; одной записи опции недостаточно. Для осознанного возврата старого дизайнера используй `\Bitrix\Main\Config\Feature::disable(\Bitrix\Bizproc\Public\Feature\Designer\DesignerV2Flag::class)`. На старом модуле используется его опция дизайнера.

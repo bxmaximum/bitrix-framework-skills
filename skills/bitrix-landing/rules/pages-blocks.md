@@ -1,21 +1,21 @@
-# Sites, pages, blocks
+# Сайты, страницы, блоки
 
-## Model
+## Модель
 
-| Entity | Facade (`Bitrix\Landing\…`) | ORM |
+| Сущность | Фасад (`Bitrix\Landing\…`) | ORM |
 | --- | --- | --- |
-| Site | `Site` | `Internals\SiteTable` |
-| Page | `Landing` | `Internals\LandingTable` |
-| Block | `Block` | `Internals\BlockTable` |
-| Domain, folder | `Domain`, `Folder` | internals tables |
+| Сайт | `Site` | `Internals\SiteTable` |
+| Страница | `Landing` | `Internals\LandingTable` |
+| Блок | `Block` | `Internals\BlockTable` |
+| Домен, папка | `Domain`, `Folder` | Внутренние таблицы |
 
-`Site` and `Landing` extend `Internals\BaseTable` (`getList`/`add`/`update`/`delete`). Their `getList` filters by the current user's rights unless the filter has `'CHECK_PERMISSIONS' => 'N'`. Prefer them to `Internals\*Table`.
+`Site` и `Landing` наследуют `Internals\BaseTable` (`getList`/`add`/`update`/`delete`). `getList` учитывает права пользователя, кроме фильтра `'CHECK_PERMISSIONS' => 'N'`. Предпочитай фасады внутренним `Internals\*Table`.
 
-Site types (`Site::getTypes()`): `PAGE`, `STORE`, `SMN`, `KNOWLEDGE`, `GROUP`, `VIBE`; pseudo-scope `crm_forms`. `Site\Type::SCOPE_CODE_VIBE` (welcome page) is **Since landing 26.300\***; before it the code was `'MAINPAGE'`, now only an import alias for `VIBE`.
+Типы (`Site::getTypes()`): `PAGE`, `STORE`, `SMN`, `KNOWLEDGE`, `GROUP`, `VIBE`; псевдообласть `crm_forms`. `Site\Type::SCOPE_CODE_VIBE` (стартовая страница) — **Since landing 26.300\***; раньше код `'MAINPAGE'`, теперь только псевдоним импорта `VIBE`.
 
-Public paths: `Manager::PUBLICATION_PATH` (`/pub/site/`), `Manager::PUBLICATION_PATH_SITEMAN` (`/lp/`).
+Публичные пути: `Manager::PUBLICATION_PATH` (`/pub/site/`), `Manager::PUBLICATION_PATH_SITEMAN` (`/lp/`).
 
-## Pages
+## Страницы
 
 ```php
 use Bitrix\Landing\Landing;
@@ -26,16 +26,16 @@ $rows = Landing::getList([
     'filter' => ['SITE_ID' => $siteId, '=DELETED' => 'N'],
 ]);
 
-$add = Landing::addByTemplate($siteId, 'empty', ['TITLE' => 'Promo', 'CODE' => 'promo']);
+$add = Landing::addByTemplate($siteId, 'empty', ['TITLE' => 'Акция', 'CODE' => 'promo']);
 $siteAdd = Site::addByTemplate('empty', 'PAGE');
 $siteUrl = Site::getPublicUrl($siteId);
 ```
 
-`Landing::createInstance($id, $params)` options (anything else is ignored): `skip_blocks` (true = don't load blocks), `blocks_limit`, `blocks_id`, `deleted` (load deleted blocks), `force_deleted` (open a deleted page), `check_permissions` (false = skip rights), `disable_link_preview`, `is_area`. Check `$landing->exist()` before use.
+Параметры `Landing::createInstance($id, $params)`, остальные игнорируются: `skip_blocks` (не загружать блоки), `blocks_limit`, `blocks_id`, `deleted` (загрузить удалённые блоки), `force_deleted` (открыть удалённую страницу), `check_permissions` (`false` — без прав), `disable_link_preview`, `is_area`. До работы проверь `$landing->exist()`.
 
-`CODE` must not contain `` ' " ` $ \ < > ( ) { } `` or control bytes: add/update fail with `WRONG_CODE_CHARS` (**Since landing 26.1100**). Importers pre-check with `Security\SyspageUrl::isSafeCode($code)`; on older versions strip these characters yourself.
+`CODE` не должен содержать `` ' " ` $ \ < > ( ) { } `` и управляющие байты: add/update возвращают `WRONG_CODE_CHARS` (**Since landing 26.1100**). Импорт проверяет ``Security\SyspageUrl::isSafeCode($code)``; на старом ядре убирай символы сам.
 
-## Blocks
+## Блоки
 
 ```php
 $landing = Landing::createInstance($landingId);
@@ -47,25 +47,25 @@ if ($blockId === false) {
 }
 ```
 
-- `addBlock()` checks `canEdit()`. `$data` holds block row fields (`ACTIVE`, `PUBLIC`, `ACCESS`, `SORT`, `CONTENT`, `ANCHOR`, `XML_ID`, `SOURCE_PARAMS`, `DESIGNED`); it does not override node content.
-- Read: `$landing->getBlocks()` (id ⇒ `Block`), `$block->getManifest()`; write: `$block->saveContent($html)`, then `$block->save()`.
-- Catalog of codes: `(new Block\BlockRepo())->getRepository()`; lookup dirs `BlockRepo::getGeneralPaths()` = `/bitrix/blocks` + `/local/blocks`.
+- `addBlock()` проверяет `canEdit()`. `$data` содержит поля строки (`ACTIVE`, `PUBLIC`, `ACCESS`, `SORT`, `CONTENT`, `ANCHOR`, `XML_ID`, `SOURCE_PARAMS`, `DESIGNED`), не переопределяет содержимое узлов.
+- Чтение: `$landing->getBlocks()` (ID ⇒ `Block`), `$block->getManifest()`; запись: `$block->saveContent($html)`, затем `$block->save()`.
+- Каталог кодов: `(new Block\BlockRepo())->getRepository()`; пути `BlockRepo::getGeneralPaths()` — `/bitrix/blocks` + `/local/blocks`.
 
-## Custom blocks
+## Собственные блоки
 
-`/local/blocks/<namespace>/<code>/`, same layout as `landing/install/blocks/bitrix/<code>/`:
-`block.php` (HTML), `.description.php` (returns the manifest), `lang/`, `preview.jpg`, optional `style.css`, `script.js`, `class.php`.
+`/local/blocks/<namespace>/<code>/`, структура как в `landing/install/blocks/bitrix/<code>/`:
+`block.php` (HTML), `.description.php` (манифест), `lang/`, `preview.jpg`; необязательны `style.css`, `script.js`, `class.php`.
 
-- `<code>` must match `[A-Za-z0-9_.:-]+`, otherwise `class.php` is not included.
-- `class.php` and manifest `callbacks` run only for file blocks. Repo blocks (REST, import) are data only: `rules/rest-security.md`.
-- After deploy call `Block::clearRepositoryCache()`.
+- `<code>` соответствует `[A-Za-z0-9_.:-]+`, иначе `class.php` не подключается.
+- `class.php` и `callbacks` манифеста работают только у файловых блоков. Репозиторные (REST, импорт) содержат только данные: `rules/rest-security.md`.
+- После поставки вызывай `Block::clearRepositoryCache()`.
 
-## URLs in content (**Since landing 26.1000**)
+## URL в содержимом (**Since landing 26.1000**)
 
-On save, `Node\Link` href, `data-pseudo-url` and manifest attrs of `'type' => 'url'` become `''` if the scheme is not allowed. Allowed: `http`, `https`, `mailto`, `tel`, `sms`, `skype`, relative, and markers `page:`, `block:`, `form:`, `product:`, `user:`; `file:` and `help:` only as `file:#…`/`help:#…`. Custom app schemes and deep links are lost.
+При сохранении `Node\Link` href, `data-pseudo-url` и атрибуты манифеста `'type' => 'url'` становятся `''`, если схема запрещена. Разрешены `http`, `https`, `mailto`, `tel`, `sms`, `skype`, относительные пути и маркеры `page:`, `block:`, `form:`, `product:`, `user:`. `file:` / `help:` — только `file:#…`/`help:#…`. Свои схемы приложений и глубокие ссылки теряются.
 
-Helpers in `Bitrix\Landing\Sanitizer` (return `''` on reject): `(new Sanitizer())->sanitizeHref($href)`, `->sanitizePseudoUrl($url)`, static `sanitizeHrefScheme($href)` (http/https/relative only). **Since landing 26.1100**: static `hasDisallowedScheme($url)`, `sanitizeWidgetHandlerUrl($url, $requireHttps)`, `sanitizeCssUrl($url)`. Older versions: your own scheme regex.
+Методы `Bitrix\Landing\Sanitizer` возвращают `''` при отказе: `(new Sanitizer())->sanitizeHref($href)`, `->sanitizePseudoUrl($url)`, статический `sanitizeHrefScheme($href)` (только http/https/относительный). **Since landing 26.1100**: `hasDisallowedScheme($url)`, `sanitizeWidgetHandlerUrl($url, $requireHttps)`, `sanitizeCssUrl($url)`. На старом ядре проверяй схемы своим регулярным выражением.
 
-## Disk file links
+## Ссылки на файлы Диска
 
-`Block::isContains()` was removed in landing 26.1000 (Fatal). Use `Block::findVisibleLandingIdByFileInBlock($blockId, $fileId)` / `findVisibleLandingIdByFileInLanding($landingId, $fileId)`: landing id or `null`, only if visible to the current user. Match a link yourself with `preg_match(Connector\Disk::getExactFileHrefPattern($objectId), $content)` (**Since landing 26.1100.200**), never substring search (id 25 matches 250).
+`Block::isContains()` удалён в landing 26.1000 (фатальная ошибка). Используй `Block::findVisibleLandingIdByFileInBlock($blockId, $fileId)` / `findVisibleLandingIdByFileInLanding($landingId, $fileId)`: ID страницы либо `null`, только при её видимости пользователю. Ссылку ищи через `preg_match(Connector\Disk::getExactFileHrefPattern($objectId), $content)` (**Since landing 26.1100.200**), не подстрокой: 25 совпадёт с 250. <!-- verify:negative -->

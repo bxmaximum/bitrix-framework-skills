@@ -1,29 +1,30 @@
 ---
 name: bitrix24-rest-api
-description: 'Call Bitrix24 REST from outside or from an app, cloud and on-premise. Use for webhook vs OAuth auth, token refresh, batch, list pagination, limits, QUERY_LIMIT_EXCEEDED, event.bind, placements, BX24.js, REST 3.0, crm.item.list calls.'
+description: 'Вызовы REST Битрикс24 из приложения или внешнего клиента: облако и коробка, OAuth, вебхуки, batch, event.bind, QUERY_LIMIT_EXCEEDED, BX24.js. Публикация PHP-методов — bitrix-rest.'
 ---
 
-# Bitrix24 REST API (client side)
+# REST Битрикс24: клиентские вызовы
 
-Baseline: Bitrix24 cloud; on-premise main 23.0+ · Verified: rest 26.650.0 (main 26.800.0), b24restdocs 2026-09-30
+Baseline: Bitrix24 cloud; on-premise main 23.0+ · Verified: rest 26.1100.0 (main 26.1000.0), b24restdocs 2026-10-30
 
-Consuming REST. Registering your own methods in a module: `bitrix-rest`. Docs lookup for agents (MCP), Vibecode: `bitrix24-ai-tools`.
+Здесь вызывают REST. Серверная публикация методов своего PHP-модуля — `bitrix-rest`. Проверка документации MCP и Vibecode — `bitrix24-ai-tools`. Облачному клиенту PHP-канон не нужен; для PHP-кода внутри коробки один раз прочитай `bitrix-framework`.
 
-| Task | Read |
+| Задача | Открыть |
 | --- | --- |
-| Webhook vs local app vs Marketplace OAuth, token refresh, scopes | `rules/auth.md` |
-| URL and body format, lists, fast pagination, batch | `rules/calls.md` |
-| Limits, error codes, retry and backoff | `rules/limits-errors.md` |
-| Events, outbound webhooks, offline events, placements | `rules/events-placements.md` |
+| Вебхук, локальное приложение, OAuth Маркета, токены, scopes | `rules/auth.md` |
+| Адрес/тело запроса, списки, быстрая пагинация, batch | `rules/calls.md` |
+| Лимиты, коды ошибок, повторы и задержки | `rules/limits-errors.md` |
+| PHP-клиент внутри коробки на ядерном HttpClient | `rules/php-client.md` |
+| События, исходящий вебхук, офлайн-события, встройки | `rules/events-placements.md` |
 | REST 3.0 (`/rest/api/`), Idempotency-Key, OpenAPI | `rules/rest-v3.md` |
-| b24phpsdk, b24jssdk, BX24.js, CRest | `rules/sdk.md` |
-| On-premise specifics | `rules/on-premise.md` |
+| Выбор b24phpsdk, b24jssdk, BX24.js, CRest | `rules/sdk.md` |
+| Особенности коробки | `rules/on-premise.md` |
 
-## Invariants
+## Общие правила
 
-- Never guess a method, field or filter: look it up (MCP from `bitrix24-ai-tools`, or `method.get` on the target portal).
-- Webhook URLs, `client_secret`, tokens and `application_token` live in env or a secret store; never in VCS, browser code, logs or shared URLs.
-- Least privilege: request only the scopes the scenario calls. A call also runs with the rights of its user.
-- Detect errors by the `error` key (and `result.result_error` in batch), not by HTTP status.
-- Treat every inbound call (event, placement, install) as untrusted until `auth.application_token` matches the value stored for its `member_id`.
-- HTTPS only. Handlers acknowledge fast, queue the work and process it idempotently.
+- Проверяй метод, поле и фильтр по MCP (`bitrix24-ai-tools`) либо официальной странице. На целевом портале `method.get` проверяет наличие и доступность метода, но не заменяет описание параметров.
+- URL вебхука, `client_secret`, токены и `application_token` храни в env/хранилище секретов. Не включай их в Git, код браузера, логи и общие ссылки.
+- Запрашивай только необходимые scopes. Дополнительно действуют права пользователя вызова.
+- Проверяй ключ `error`, у классического batch также `result.result_error`; одного HTTP-статуса недостаточно.
+- События и установки проверяй по `auth.application_token` для сохранённого `member_id`; встройки — по `APPLICATION_TOKEN`. Не доверяй неподтверждённым данным входящего запроса.
+- Перед запросом проверяй HTTPS-схему базового URL из env (`rules/calls.md`). Быстро подтверждай события, сохраняй работу в очередь и обрабатывай идемпотентно.

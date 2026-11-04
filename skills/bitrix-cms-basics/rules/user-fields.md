@@ -1,10 +1,10 @@
-# User fields (UF): schema, values, output
+# Пользовательские поля (UF): схема, значения, вывод
 
-A UF belongs to an `ENTITY_ID` (`USER`, `BLOG_POST`, `HLBLOCK_7`, own `VENDOR_ITEM`); values live in `b_uts_<entity>` / `b_utm_<entity>`. `FIELD_NAME`: `UF_` + `[0-9A-Z_]`, 4–50 chars.
+UF принадлежит `ENTITY_ID` (`USER`, `BLOG_POST`, `HLBLOCK_7`, свой `VENDOR_ITEM`); значения — в `b_uts_<entity>` / `b_utm_<entity>`. `FIELD_NAME`: `UF_` + `[0-9A-Z_]`, 4–50 символов.
 
-## Schema: `CUserTypeEntity` only
+## Схема: только `CUserTypeEntity`
 
-`\Bitrix\Main\UserFieldTable` is read-only (`getList`, `getMap`): `add/update/delete` throw `NotImplementedException`.
+`\Bitrix\Main\UserFieldTable` доступен только для чтения (`getList`, `getMap`); `add/update/delete` бросают `NotImplementedException`.
 
 ```php
 $id = (new \CUserTypeEntity())->Add([
@@ -13,7 +13,7 @@ $id = (new \CUserTypeEntity())->Add([
     'USER_TYPE_ID' => 'enumeration',
     'MULTIPLE' => 'N',
     'MANDATORY' => 'N',
-    'SHOW_FILTER' => 'I',            // N | I exact | E mask | S substring
+    'SHOW_FILTER' => 'I',            // N | I точное | E маска | S подстрока
     'EDIT_IN_LIST' => 'Y',
     'EDIT_FORM_LABEL' => ['ru' => 'Цвет', 'en' => 'Color'],
 ]);
@@ -22,21 +22,21 @@ if (!$id) {
 }
 
 (new \CUserFieldEnum())->SetEnumValues($id, [
-    'n0' => ['VALUE' => 'Red', 'XML_ID' => 'red', 'SORT' => 100],   // nN = new; existing: [<ID> => [...]], 'DEL' => 'Y' removes
+    'n0' => ['VALUE' => 'Красный', 'XML_ID' => 'red', 'SORT' => 100], // nN — новое; существующее: [<ID> => [...]]; DEL = Y удаляет
 ]);
 ```
 
-Create in module `DoInstall()` / a migration (`bitrix-sprint-migration`); check existence first with `CUserTypeEntity::GetList([], ['ENTITY_ID' => …, 'FIELD_NAME' => …])`. `(new \CUserTypeEntity())->Delete($id)` deletes the field with all its values.
+Создавай в `DoInstall()` модуля или миграции (`bitrix-sprint-migration`). Сначала проверь наличие через `CUserTypeEntity::GetList([], ['ENTITY_ID' => …, 'FIELD_NAME' => …])`. `(new \CUserTypeEntity())->Delete($id)` удаляет поле **со всеми значениями**.
 
-Types: `string`, `string_formatted`, `integer`, `double`, `boolean`, `date`, `datetime`, `enumeration`, `file`, `url` (main); `iblock_element`, `iblock_section` (iblock); `hlblock` (highloadblock); `rich_text` (ui, BBCode, **Since ui 26.600**; fallback `string_formatted`). List at runtime: `$USER_FIELD_MANAGER->GetUserType()`.
+Типы: `string`, `string_formatted`, `integer`, `double`, `boolean`, `date`, `datetime`, `enumeration`, `file`, `url` (main); `iblock_element`, `iblock_section` (iblock); `hlblock` (highloadblock); `rich_text` (ui, BBCode, **Since ui 26.600**; на старом ядре — `string_formatted`). Список при выполнении: `$USER_FIELD_MANAGER->GetUserType()`.
 
-## Values
+## Значения
 
-- ORM tablet with `getUfId()` (`bitrix-orm`): select/filter `UF_*` directly; `add()/update()` with `UF_*` keys runs UF validation and saving. `UserTable::getUfId()` = `USER` → `UserTable::getList(['select' => ['ID', 'UF_COLOR']])`; `USER.UF_COLOR` only through a `USER` reference from another entity.
-- `UserTable` is read-only: write users (and their UF) via `(new \CUser())->Update($id, ['UF_COLOR' => $enumId])`.
-- Non-ORM entity: `$USER_FIELD_MANAGER->GetUserFields('VENDOR_ITEM', $itemId, LANGUAGE_ID)` → `['UF_COLOR' => [...definition, 'VALUE' => …]]`; validate with `CheckFields($entityId, $id, $fields)` (errors in `$APPLICATION->GetException()`), save with `Update($entityId, $id, $fields)`.
+- Таблет ORM с `getUfId()` (`bitrix-orm`): выбирай и фильтруй `UF_*` напрямую; `add()/update()` с ключами `UF_*` проверяет и сохраняет UF. `UserTable::getUfId() = USER`, поэтому `UserTable::getList(['select' => ['ID', 'UF_COLOR']])`. `USER.UF_COLOR` — только через связь `USER` из другой сущности.
+- `UserTable` доступен только для чтения; пользователей и UF записывай через `(new \CUser())->Update($id, ['UF_COLOR' => $enumId])`.
+- Вне ORM: `$USER_FIELD_MANAGER->GetUserFields('VENDOR_ITEM', $itemId, LANGUAGE_ID)` → `['UF_COLOR' => [...описание, 'VALUE' => …]]`; проверка `CheckFields($entityId, $id, $fields)` (ошибки в `$APPLICATION->GetException()`), сохранение `Update($entityId, $id, $fields)`.
 
-## Output
+## Вывод
 
 ```php
 global $USER_FIELD_MANAGER;
@@ -47,12 +47,12 @@ echo $USER_FIELD_MANAGER->GetPublicEdit($fields['UF_COLOR'], ['NAME' => 'ITEM[UF
 $text = $USER_FIELD_MANAGER->getPublicText($fields['UF_COLOR']);
 ```
 
-- `GetPublicView/Edit` params: `NAME` (input name, default `FIELD_NAME`), `VALUE` (override), `bVarsFromForm` (take value from request).
-- Resolution: events `main:onBeforeGetPublicView|Edit` (params by reference) → `main:onGetPublicView|Edit` (first `EventResult::SUCCESS` wins, its parameters = HTML) → `VIEW_CALLBACK|EDIT_CALLBACK` of the field, then of the type (every `BaseType` type → render component) → `VIEW_COMPONENT_NAME` → `bitrix:system.field.view|edit` → `main:onAfterGetPublicView|Edit` (HTML by reference, 3rd param). Override one field: put `VIEW_CALLBACK` = `fn(array $uf, array $params): string` into its array.
-- `getPublicText()` renders the type's `main.public_text` template; for legacy (non-`BaseType`) types it returns raw `join(', ', VALUE)` — escape it yourself.
-- `(new \Bitrix\Main\UserField\Renderer($uf, ['mode' => \Bitrix\Main\UserField\Types\BaseType::MODE_VIEW]))->render()` — `BaseType` types only (else `null`); pass `mode` in the ctor array (`MODE_VIEW` / `MODE_EDIT`), `setMode()` is ignored and a missing key raises a PHP warning. It does not load values: pass the array with `VALUE`.
+- Параметры `GetPublicView/Edit`: `NAME` (имя поля формы, по умолчанию `FIELD_NAME`), `VALUE` (подмена значения), `bVarsFromForm` (взять из запроса).
+- Порядок: события `main:onBeforeGetPublicView|Edit` (параметры по ссылке) → `main:onGetPublicView|Edit` (первый `EventResult::SUCCESS`, его параметры — HTML) → `VIEW_CALLBACK|EDIT_CALLBACK` поля, затем типа (у `BaseType` — компонент вывода) → `VIEW_COMPONENT_NAME` → `bitrix:system.field.view|edit` → `main:onAfterGetPublicView|Edit` (HTML по ссылке, третий параметр). Для одного поля добавь в массив `VIEW_CALLBACK = fn(array $uf, array $params): string`.
+- `getPublicText()` выводит шаблон `main.public_text` типа; для старых типов вне `BaseType` возвращает сырой `join(', ', VALUE)` — экранируй сам.
+- `(new \Bitrix\Main\UserField\Renderer($uf, ['mode' => \Bitrix\Main\UserField\Types\BaseType::MODE_VIEW]))->render()` — только типы `BaseType`, иначе `null`. Передавай `mode` в массиве конструктора (`MODE_VIEW` / `MODE_EDIT`); `setMode()` игнорируется, отсутствие ключа вызывает PHP warning. Значения не загружаются: передай массив с `VALUE`.
 
-## Admin pages (`CAdminList` / `CAdminForm`, compat)
+## Административный интерфейс (`CAdminList` / `CAdminForm`, совместимость)
 
-- Form: `EditFormTab($entityId)` + `EditFormShowTab($entityId, $bVarsFromForm, $id)`; one field: `GetEditFormHTML($bVarsFromForm, $value, $uf)`. Save: `EditFormAddFields($entityId, $fields)` (from POST/FILES, `EDIT_IN_LIST = Y` only) → `Update()`.
-- List: `AdminListAddHeaders($entityId, $headers)`, per row `AddUserFields($entityId, $row, $adminRow)`; filter: `AdminListAddFilterFields()`, `AdminListShowFilter()`, `AdminListAddFilter($entityId, $filter)`; `AdminListPrepareFields()` before saving inline edits. Own forms call `ShowScript()` once.
+- Форма: `EditFormTab($entityId)` + `EditFormShowTab($entityId, $bVarsFromForm, $id)`; одно поле: `GetEditFormHTML($bVarsFromForm, $value, $uf)`. Сохранение: `EditFormAddFields($entityId, $fields)` (POST/FILES, только `EDIT_IN_LIST = Y`) → `Update()`.
+- Список: `AdminListAddHeaders($entityId, $headers)`, на строку `AddUserFields($entityId, $row, $adminRow)`; фильтр: `AdminListAddFilterFields()`, `AdminListShowFilter()`, `AdminListAddFilter($entityId, $filter)`; перед сохранением правок строк — `AdminListPrepareFields()`. В своих формах один раз вызови `ShowScript()`.

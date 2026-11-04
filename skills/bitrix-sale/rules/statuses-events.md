@@ -1,38 +1,38 @@
-# Statuses, rights, history, events
+# Статусы, права, история, события
 
-## Statuses
+## Статусы
 
-- Order: `STATUS_ID`, initial `N`, final `F`, class `Bitrix\Sale\OrderStatus`. Shipment: own `STATUS_ID`, `DN` → `DF`, class `Bitrix\Sale\DeliveryStatus`. Dictionary `StatusTable` (`TYPE_ORDER`/`TYPE_SHIPMENT`) + `StatusLangTable` names.
-- Allowed transitions: `OrderStatus::getAllowedUserStatuses($userId, $currentStatusId)`. Operations per status: `getStatusesUserCanDoOperations()`, `canGroupDoOperations()` (`view`, `update`, `delete`, `cancel`, `mark`, `payment`, `delivery`, `deduction`, `from`, `to`). Whether a status allows payment: `OrderStatus::isAllowPay($statusId)`.
+- Заказ: `STATUS_ID`, начальный N, конечный F, `Bitrix\Sale\OrderStatus`. Отгрузка: свой `STATUS_ID`, DN → DF, `Bitrix\Sale\DeliveryStatus`. Справочник `StatusTable` (`TYPE_ORDER`/`TYPE_SHIPMENT`), названия `StatusLangTable`.
+- Переходы: `OrderStatus::getAllowedUserStatuses($userId, $currentStatusId)`. Операции статуса: `getStatusesUserCanDoOperations()`, `canGroupDoOperations()` (`view`, `update`, `delete`, `cancel`, `mark`, `payment`, `delivery`, `deduction`, `from`, `to`). Разрешение оплаты: `OrderStatus::isAllowPay($statusId)`.
 
-## Rights
+## Права
 
-The object API **does not check rights**. Before acting on a user request check the concrete order with legacy `CSaleOrder`:
+Объектный API **не проверяет права**. Перед действием по запросу проверь конкретный заказ старым `CSaleOrder`:
 
-- `CSaleOrder::CanUserViewOrder($id, $groups, $userId)` — before `Order::load()`.
-- `CSaleOrder::CanUserUpdateOrder($id, $groups, $siteId)` — pass `0` as ID for create.
+- `CSaleOrder::CanUserViewOrder($id, $groups, $userId)` — до `Order::load()`.
+- `CSaleOrder::CanUserUpdateOrder($id, $groups, $siteId)`; создание — ID 0.
 - `CSaleOrder::CanUserCancelOrder()`, `CSaleOrder::CanUserMarkOrder()`, `CSaleOrder::CanUserDeleteOrder()`.
 - `CSaleOrder::CanUserChangeOrderStatus($id, $statusId, $groups)`.
 - `CSaleOrder::CanUserChangeOrderFlag($id, 'PERM_PAYMENT'|'PERM_DELIVERY'|'PERM_DEDUCTION', $groups)`.
 
-Module access levels: `D` denied, `P` company binding, `U` order processing (still needs site and status-task grants), `W` full.
+Уровни модуля: D — запрет, P — привязка компании, U — обработка (также нужны права сайта и задач статуса), W — полный доступ.
 
-History is written by `OrderHistory` on save; read it via legacy `CSaleOrderChange::GetList()` (`'@TYPE' => ['ORDER_STATUS_CHANGED', …]`).
+`OrderHistory` пишет историю при сохранении; чтение: `CSaleOrderChange::GetList()` (`'@TYPE' => ['ORDER_STATUS_CHANGED', …]`).
 
-## Events
+## События
 
-Register via `EventManager` in `init.php` or on module install (`bitrix-events`).
+Регистрируй через `EventManager` в `init.php` либо установщике (`bitrix-events`).
 
-| Event | When / use |
+| Событие | Когда / назначение |
 | --- | --- |
-| `OnSaleOrderBeforeSaved` | before save; may modify or deny |
-| `OnSaleOrderSaved` | after save (`IS_NEW`, `IS_CHANGED`); result ignored |
-| `OnSaleStatusOrderChange` (`VALUE`/`OLD_VALUE`), `OnSaleOrderPaid`, `OnSaleOrderCanceled`, `OnSaleStatusShipmentChange`, `OnShipmentDeducted`, `OnShipmentAllowDelivery`, `OnShipmentTrackingNumberChange` | deferred, after save |
-| `OnSaleShipmentDelivery` | allow-delivery processed, before `Order::save()` completes |
-| `OnBefore/On/OnAfter` + `Sale{BasketItem,Payment,Shipment,ShipmentItem,PropertyValue}SetField`, `OnSale*EntitySaved` | per entity |
-| `OnSaleBasketItemBeforeSaved`, `OnSaleBasketItemSaved`, `OnSaleBasketItemRefreshData` | basket |
-| `OnBeforeSaleOrderFinalAction`, `OnAfterSaleOrderFinalAction` | around `doFinalAction()` |
-| `OnSaleOrderBeforeArchived` | before archiving |
+| `OnSaleOrderBeforeSaved` | До сохранения; изменение или запрет |
+| `OnSaleOrderSaved` | После сохранения (`IS_NEW`, `IS_CHANGED`); результат игнорируется |
+| `OnSaleStatusOrderChange` (`VALUE`/`OLD_VALUE`), `OnSaleOrderPaid`, `OnSaleOrderCanceled`, `OnSaleStatusShipmentChange`, `OnShipmentDeducted`, `OnShipmentAllowDelivery`, `OnShipmentTrackingNumberChange` | Отложенно после сохранения |
+| `OnSaleShipmentDelivery` | Разрешение доставки обработано, `Order::save()` ещё не завершён |
+| `OnBefore/On/OnAfter` + `Sale{BasketItem,Payment,Shipment,ShipmentItem,PropertyValue}SetField`, `OnSale*EntitySaved` | Для каждой сущности |
+| `OnSaleBasketItemBeforeSaved`, `OnSaleBasketItemSaved`, `OnSaleBasketItemRefreshData` | Корзина |
+| `OnBeforeSaleOrderFinalAction`, `OnAfterSaleOrderFinalAction` | До / после `doFinalAction()` |
+| `OnSaleOrderBeforeArchived` | До архивации |
 
-- **Never call `$order->save()` from `OnSaleOrderSaved`**: recursion. Mutate in `OnSaleOrderBeforeSaved`, or queue a job that reloads the order (`bitrix-background-jobs`).
-- `OnBefore*` handlers returning `EventResult::ERROR` surface as `setField()`/`save()` errors.
+- **Не вызывай `$order->save()` из `OnSaleOrderSaved`**: рекурсия. Меняй в `OnSaleOrderBeforeSaved` либо ставь фоновую задачу, перечитывающую заказ (`bitrix-background-jobs`).
+- `EventResult::ERROR` из `OnBefore*` превращается в ошибку `setField()`/`save()`.

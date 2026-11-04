@@ -1,30 +1,30 @@
 ---
 name: bitrix24-crm
-description: 'D7 CRM in Bitrix24 on-premise: Container, Factory, Item, Operations, smart processes (dynamic types), stages, permissions, timeline, CRM events. Use for server-side deal, lead, contact, company or smart process code in /local.'
+description: 'CRM в PHP коробки Битрикс24: Service\Container, Factory, Item, операции, смарт-процессы, права и события. Для серверной работы со сделками, клиентами и воронками в /local.'
 ---
 
-# Bitrix24 CRM (server side)
+# CRM Битрикс24: серверный PHP
 
-Scope: Bitrix24 on-premise · Verified: crm 26.800.0, main 26.800.0
+Scope: Bitrix24 on-premise · Verified: crm 26.1900.0, main 26.1000.0
 
-PHP running inside the portal: `/local/` modules, handlers, agents. Calling CRM over REST: `bitrix24-rest-api`.
+Перед PHP-кодом один раз прочитай `bitrix-framework`. Здесь код внутри портала: модули `/local/`, обработчики, агенты. Вызовы CRM через REST: `bitrix24-rest-api`.
 
-| Task | Read |
+| Задача | Открыть |
 | --- | --- |
-| Container, Factory, reading items, field names, phones/e-mails | `rules/factory-items.md` |
-| Add/update/delete, Context, checks, custom actions | `rules/operations.md` |
-| Smart processes, funnels, stages, smart invoices | `rules/smart-processes.md` |
-| Rights checks, permission-filtered lists | `rules/permissions.md` |
-| Reacting to changes, factory override, robots, triggers | `rules/events-automation.md` |
-| Timeline comments, to-dos, activities | `rules/timeline-activities.md` |
-| Fields collection, user fields | `rules/fields-uf.md` |
-| `CCrmDeal`/`CCrmLead`/… replacements, D7 ↔ REST map | `rules/legacy-rest.md` |
+| Container, Factory, чтение Item, поля, телефоны и почта | `rules/factory-items.md` |
+| Добавление/изменение/удаление, Context, проверки, свои действия | `rules/operations.md` |
+| Смарт-процессы, воронки, стадии и смарт-счета | `rules/smart-processes.md` |
+| Права и списки с их учётом | `rules/permissions.md` |
+| Реакция на изменения, подмена фабрики, роботы и триггеры | `rules/events-automation.md` |
+| Комментарии таймлайна, запланированные и прочие дела | `rules/timeline-activities.md` |
+| Коллекция полей и пользовательские поля | `rules/fields-uf.md` |
+| Замены `CCrmDeal`/`CCrmLead`/…, соответствие D7 и REST | `rules/legacy-rest.md` |
 
-## Invariants
+## Общие правила
 
-- `Loader::includeModule('crm')` first; get services from `Container::getInstance()`.
-- Write only through Factory operations: `getAddOperation()`/`getUpdateOperation()`/`getDeleteOperation()` → `launch()`. Never `DealTable::add()`, `$factory->getDataClass()::update()`, `Item::save()`/`Item::delete()`: they skip rights, required fields, events, timeline, search index and robots.
-- Use `Item::FIELD_NAME_*` names; the factory maps them to entity columns (lead `STAGE_ID` → `STATUS_ID`).
-- Dynamic `entityTypeId`, funnel and stage IDs differ per portal: resolve by code or semantics at runtime, never hardcode.
-- Agents, CLI and queues have no user: pass a `Context` with a user ID, or disable the access check on purpose.
-- Check `isSuccess()` of every `launch()` and pass its errors up.
+- Подключи `Loader::includeModule('crm')`; сервисы получай из `Container::getInstance()`.
+- Записывай через операции Factory: `getAddOperation()`/`getUpdateOperation()`/`getDeleteOperation()` и `launch()`. Прямые `DealTable::add()`, `$factory->getDataClass()::update()`, `Item::save()`/`Item::delete()` обходят права, обязательные поля, события, таймлайн, индекс и роботов.
+- Используй `Item::FIELD_NAME_*`: фабрика сопоставляет их столбцам сущности (у лида `STAGE_ID` соответствует `STATUS_ID`).
+- `entityTypeId`, ID воронок и стадий различаются между порталами. Ищи по коду или семантике при выполнении.
+- У агента, CLI и очереди нет пользователя. Передай `Context` с ID инициатора; системный обход прав должен быть явным решением.
+- Проверяй `isSuccess()` каждого `launch()` и передавай ошибки вызывающему коду.

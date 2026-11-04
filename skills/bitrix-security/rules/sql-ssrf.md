@@ -1,6 +1,6 @@
-# SQL injection, SSRF, files
+# SQL-инъекции, SSRF и файлы
 
-## Raw SQL
+## Прямой SQL
 
 ```php
 $connection = \Bitrix\Main\Application::getConnection();
@@ -16,31 +16,31 @@ $update = $helper->prepareUpdate('b_vendor_log', $fields); // [$setSql, $binds]
 
 ## ORM
 
-- `select`, `order`, `group` and filter keys are field paths plus operators: taken from the request they reach any field or relation (`AUTHOR.PASSWORD`). Whitelist names and operators, never pass request keys through.
+- `select`, `order`, `group` и ключи фильтра — пути полей с операторами: из запроса позволяют обратиться к любому полю/связи (`AUTHOR.PASSWORD`). Проверяй имена и операторы по разрешённому списку, не передавай ключи запроса напрямую.
 
 ```php
 $order = in_array($sort = strtoupper((string)$sort), ['ID', 'CREATED_AT', 'TITLE'], true) ? $sort : 'ID';
 PostTable::getList(['order' => [$order => 'DESC']]);
 ```
 
-- Filter values are parameterized. With a user filter and a rights filter, nest them (`[$userFilter, $rightsFilter]`) instead of `array_merge`, so `'LOGIC' => 'OR'` can't widen the result.
-- `SqlExpression`: placeholders only. `?#` is an identifier, `?s` a string, `?i` an int, `?f` a float.
+- Значения фильтров подставляются безопасно. Пользовательский фильтр и фильтр прав вкладывай раздельно (`[$userFilter, $rightsFilter]`), не через `array_merge`, чтобы `'LOGIC' => 'OR'` не расширял результат.
+- `SqlExpression`: только плейсхолдеры. `?#` — идентификатор, `?s` — строка, `?i` — int, `?f` — float.
 
 ```php
 new \Bitrix\Main\DB\SqlExpression('?# = ?s', $whitelistedColumn, $userValue);
 ```
 
-- `ExpressionField` / `runtime`: the expression is inserted as is and goes through `sprintf`. Prefer concatenating in PHP. When a literal is unavoidable:
+- `ExpressionField` / `runtime`: выражение вставляется как есть и проходит `sprintf`. Предпочитай склейку в PHP. Если литерал необходим:
 
 ```php
 use Bitrix\Main\ORM\Fields\ExpressionField;
 
-$lit = str_replace('%', '%%', $helper->convertToDbString($separator)); // quoted + escaped, % doubled for sprintf
+$lit = str_replace('%', '%%', $helper->convertToDbString($separator)); // кавычки, экранирование и удвоение % для sprintf
 new ExpressionField('FULL_NAME', $helper->getConcatFunction('%s', $lit, '%s'), ['LAST_NAME', 'NAME']);
 ```
 
-- Values read from options, the DB or imports are untrusted too: whitelist SQL function/operator names taken from them (e.g. an aggregate stored in report settings).
-- Stored serialized data: `unserialize($s, ['allowed_classes' => false])`; prefer JSON.
+- Значения из настроек, БД и импортов тоже недоверенные: имена SQL-функций/операторов проверяй по списку, например агрегат из настроек отчёта.
+- Сериализованные данные: `unserialize($s, ['allowed_classes' => false])`; предпочитай JSON.
 
 ## SSRF
 
@@ -48,16 +48,16 @@ new ExpressionField('FULL_NAME', $helper->getConcatFunction('%s', $lit, '%s'), [
 $client = new \Bitrix\Main\Web\HttpClient([
     'socketTimeout' => 5,
     'streamTimeout' => 10,
-    'privateIp' => false, // default true = private/loopback/link-local allowed
+    'privateIp' => false, // по умолчанию true разрешает частные/локальные/link-local адреса
 ]);
 ```
 
-- With `privateIp => false` every redirect hop is re-checked. Also allow-list the scheme and host for user-supplied URLs; sign webhooks.
-- `CFile::MakeFileArray()` takes b_file IDs, local paths (any readable file) and URLs: never pass user input (arbitrary file read + SSRF). Details: `bitrix-files` → `rules/storage.md`.
-- User-supplied paths: `(new \Bitrix\Main\Web\Uri($path))->isPathTraversal()`, then check the directory prefix.
+- С `privateIp => false` проверяется каждый переход. Для пользовательских URL также ограничивай схему и хост, вебхуки подписывай.
+- `CFile::MakeFileArray()` принимает ID b_file, локальные пути (любые читаемые файлы) и URL. Не передавай пользовательский ввод: чтение чужих файлов и SSRF. Подробнее: `bitrix-files` → `rules/storage.md`.
+- Пути от пользователя: `(new \Bitrix\Main\Web\Uri($path))->isPathTraversal()`, затем проверка префикса каталога.
 
-## Uploads
+## Загрузки
 
-- Accept only file IDs this session uploaded (legacy `main.file.input`: `\Bitrix\Main\UI\FileInputUtility::instance()->checkFiles($controlId, $ids)`), otherwise any `b_file` id can be attached (IDOR).
-- `ui.uploader` controllers check real rights in `canUpload()`/`canView()`/`canRemove()`/`verifyFileOwner()`; with presigned upload (ui 26.600+) re-validate the file after commit.
-- Details: `bitrix-files` → `rules/uploads.md`, `rules/ui-uploader.md`.
+- Принимай только ID файлов, загруженных этой сессией (старый `main.file.input`: `\Bitrix\Main\UI\FileInputUtility::instance()->checkFiles($controlId, $ids)`), иначе можно прикрепить любой `b_file` (IDOR).
+- Контроллеры `ui.uploader` проверяют права в `canUpload()`/`canView()`/`canRemove()`/`verifyFileOwner()`; при presigned-загрузке (ui 26.600+) повторно проверяй файл после фиксации.
+- Подробнее: `bitrix-files` → `rules/uploads.md`, `rules/ui-uploader.md`.

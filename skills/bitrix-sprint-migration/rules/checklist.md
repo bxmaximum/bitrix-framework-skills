@@ -1,34 +1,34 @@
-# Safety and review
+# Безопасность и ревью
 
-## Safety
+## Безопасность
 
-- `up`/`down` change schema and data: production only with explicit human approval, never because a local `up` passed.
-- `down` without a version name and `delete` are destructive; name the version.
-- `mark --as=installed` skips code: only to align status after a known manual change, never instead of a failed `up`.
-- No secrets, tokens or personal dumps in migrations or exchange dirs.
+- `up`/`down` меняют структуру и данные: production требует явного разрешения человека. Успех локального `up` не даёт такого разрешения.
+- `down` без версии и `delete` разрушительны: указывай версию.
+- `mark --as=installed` пропускает код: только согласовать статус после известной ручной правки, не обходить ошибку `up`.
+- Не сохраняй секреты, токены, персональные выгрузки в миграциях / обмене.
 
-## Anti-patterns
+## Ошибочные подходы
 
-| Don't | Do |
+| Не делай | Делай |
 | --- | --- |
-| Edit a migration already applied elsewhere | New migration |
-| Ids copied from a local DB | Resolve by `CODE`/`XML_ID` via helpers |
-| Plain `add*` that fails on a second copy | `save*` / `*IfNotExists` |
-| `add*IfNotExists` where fields must change | `save*` |
-| Commit builder output unread | Review generated arrays and files |
-| Business logic in migrations | Module services; migration only calls them |
+| Править уже применённую в другой среде миграцию | Создать новую |
+| Копировать ID локальной БД | Находить по `CODE`/`XML_ID` помощниками |
+| `add*`, падающий на второй копии | `save*` / `*IfNotExists` |
+| `add*IfNotExists`, когда поля должны измениться | `save*` |
+| Коммитить вывод генератора без чтения | Проверять массивы и файлы |
+| Бизнес-логика в миграции | Сервисы модуля, миграция только вызывает |
 
-## Review focus
+## Проверить на ревью
 
-- Destructive deletes without filters (`deleteOptions` without `NAME`, mass `down`).
-- Ignored `Result` / missing `outError` + `return false`.
-- Custom module classes used without `Loader::includeModule`.
-- Config without explicit `migration_dir` + `migration_table`.
+- Удаления без фильтра: `deleteOptions` без NAME, массовый `down`.
+- Игнорирование `Result`, отсутствие `outError` + `return false`.
+- Классы своего модуля без `Loader::includeModule`.
+- Конфигурация без явных `migration_dir` + `migration_table`.
 
-## Before finishing
+## Перед завершением
 
-- [ ] File created by `add` or a builder; `namespace Sprint\Migration`, class = file name, `$description` set.
-- [ ] `up()` is idempotent or safe to run once per copy; `down()` implemented or explained.
-- [ ] `ls --new` lists it; `up <Version>` passes on a local copy; `ls` shows `installed`.
-- [ ] With `down()`: `redo <Version>` once on a disposable copy.
-- [ ] Exchange files (if any) committed with the version.
+- [ ] Файл создан через add / генератор; `namespace Sprint\Migration`, класс совпадает с именем файла, задан `$description`.
+- [ ] `up()` идемпотентен либо безопасен однократно на каждой копии; `down()` реализован или объяснён.
+- [ ] `ls --new` видит версию, `up <Version>` прошёл на локальной копии, `ls` показывает installed.
+- [ ] При наличии `down()` один раз проверен `redo <Version>` на одноразовой копии.
+- [ ] Файлы обмена включены в коммит версии.

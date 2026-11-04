@@ -1,28 +1,30 @@
 ---
 name: bitrix-seo
-description: 'seo module — sitemap Generator/Job, RobotsFile, Yandex/Google webmaster engines, CSeoKeywords. Use when generating or regenerating sitemap.xml, editing robots.txt, wiring webmaster services, or asked for SEO redirects.'
+description: 'Модуль seo: sitemap.xml, robots.txt (RobotsFile) и сервисы вебмастеров. Используй при генерации карты сайта, настройке обхода и выборе механизма SEO-редиректов.'
 ---
 
-# SEO module (`seo`)
+# Модуль SEO (`seo`)
 
-Baseline: main 23.0+ · Verified: seo 26.100.0, main 26.800.0
+Baseline: main 23.0+ · Verified: seo 26.100.0, main 26.1000.0
 
-`Loader::includeModule('seo')` before any class below. Page title/description of iblock content is not stored here: InheritedProperty in `bitrix-iblocks` (`rules/query-seo-perf.md`). Landing counters/meta: hooks in `bitrix-landing`.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-## Sitemap
+Загрузи `Loader::includeModule('seo')` перед классами ниже. Заголовки и описания инфоблоков: InheritedProperty в `bitrix-iblocks` (`rules/query-seo-perf.md`). Счётчики и метаданные лендинга: события в `bitrix-landing`.
 
-| Class | Role |
+## Карта сайта
+
+| Класс | Назначение |
 | --- | --- |
-| `Bitrix\Seo\Sitemap\Internals\SitemapTable` | `b_seo_sitemap` rows: `SITE_ID`, `ACTIVE`, `NAME`, `DATE_RUN`, serialized `SETTINGS` |
-| `Bitrix\Seo\Sitemap\Job` | Background build by agent: `markToRegenerate()`, `addJob()`, `doJobAgent()`, `STATUS_*` |
-| `Bitrix\Seo\Sitemap\Generator` | One step of a build: `init($step, $state)`, `run()`, `getStep()`, `getState()` |
-| `Bitrix\Seo\Sitemap\Type\Step` | Step values: `Step::STEPS[Step::STEP_INIT]` = 0 … `Step::STEPS[Step::STEP_INDEX]` = 100 |
+| `Bitrix\Seo\Sitemap\Internals\SitemapTable` | Строки `b_seo_sitemap`: `SITE_ID`, `ACTIVE`, `NAME`, `DATE_RUN`, сериализованные `SETTINGS` |
+| `Bitrix\Seo\Sitemap\Job` | Фоновая сборка агентом: `markToRegenerate()`, `addJob()`, `doJobAgent()`, `STATUS_*` |
+| `Bitrix\Seo\Sitemap\Generator` | Один шаг сборки: `init($step, $state)`, `run()`, `getStep()`, `getState()` |
+| `Bitrix\Seo\Sitemap\Type\Step` | Значения шагов: `Step::STEPS[Step::STEP_INIT]` = 0 … `Step::STEPS[Step::STEP_INDEX]` = 100 |
 
-Settings saved from a form go through `SitemapTable::prepareSettings($settings)`. Don't write your own XML writer.
+Настройки формы пропускай через `SitemapTable::prepareSettings($settings)`. Не пиши собственный генератор XML.
 
-Background (preferred): `Job::markToRegenerate($sitemapId)` creates the job and an agent (first run in 60 s, then every second) that runs one step per hit until done. Agents must run (cron in production, `bitrix-background-jobs`).
+Предпочтительна фоновая сборка: `Job::markToRegenerate($sitemapId)` создаёт задание и агент (первый запуск через 60 с, затем каждую секунду), выполняющий шаг за хит. Нужен запуск агентов (cron в production, `bitrix-background-jobs`).
 
-In-process (CLI, stepper): `run()` does one step of about 13 s and returns `false` only on error. The build is finished when `getStep()` reaches `Step::STEPS[Step::STEP_INDEX]`. Build a new `Generator` per step and carry step + state, as `Job::doStep()` does; across HTTP hits, persist both.
+В процессе (CLI, пошаговый обработчик): `run()` выполняет шаг примерно за 13 с, возвращает `false` только при ошибке. Завершение — `getStep()` достиг `Step::STEPS[Step::STEP_INDEX]`. На каждом шаге создавай новый `Generator`, передавай шаг и состояние, как `Job::doStep()`. Между HTTP-хитами сохраняй оба значения.
 
 ```php
 use Bitrix\Seo\Sitemap\Generator;
@@ -40,47 +42,47 @@ do {
 } while ($step < Step::STEPS[Step::STEP_INDEX]);
 ```
 
-With `SETTINGS['ROBOTS'] === 'Y'` the last step adds the `Sitemap:` line to robots.txt itself.
+При `SETTINGS['ROBOTS'] === 'Y'` последний шаг сам добавляет строку `Sitemap:` в robots.txt.
 
-Admin pages: `/bitrix/admin/seo_sitemap.php`, `seo_sitemap_edit.php`.
+Административные страницы: `/bitrix/admin/seo_sitemap.php`, `seo_sitemap_edit.php`.
 
 ## robots.txt
 
 ```php
 use Bitrix\Seo\RobotsFile;
 
-$robots = new RobotsFile('s1'); // site document root robots.txt
+$robots = new RobotsFile('s1'); // robots.txt в корне сайта
 $robots->addRule([RobotsFile::SITEMAP_RULE, 'https://example.com/sitemap.xml']);
 $sitemaps = $robots->getRules(RobotsFile::SITEMAP_RULE);
 ```
 
-`RobotsFile` extends `Bitrix\Main\IO\File`; `SECTION_RULE` = `User-Agent`. Admin: `seo_robots.php`.
+`RobotsFile` наследует `Bitrix\Main\IO\File`; `SECTION_RULE` = `User-Agent`. Административная страница: `seo_robots.php`.
 
-## Webmaster and search engines
+## Вебмастера и поисковые системы
 
-- Registry: `Bitrix\Seo\SearchEngineTable` (`b_seo_search_engine`, key `CODE`).
-- Engines in `Bitrix\Seo\Engine\`: `Yandex` (`ENGINE_ID = 'yandex'`), `Google` (`'google'`), `YandexDirect`, base `YandexBase`.
-- `Bitrix\Seo\Webmaster\Service::getSites()` — hosts with bound/verified flags.
-- `Bitrix\Seo\Service::REDIRECT_URI` (`/bitrix/tools/seo_client.php`) is the OAuth callback, not an HTTP redirect.
-- Legacy helpers (compat only): `CSeoKeywords` (`Add`/`Update`/`GetByURL`), `CSeoPageChecker`, `CSeoUtils::getDomainsList()`. Admin: `seo_tools.php`, `seo_search_yandex.php`, `seo_search_google.php`.
-- Ads/retargeting namespaces (`Bitrix\Seo\Retargeting\`, `LeadAds\`, `Analytics\`) are product integrations; skip them for sitemap/robots work.
+- Реестр: `Bitrix\Seo\SearchEngineTable` (`b_seo_search_engine`, ключ `CODE`).
+- Адаптеры в `Bitrix\Seo\Engine\`: `Yandex` (`ENGINE_ID = 'yandex'`), `Google` (`'google'`), `YandexDirect`, базовый `YandexBase`.
+- `Bitrix\Seo\Webmaster\Service::getSites()` — хосты с признаками привязки и подтверждения.
+- `Bitrix\Seo\Service::REDIRECT_URI` (`/bitrix/tools/seo_client.php`) — адрес возврата OAuth, а не правило HTTP-редиректа.
+- Старые классы для совместимости: `CSeoKeywords` (`Add`/`Update`/`GetByURL`), `CSeoPageChecker`, `CSeoUtils::getDomainsList()`. Административные страницы: `seo_tools.php`, `seo_search_yandex.php`, `seo_search_google.php`.
+- Пространства рекламы и ретаргетинга (`Bitrix\Seo\Retargeting\`, `LeadAds\`, `Analytics\`) относятся к продуктовым интеграциям; для sitemap/robots не нужны.
 
-## Redirects: no API here
+## Редиректы: API в seo нет
 
-The kernel has no seo table for 301/302 rules. Don't invent `SeoRedirectTable`.
+В ядре нет таблицы seo для правил 301/302. Не выдумывай `SeoRedirectTable`.
 
-| Need | Where |
+| Задача | Механизм |
 | --- | --- |
-| Crawl allow/deny, sitemap URL | `RobotsFile`, sitemap `SETTINGS` |
-| Open-redirect allow-list | `security` module: `CSecurityRedirect`, `Bitrix\Security\RedirectRuleTable` |
-| Page moved | web server rule, route (`bitrix-routing`) or `LocalRedirect` in a component |
+| Разрешение обхода, URL карты сайта | `RobotsFile`, `SETTINGS` карты сайта |
+| Разрешённые адреса внешнего редиректа | Модуль `security`: `CSecurityRedirect`, `Bitrix\Security\RedirectRuleTable` |
+| Переезд страницы | Правило веб-сервера, маршрут (`bitrix-routing`) или `LocalRedirect` в компоненте |
 
-After URL changes: fix links in content, `Job::markToRegenerate()`, adjust robots.
+После смены URL исправь ссылки в содержимом, вызови `Job::markToRegenerate()`, обнови robots.
 
-## Checklist
+## Проверка
 
-- [ ] `Loader::includeModule('seo')` before Sitemap/Robots/Engine classes.
-- [ ] Sitemap rows via `SitemapTable`; builds via `Job` or a `Generator` step loop that carries step + state.
-- [ ] `run() === false` handled as an error, not as "more steps".
-- [ ] Iblock meta via InheritedProperty, not custom `b_seo_*` columns.
-- [ ] No invented redirect CRUD in `seo`.
+- [ ] `Loader::includeModule('seo')` выполнен до классов Sitemap/Robots/Engine.
+- [ ] Настройки карты идут через `SitemapTable`; сборка — через `Job` или цикл `Generator` с передачей шага и состояния.
+- [ ] `run() === false` обработан как ошибка, а не просьба продолжить.
+- [ ] Метаданные инфоблока идут через InheritedProperty, а не свои столбцы `b_seo_*`.
+- [ ] Не выдуман CRUD редиректов в `seo`.

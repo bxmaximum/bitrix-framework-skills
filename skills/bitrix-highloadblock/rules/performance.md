@@ -1,11 +1,11 @@
-# Performance and diagnostics
+# Производительность и диагностика
 
-## Queries
+## Запросы
 
-- Select only needed fields. `=UF_CODE` can use an index; `%UF_NAME` and functions over columns in `runtime` cannot.
-- Kill queries in loops: collect IDs, one query with `'@ID' => $ids`, map by `ID`. `_REF` JOIN vs "collect IDs + one query": measure.
-- `count_total` only when the UI shows a total.
-- Batches: `'>ID' => $lastId`, `order ID ASC`, `limit` (start at 500, tune by time/memory), fixed `'<=ID' => $maxId` for a stable run, persist `$lastId` to resume. No growing `offset`; at most one batch per transaction.
+- Выбирай нужные поля. `=UF_CODE` может использовать индекс; `%UF_NAME` и функции столбца в `runtime` — нет.
+- Убери запросы в циклах: собери ID, запрос `'@ID' => $ids`, индекс результата по `ID`. Выбор `_REF` JOIN либо отдельного пакетного запроса измеряй.
+- `count_total` нужен, только если интерфейс показывает итоговое число.
+- Пакеты: `'>ID' => $lastId`, `order ID ASC`, `limit` (начни с 500, подбери по времени / памяти), фиксированный `'<=ID' => $maxId`; сохраняй `$lastId` для продолжения. Без растущего `offset`; не больше пакета на транзакцию.
 
 ```php
 $lastId = 0;
@@ -19,42 +19,42 @@ do {
 } while ($rows !== []);
 ```
 
-## Cache
+## Кеш
 
-- Query cache is off by default: `'cache' => ['ttl' => 300]`; JOINs (`_REF`, `_SINGLE`) also need `'cache_joins' => true`.
-- Managed-cache dir `orm_<TABLE_NAME>`; block descriptors `orm_b_hlblock_entity`. Data-class `add/update/delete` clear it. External writes: `$dataClass::getEntity()->cleanCache()`. `cleanCache()` is a no-op when `.settings.php` `cache_flags` has `<table>_max_ttl` = 0.
-- Stale output? Identify the layer first: ORM cache, component cache or project cache (`bitrix-caching`).
+- Кеш запроса по умолчанию выключен: `'cache' => ['ttl' => 300]`; для JOIN (`_REF`, `_SINGLE`) нужен также `'cache_joins' => true`.
+- Каталог управляемого кеша: `orm_<TABLE_NAME>`, описания блоков — `orm_b_hlblock_entity`. `add/update/delete` класса данных очищают его. Внешняя запись: `$dataClass::getEntity()->cleanCache()`. При `.settings.php` `cache_flags` `<table>_max_ttl = 0` метод `cleanCache()` ничего не делает.
+- Устарел вывод: сначала найди слой — ORM, компонент либо проект (`bitrix-caching`).
 
-## Indexes
+## Индексы
 
-Add them in migrations, never per request:
+Добавляй миграциями, не на каждом запросе:
 
 ```php
 $conn = \Bitrix\Main\Application::getConnection();
 $table = $dataClass::getTableName();
 if (!$conn->isIndexExists($table, ['UF_CATEGORY'])) {
-    $conn->createIndex($table, 'ix_product_color_category', ['UF_CATEGORY']); // int/boolean/hlblock UF
+    $conn->createIndex($table, 'ix_product_color_category', ['UF_CATEGORY']); // UF integer/boolean/hlblock
 }
 ```
 
-`string` UF columns are `TEXT`: on MySQL `createIndex()` fails (error 1170, prefix length required) and it has no prefix option. Use raw DDL in the migration, e.g. `CREATE INDEX ix_product_color_code ON product_color (UF_CODE(64))`, or index a non-text column. PostgreSQL indexes `text` directly. Unique constraints have the same limit.
+UF `string` хранится как `TEXT`: MySQL `createIndex()` выдаст 1170 без длины префикса; такого параметра у метода нет. Используй DDL миграции: `CREATE INDEX ix_product_color_code ON product_color (UF_CODE(64))`, либо индексируй не текст. PostgreSQL индексирует `text` напрямую. Уникальные ограничения имеют тот же предел.
 
-## Measure
+## Измерение
 
 ```php
 $conn = \Bitrix\Main\Application::getConnection();
-$tracker = $conn->startTracker(true); // true = reset counters
-// ... code under test ...
+$tracker = $conn->startTracker(true); // true сбрасывает счётчики
+// проверяемый код
 $conn->stopTracker();
 foreach ($tracker->getQueries() as $query) { $query->getSql(); $query->getTime(); }
 $tracker->getCounter(); $tracker->getTime();
 ```
 
-The tracker keeps SQL with parameters: diagnostics only, never in production logs.
+Трекер хранит SQL с параметрами: только диагностика, не журналы production.
 
-## Diagnostics
+## Диагностика
 
-- Block not found: `getById()->fetch() === false` → stop before `compileEntity()` (it throws).
-- Value not saved: unknown key dropped → `$dataClass::getEntity()->hasField()`.
-- Missing table/column SQL error: structure drift or an unfinished migration. Fix the migration, no ad-hoc DDL.
-- Duplicate rows: multiple fields, `_SINGLE` JOINs or `runtime` references. Fix the query, don't `array_unique`.
+- Блок не найден: `getById()->fetch() === false`, остановись до `compileEntity()`, который бросит исключение.
+- Значение не записано: неизвестный ключ отброшен; проверь `$dataClass::getEntity()->hasField()`.
+- SQL-ошибка отсутствующей таблицы / колонки: расхождение структуры или незавершённая миграция. Исправь миграцию, без разового DDL.
+- Дубли строк: множественные поля, `_SINGLE` JOIN либо связи `runtime`. Исправь запрос, не применяй `array_unique`.

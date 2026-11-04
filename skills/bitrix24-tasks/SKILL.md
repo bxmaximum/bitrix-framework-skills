@@ -1,24 +1,27 @@
 ---
 name: bitrix24-tasks
-description: 'Bitrix24 on-premise tasks in PHP: V2 commands (AddTaskCommand), TaskProvider, CTaskItem compat, responsible and accomplices, checklist, templates, TaskAccessController, OnTaskAdd events. Use when creating, reading, securing or hooking tasks.'
+description: 'Задачи в PHP коробки Битрикс24: V2-команды AddTaskCommand, TaskProvider, права и события OnTaskAdd. Для создания, чтения, изменения задач, участников и чек-листов из /local.'
 ---
 
-# Bitrix24 tasks (server side)
+# Задачи Битрикс24: серверный PHP
 
-Scope: Bitrix24 on-premise · Verified: tasks 26.300.100, main 26.800.0
+Scope: Bitrix24 on-premise · Verified: tasks 26.800.0, main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом один раз прочитай `bitrix-framework`.
+
+| Задача | Открыть |
 | --- | --- |
-| Pick the API layer; create, update, complete, delete; errors | `rules/writing.md` |
-| One task or lists: filters, sort, paging, dates | `rules/reading.md` |
-| Members, deadlines and time zones, checklists, tags, projects, templates, comments | `rules/details.md` |
-| Access actions, events and their arguments, REST mapping | `rules/access-events.md` |
+| Выбор API, создание, изменение, завершение, удаление и ошибки | `rules/writing.md` |
+| Одна задача/список: фильтры, порядок, страницы и даты | `rules/reading.md` |
+| Участники, сроки/часовые пояса, чек-листы, теги, проекты, шаблоны, комментарии | `rules/details.md` |
+| Контракты БП/REST: статус, длительность, инициатор шаблона | `rules/integrations.md` |
+| Проверки доступа, события/аргументы, соответствие REST | `rules/access-events.md` |
 
-## Invariants
+## Общие правила
 
-- Write through the V2 commands (`AddTaskCommand`, `UpdateTaskCommand` …; legacy `CTaskItem`/`CTasks` end in the same V2 services). Never write `TaskTable` or member/checklist tables: counters, chat, search, events and recycle bin are skipped.
-- Commands do not check rights. Check `TaskAccessService`/`TaskAccessController` for the acting user before `run()`.
-- Pass the acting user id explicitly (`userId` in configs). Agents and CLI have no `$USER`; `CTasks::Add` without `USER_ID` acts as user 1.
-- Dates in V2 entities are Unix timestamps (`deadlineTs`). Never pass site-format strings from background code.
-- Keep V2 calls in one `/local` gateway class: commands take `V2\Internal\…` entities and configs that may change between releases. The V2 layer is verified in tasks 26.300.100 only; if `class_exists(AddTaskCommand::class)` is false, use `CTaskItem`.
-- New task card: comments are messages in the task chat (see `rules/details.md`, `bitrix24-im`).
+- Записывай через V2-команды (`AddTaskCommand`, `UpdateTaskCommand` …); legacy `CTaskItem`/`CTasks` используют те же V2-сервисы. Прямая запись `TaskTable`, участников и чек-листов пропускает счётчики, чат, индекс, события и корзину.
+- Сами команды обычно не проверяют права. Перед `run()` проверяй `TaskAccessService`/`TaskAccessController` инициатора; отдельные команды могут иметь собственную проверку.
+- Передавай инициатора явно: `userId` конфигурации. У агента/CLI нет авторизованного `$USER`; `CTasks::Add` без `USER_ID` подставляет пользователя 1.
+- Даты V2 — Unix timestamp (`deadlineTs`). В фоне не передавай строки формата сайта.
+- Изолируй V2 в одном классе доступа `/local`: команды используют `V2\Internal\…`, сущности/конфигурации меняются. Проверено на tasks 26.800.0; если `class_exists(AddTaskCommand::class)` ложно, используй `CTaskItem`.
+- Комментарий новой карточки — сообщение чата задачи (`rules/details.md`, `bitrix24-im`).

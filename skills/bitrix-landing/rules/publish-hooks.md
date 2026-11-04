@@ -1,15 +1,15 @@
-# Publish, preview, hooks, rights
+# Публикация, предпросмотр, события, права
 
-## Publish
+## Публикация
 
-| Action | API |
+| Действие | API |
 | --- | --- |
-| Publish page | `$landing->publication()` → bool |
-| Dry-run publish errors | `$landing->fakePublication()` |
-| Unpublish page | `$landing->unpublic()` |
-| Publish / unpublish site | `Site::publication($siteId, true)` / `Site::unpublic($siteId)` → `Result` |
-| Public URL | `$landing->getPublicUrl()`, `Site::getPublicUrl($siteId)` |
-| Rights check | `$landing->canPublication()`, `$landing->canEdit()` |
+| Опубликовать страницу | `$landing->publication()` → bool |
+| Проверить ошибки без публикации | `$landing->fakePublication()` |
+| Снять страницу с публикации | `$landing->unpublic()` |
+| Опубликовать / снять сайт | `Site::publication($siteId, true)` / `Site::unpublic($siteId)` → `Result` |
+| Публичный URL | `$landing->getPublicUrl()`, `Site::getPublicUrl($siteId)` |
+| Проверить права | `$landing->canPublication()`, `$landing->canEdit()` |
 
 ```php
 $landing = Landing::createInstance($landingId);
@@ -25,34 +25,40 @@ if (!$result->isSuccess()) {
 }
 ```
 
-Soft delete (recycle bin): `Landing::markDelete($id)` / `markUnDelete($id)`, `Site::markDelete($id)`. Hard `delete()` only for cleanup scripts.
+Корзина: `Landing::markDelete($id)` / `markUnDelete($id)`, `Site::markDelete($id)`. Физический `delete()` — для скриптов очистки.
 
-`Internals\UrlRewriteTable` (`b_landing_urlrewrite`) maps a rule to a page inside one landing site; it is not a global redirect table.
+`Internals\UrlRewriteTable` (`b_landing_urlrewrite`) связывает правило со страницей внутри одного сайта landing; это не глобальная таблица редиректов.
 
-## Preview
+## Предпросмотр
 
-- Sandboxed preview (**Since landing 26.1000**): `Landing::getDevicePreviewMode()` is true in the editor device frame and, **Since landing 26.1200**, on signed `preview/<hash>/` links. The page runs with CSP `sandbox` (opaque origin): no portal session, cookies, storage, or same-origin `BX.ajax`. The kernel turns off `HeadBlock`, `Gtm`, `B24button` and cookie hooks there. Custom blocks and components that print author HTML/JS must skip it in this mode. Not the same as `Landing::getPreviewMode()`.
-- **Since landing 26.1100** `Site::getPublicHash()` is a signature: preview links issued earlier stop working, reissue them. Check a hash from a request with `Site::isPublicHashValid($siteId, $hash)`, never `==` (older: `hash_equals(Site::getPublicHash($siteId), $hash)`).
+- Изолированный предпросмотр (**Since landing 26.1000**): `Landing::getDevicePreviewMode()` истинен во фрейме устройства редактора и **Since landing 26.1200** по подписанным ссылкам `preview/<hash>/`. CSP `sandbox` создаёт непрозрачный origin: нет сессии портала, cookies, storage, same-origin `BX.ajax`. Ядро отключает `HeadBlock`, `Gtm`, `B24button` и события cookies. Свои блоки / компоненты, выводящие авторский HTML/JS, должны пропускать его в этом режиме. Это не `Landing::getPreviewMode()`.
+- **Since landing 26.1100** `Site::getPublicHash()` возвращает подпись; старые ссылки предпросмотра перестают работать, выпусти новые. Хеш запроса проверяй `Site::isPublicHashValid($siteId, $hash)`, а не `==`; раньше — `hash_equals(Site::getPublicHash($siteId), $hash)`.
 
-## Hooks: counters and meta
+## События: счётчики и метаданные
 
-Hook classes (`lib/hook/page/`): `YaCounter`, `GaCounter`, `Gtm`, `MetaMain`, `MetaOg`, `MetaRobots`, `MetaYandexVerification`, `MetaGoogleVerification`, `PixelFb`, `PixelVk`, `Robots`, `HeadBlock`.
+Классы (`lib/hook/page/`): `YaCounter`, `GaCounter`, `Gtm`, `MetaMain`, `MetaOg`, `MetaRobots`, `MetaYandexVerification`, `MetaGoogleVerification`, `PixelFb`, `PixelVk`, `Robots`, `HeadBlock`.
 
-Write through additional fields; keys are `<HOOK>_<FIELD>`:
+Запись через дополнительные поля с ключами `<HOOK>_<FIELD>`:
 
 ```php
 Landing::saveAdditionalFields($landingId, [
     'YACOUNTER_USE' => 'Y',
     'YACOUNTER_COUNTER' => '12345678',
 ]);
-$fields = Landing::getAdditionalFields($landingId); // same for Site::…
+$fields = Landing::getAdditionalFields($landingId); // аналогично Site::…
 ```
 
-Don't hardcode counters in blocks. `Bitrix\Landing\Metrika\Metrika` is Bitrix product analytics, not Yandex.Metrika.
+Не зашивай счётчики в блоки. `Bitrix\Landing\Metrika\Metrika` — аналитика продукта Битрикс, а не Яндекс.Метрика.
 
-## Rights and limits
+## Права и ограничения
 
-- `Rights::hasAccessForSite($siteId, $accessType)`, `Rights::hasAccessForLanding($landingId, $accessType)`, `Rights::isAdmin()`; roles: `Role`.
-- Additional rights are keys of `Rights::ADDITIONAL_RIGHTS`. **Since landing 26.1100** `mainpage_create` is gone (reading it gives a Warning and `null`). Use `vibe_create`, `vibe_admin`, `vibe_menu24`. The first two deny everyone until an admin configures them.
-- Tariff features: `\Bitrix\Landing\Manager::checkFeature(\Bitrix\Landing\Manager::FEATURE_PUBLICATION_SITE)` and similar constants; `\Bitrix\Landing\Restriction\Manager::isAllowed($code)`.
-- **Since landing 26.1100** `Site::updateFolder()` rejects a folder from another site, nesting a folder in itself (`MOVE_RESTRICTION`) and a foreign `INDEX_ID` (`FOLDER_INDEX_OUT_OF_SITE`). Moving a folder to another site needs `delete` on the old site and `edit` on the new one.
+- `Rights::hasAccessForSite($siteId, $accessType)`, `Rights::hasAccessForLanding($landingId, $accessType)`, `Rights::isAdmin()`; роли: `Role`.
+- Дополнительные права — ключи `Rights::ADDITIONAL_RIGHTS`. **Since landing 26.1100** `mainpage_create` удалён (чтение даёт Warning и `null`). Используй `vibe_create`, `vibe_admin`, `vibe_menu24`; первые два запрещены всем до настройки администратором.
+- Возможности тарифа: `\Bitrix\Landing\Manager::checkFeature(\Bitrix\Landing\Manager::FEATURE_PUBLICATION_SITE)` и аналогичные константы; `\Bitrix\Landing\Restriction\Manager::isAllowed($code)`.
+- **Since landing 26.1100** `Site::updateFolder()` запрещает папку другого сайта, вложение в себя (`MOVE_RESTRICTION`) и чужой `INDEX_ID` (`FOLDER_INDEX_OUT_OF_SITE`). Перенос между сайтами требует `delete` старого и `edit` нового.
+
+## Динамический кеш и временный режим прав — Since landing 26.1500
+
+Перед общим HTML-кешем динамического блока событие landing:OnBeforeDynamicBlockCache получает SOURCE_IDS вида module:Source. `EventResult::ERROR` любого обработчика запрещает использовать кеш для этого вывода. Событие адресовано только модулям источников: регистрируй постоянно через registerEventHandler() с ID модуля. У обработчика `addEventHandler()` ID модуля нет. На старой версии не помещай персонализированные данные в общий кеш блока; реализуй отдельную динамическую выдачу.
+
+Если доверенному серверному сценарию необходимо временно отключить права, сохрани `Rights::isLocalOn()`, вызови `setOff()`, в finally восстанови `setOn()` только при прежнем true. `isOn()` учитывает также глобальный режим / LANDING_DISABLE_RIGHTS и для восстановления локального флага не подходит. Это не разрешение обходить права пользователя. На старом модуле избегай временного переключения общего статического флага, используй явные проверки и отдельный служебный процесс.

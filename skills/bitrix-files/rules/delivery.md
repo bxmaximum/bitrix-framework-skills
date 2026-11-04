@@ -1,9 +1,9 @@
-# Serving files
+# Выдача файлов
 
-## Public vs private
+## Публичные и приватные файлы
 
-- The web server serves `SRC` under `/upload/` with no Bitrix checks. Random names hide files but don't protect them.
-- Private files: never output `SRC`. Serve them from an action that checks rights and returns `BFile`. To close the direct path too, deny web access to `/upload/<your savePath>/` in nginx/Apache; `ResizeImageGet()` URLs there then stop working.
+- Веб-сервер отдаёт `SRC` из `/upload/` без проверок Битрикс. Случайное имя скрывает адрес, но не защищает файл.
+- У приватных файлов не выводи `SRC`: возвращай `BFile` действием с проверкой прав. Прямой доступ к `/upload/<your savePath>/` закрой в nginx/Apache; ссылки `ResizeImageGet()` из этого каталога перестанут работать.
 
 ```php
 use Bitrix\Main\Engine\CurrentUser;
@@ -14,23 +14,23 @@ public function downloadAction(int $docId, DocFileService $files): ?BFile
     $fileId = $files->findReadableFileId($docId, (int)CurrentUser::get()->getId());
     if ($fileId === null)
     {
-        $this->addError(new \Bitrix\Main\Error('Access denied', 'ACCESS_DENIED'));
+        $this->addError(new \Bitrix\Main\Error('Доступ запрещён', 'ACCESS_DENIED'));
         return null;
     }
 
-    return BFile::createByFileId($fileId);   // throws ObjectNotFoundException for an unknown id
+    return BFile::createByFileId($fileId); // неизвестный ID: ObjectNotFoundException
 }
 ```
 
-- A GET link to this action needs its CSRF prefilter removed; keep `Authentication` and the rights check (`bitrix-controllers`).
-- `BFile::createByFileId($fileId, $name = null)`: `->showInline(true)` shows only valid images inline, and everything else is always downloaded (`CFile::ViewByUser()` enforces this). `->setCacheTime($seconds)`.
-- Thumbnails: `ResizedImage::createByImageId($imageId, $width, $height)` (default `BX_RESIZE_IMAGE_EXACT`, `->setResizeType()`).
-- `CFile::ViewByUser($arFile, ['force_download' => true, 'attachment_name' => $name, 'cache_time' => 0])` is the legacy engine under `BFile`. Use it only in non-controller scripts.
-- Big files: with option `main:bx_fast_download = Y`, `ViewByUser()` sends `X-Accel-Redirect`, and nginx must serve that path internally.
-- `ORIGINAL_NAME` is client input: wrap it in `htmlspecialcharsbx()` in HTML. `BFile` strips CR/LF from the download name.
+- Для GET-ссылки сними CSRF-фильтр действия, сохрани `Authentication` и проверку прав (`bitrix-controllers`).
+- `BFile::createByFileId($fileId, $name = null)`: `->showInline(true)` показывает внутри страницы только корректные изображения, остальное скачивается (`CFile::ViewByUser()`). `->setCacheTime($seconds)`.
+- Миниатюры: `ResizedImage::createByImageId($imageId, $width, $height)`; по умолчанию `BX_RESIZE_IMAGE_EXACT`, изменение через `->setResizeType()`.
+- `CFile::ViewByUser($arFile, ['force_download' => true, 'attachment_name' => $name, 'cache_time' => 0])` — старый механизм под `BFile`; используй только вне контроллеров.
+- Большие файлы: с `main:bx_fast_download = Y` метод `ViewByUser()` отправляет `X-Accel-Redirect`; nginx должен отдавать путь внутренним перенаправлением.
+- `ORIGINAL_NAME` приходит от клиента: в HTML оборачивай в `htmlspecialcharsbx()`. `BFile` убирает CR/LF из имени скачивания.
 
-## Viewer
+## Просмотрщик
 
-- `ui.viewer` (`bitrix-ui`) opens the file URL and sends preview requests (`BX-Viewer*` headers). `ViewByUser()`/`BFile` answer those, and a hand-written `readfile()` breaks them.
-- Markup: echo `\Bitrix\Main\UI\Viewer\ItemAttributes::tryBuildByFileId($fileId, $downloadUrl)` into the link tag.
-- The viewer checks no rights. The action behind `$downloadUrl` must.
+- `ui.viewer` (`bitrix-ui`) открывает URL и отправляет запросы предпросмотра с заголовками `BX-Viewer*`. `ViewByUser()`/`BFile` отвечают на них; самописный `readfile()` ломает предпросмотр.
+- Разметка: выведи `\Bitrix\Main\UI\Viewer\ItemAttributes::tryBuildByFileId($fileId, $downloadUrl)` в тег ссылки.
+- Просмотрщик не проверяет права. Это обязанность действия по `$downloadUrl`.

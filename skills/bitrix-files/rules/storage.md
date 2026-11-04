@@ -1,78 +1,78 @@
-# b_file storage with CFile
+# Хранение b_file через CFile
 
-A `b_file` row holds `ID`, `MODULE_ID`, `SUBDIR`, `FILE_NAME`, `ORIGINAL_NAME`, `CONTENT_TYPE`, `FILE_SIZE`, `WIDTH`, `HEIGHT`, `DESCRIPTION`, `EXTERNAL_ID` and `HANDLER_ID` (a cloud bucket, if any). The file lives at `/<option main:upload_dir>/<SUBDIR>/<FILE_NAME>` unless it is in a cloud. There is no D7 writer: `Bitrix\Main\FileTable` is for reads only (joins, reports).
+Строка `b_file`: `ID`, `MODULE_ID`, `SUBDIR`, `FILE_NAME`, `ORIGINAL_NAME`, `CONTENT_TYPE`, `FILE_SIZE`, `WIDTH`, `HEIGHT`, `DESCRIPTION`, `EXTERNAL_ID`, `HANDLER_ID` (облачный контейнер). Локальный путь: `/<опция main:upload_dir>/<SUBDIR>/<FILE_NAME>`. API записи D7 нет; `Bitrix\Main\FileTable` — для чтения, связей и отчётов.
 
-## Save
+## Сохранение
 
 ```php
-$file = \CFile::MakeFileArray($absPath);             // trusted local path
+$file = \CFile::MakeFileArray($absPath);             // доверенный локальный путь
 $file['MODULE_ID'] = 'vendor.docs';
-$file['description'] = 'Contract scan';
+$file['description'] = 'Скан договора';
 $fileId = (int)\CFile::SaveFile($file, 'vendor.docs'); // /upload/vendor.docs/<3 hex>/<random>.<ext>
 if ($fileId <= 0)
 {
-    // bad name, unsafe file, disk quota or write error
+    // неверное имя, опасный файл, квота или ошибка записи
 }
 ```
 
-- Signature: `SaveFile($arFile, $strSavePath, $forceRandom = false, $skipExtension = false, $dirAdd = '')` → id or `false`.
-- `$arFile` keys: `name`, and either `tmp_name` (copied) or `content` (raw bytes). Also `type`, `MODULE_ID`, `description`, `external_id`, and `old_file` (id deleted after a successful save).
-- Default physical name: 32 random characters plus the original extension. `ORIGINAL_NAME` keeps the client's name with invalid characters replaced, so escape it on output.
-- With option `save_original_file_name = Y` the physical name stays original inside a random subdir. `translit_original_file_name = Y` transliterates it. **Since main 26.800** only the physical name is transliterated (safe chars `._-()`); `ORIGINAL_NAME` never is. Older kernels transliterate both.
-- `SaveFile()` strips script extensions (`php`, `phtml`, … from `fileman:~script_files`) and refuses names like `.htaccess`. It keeps `html`, `svg` and `js`, so whitelist extensions before saving user files (`rules/uploads.md`).
-- It validates neither type nor size. `type` is stored as given (normalized), and an image with no readable dimensions is stored as `application/octet-stream`.
-- Identical content is deduplicated (`b_file_hash`), so several IDs may share one physical file. `Delete()` keeps the file until its last ID is gone.
-- Copy: `CFile::CloneFile(int $fileId): ?int` makes a new ID for the same physical file; `CFile::CopyFile($FILE_ID)` makes a physical copy.
+- Сигнатура: `SaveFile($arFile, $strSavePath, $forceRandom = false, $skipExtension = false, $dirAdd = '')` → ID либо `false`.
+- Ключи `$arFile`: `name` и `tmp_name` (копирование) либо `content` (байты); также `type`, `MODULE_ID`, `description`, `external_id`, `old_file` (ID удаляемого после успешного сохранения файла).
+- Физическое имя по умолчанию: 32 случайных символа с исходным расширением. `ORIGINAL_NAME` хранит имя клиента с заменой недопустимых символов: экранируй при выводе.
+- `save_original_file_name = Y` сохраняет исходное имя в случайном подкаталоге. `translit_original_file_name = Y` транслитерирует его. **Since main 26.800** транслитерируется только физическое имя (безопасные символы `._-()`), но не `ORIGINAL_NAME`. Раньше менялись оба.
+- `SaveFile()` убирает расширения скриптов (`php`, `phtml`, … из `fileman:~script_files`), запрещает имена вроде `.htaccess`. `html`, `svg`, `js` остаются: перед сохранением разрешай конкретные расширения (`rules/uploads.md`).
+- Тип и размер не проверяются. Нормализованный `type` сохраняется как передан; изображение без читаемых размеров записывается как `application/octet-stream`.
+- Одинаковое содержимое дедуплицируется (`b_file_hash`): несколько ID могут ссылаться на физический файл. `Delete()` сохраняет его до удаления последнего ID.
+- Копия: `CFile::CloneFile(int $fileId): ?int` создаёт новый ID того же файла; `CFile::CopyFile($FILE_ID)` копирует и физический файл.
 
 ## MakeFileArray
 
-`CFile::MakeFileArray($path, $mimetype = false, $skipInternal = false, $external_id = '')` returns a `$_FILES`-like array. It accepts:
+`CFile::MakeFileArray($path, $mimetype = false, $skipInternal = false, $external_id = '')` возвращает массив формата `$_FILES`. Принимает:
 
-- **A b_file ID.** `tmp_name` is the stored file itself, or a temp copy for cloud files. Read it; never move or unlink it.
-- **A local path**, absolute or relative to `DOCUMENT_ROOT`. Any readable file works, `/bitrix/.settings.php` included. MIME comes from `mime_content_type()`.
-- **An `http(s)://` URL.** It is downloaded with `HttpClient`, and private IPs are blocked.
-- **An `ftp(s)://` URL.** Private IPs are blocked only **Since main 26.800**; on older kernels accept only `https?://` from outside.
+- **ID b_file.** `tmp_name` — сам файл либо временная копия из облака. Читай, не перемещай и не удаляй.
+- **Локальный путь**, абсолютный либо относительно `DOCUMENT_ROOT`. Доступен любой читаемый файл, включая `/bitrix/.settings.php`. MIME берётся через `mime_content_type()`.
+- **URL `http(s)://`.** Загрузка через `HttpClient`, приватные IP запрещены.
+- **URL `ftp(s)://`.** Приватные IP запрещены только **Since main 26.800**; на старом ядре извне принимай только `https?://`.
 
-It returns `null` for a missing file, a directory, or `php://`/`phar://` (except `php://input`). Because it takes paths and URLs, user input turns it into arbitrary file read and SSRF. For user URLs, download with an allow-list (`bitrix-http-client`) and pass the temp file.
+Возвращает `null` для отсутствующего файла, каталога, `php://`/`phar://` (кроме `php://input`). Пользовательские пути и URL создают чтение произвольных файлов и SSRF. URL пользователя загружай с проверкой разрешённых адресов (`bitrix-http-client`), затем передавай временный файл.
 
-## Read
+## Чтение
 
 ```php
-$file = \CFile::GetFileArray($fileId);  // row + 'SRC' (cloud URL for bucket files) or false
-$url = \CFile::GetPath($fileId);        // SRC or null
+$file = \CFile::GetFileArray($fileId);  // строка + SRC (URL облачного файла) либо false
+$url = \CFile::GetPath($fileId);        // SRC либо null
 $thumb = \CFile::ResizeImageGet($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL, true);
-// ['src' => …, 'width' => …, 'height' => …, 'size' => …] or false
+// ['src' => …, 'width' => …, 'height' => …, 'size' => …] либо false
 ```
 
 - `ResizeImageGet($file, $arSize, $resizeType = BX_RESIZE_IMAGE_PROPORTIONAL, $bInitSizes = false, $arFilters = false, $bImmediate = false, $jpgQuality = false)`.
-- Resize types: `BX_RESIZE_IMAGE_PROPORTIONAL` (fit into the box), `BX_RESIZE_IMAGE_PROPORTIONAL_ALT` (fit; box width applies to the longer side), `BX_RESIZE_IMAGE_EXACT` (center crop).
-- Pass both `width` and `height`: a zero side means no resizing. It never upscales: a size ≥ the original returns the original. The default filter is `sharpen`.
-- The first call writes `/upload/resize_cache/<SUBDIR>/<w>_<h>_<type>/<FILE_NAME>` synchronously, so call it inside cached output. `CFile::Delete()` clears it.
-- `CFile::GetByID()`/`GetFileArray()` follow content replacements (below); `FileTable` returns the raw row.
+- Режимы: `BX_RESIZE_IMAGE_PROPORTIONAL` (вписать), `BX_RESIZE_IMAGE_PROPORTIONAL_ALT` (ширина рамки для длинной стороны), `BX_RESIZE_IMAGE_EXACT` (обрезка по центру).
+- Задавай `width` и `height`: нулевая сторона отключает уменьшение. Увеличения нет: размер ≥ исходного возвращает оригинал. Фильтр по умолчанию — `sharpen`.
+- Первый вызов синхронно пишет `/upload/resize_cache/<SUBDIR>/<w>_<h>_<type>/<FILE_NAME>`: выполняй внутри кешируемого вывода. `CFile::Delete()` очищает копии.
+- `CFile::GetByID()`/`GetFileArray()` учитывают замены содержимого ниже; `FileTable` возвращает исходную строку.
 
-## Delete
+## Удаление
 
 ```php
-\CFile::Delete($fileId);  // DANGER: removes the file, its resize cache and versions; returns nothing
+\CFile::Delete($fileId); // ОПАСНО: удаляет файл, кеш уменьшенных копий и версии; ничего не возвращает
 ```
 
-Delete files together with the entity that owns them (in your service or the ORM `OnAfterDelete`). Otherwise orphans stay forever.
+Удаляй файлы вместе с сущностью-владельцем в сервисе либо ORM `OnAfterDelete`. Иначе они останутся навсегда.
 
-## Replace content, keep the ID — Since main 26.800
+## Замена содержимого с сохранением ID — Since main 26.800
 
 ```php
 use Bitrix\Main\File\ContentReplacer;
 
-$newId = (int)\CFile::SaveFile($newFileArray, 'vendor.docs');  // must be > $fileId
+$newId = (int)\CFile::SaveFile($newFileArray, 'vendor.docs'); // должен быть > $fileId
 $result = (new ContentReplacer())->replace($fileId, $newId, $currentReplacementId, 'vendor.docs');
-// $currentReplacementId: null the first time, then the previous $newId (optimistic lock)
+// $currentReplacementId: сначала null, затем предыдущий $newId (оптимистическая блокировка)
 ```
 
-- After this, `CFile::GetByID($fileId)` and `GetFileArray()` return the replacement (via `b_file_version`), and the superseded replacement is deleted. Result data: `['changed' => bool]`.
-- Errors: `FILE_REPLACEMENT_INVALID`, `_CONFLICT`, `_LOCKED`, `_WRITE_FAILED`. Call it outside a DB transaction. `$owner` (`[a-zA-Z0-9_.-]{1,100}`) is a service tag, not an access check.
-- On older kernels: save a new file and update the entity's file ID.
+- После замены `CFile::GetByID($fileId)` и `GetFileArray()` возвращают новую версию из `b_file_version`; предыдущая замена удаляется. Данные результата: `['changed' => bool]`.
+- Ошибки: `FILE_REPLACEMENT_INVALID`, `_CONFLICT`, `_LOCKED`, `_WRITE_FAILED`. Вызывай вне транзакции БД. `$owner` (`[a-zA-Z0-9_.-]{1,100}`) — метка сервиса, а не проверка доступа.
+- На старом ядре сохрани новый файл и обнови ID в сущности.
 
-## Hooks and clouds
+## События и облака
 
-- Events (module `main`): `OnFileSave` (return `true` = stored externally), `OnAfterFileSave`, `OnMakeFileArray`, `OnGetFileSRC`, `OnBeforeResizeImage`, `OnAfterResizeImage`, `OnFileDelete`, `OnPhysicalFileDelete`.
-- Module `clouds` uses these hooks. By bucket rules, files go to S3-compatible storage (`HANDLER_ID`), `SRC` becomes the bucket URL, and `MakeFileArray($id)` downloads a temp copy. Code built on the API above keeps working; code that builds `/upload/...` paths breaks.
+- События `main`: `OnFileSave` (`true` — сохранено внешним хранилищем), `OnAfterFileSave`, `OnMakeFileArray`, `OnGetFileSRC`, `OnBeforeResizeImage`, `OnAfterResizeImage`, `OnFileDelete`, `OnPhysicalFileDelete`.
+- Модуль `clouds` использует эти события: файлы по правилам контейнера идут в S3-совместимое хранилище (`HANDLER_ID`), `SRC` становится облачным URL, `MakeFileArray($id)` скачивает временную копию. Работа через API сохраняется; склейка `/upload/...` ломается.

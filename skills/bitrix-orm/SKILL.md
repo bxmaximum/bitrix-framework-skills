@@ -1,24 +1,27 @@
 ---
 name: bitrix-orm
-description: 'D7 ORM — DataManager tablets, fields and relations, query()/ConditionTree, objects and collections, batch/merge/deleteByFilter writes, ORM events and cache. Use when designing entities or reading and writing data via ORM.'
+description: 'Используй для D7 ORM Битрикса: DataManager, query(), объекты и коллекции, связи и пакетная запись. Правила событий, кеша и безопасной работы с данными. SQL без ORM — bitrix-database.'
 ---
 
-# Bitrix D7 ORM
+# D7 ORM Битрикса
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| Tablet, field types, ArrayField, data modifiers, relations, UF | `rules/tablet-map.md` |
-| `query()`, filters, runtime fields, DISTINCT, pagination | `rules/reading.md` |
-| Collections: save, remove, relations, find/filter, keys | `rules/collections.md` |
-| add/update/delete, batch, atomic increments, merge, deleteByFilter | `rules/writing.md` |
-| ORM events, query cache, user input in queries | `rules/events-cache-security.md` |
+| Таблет, типы полей, ArrayField, преобразователи, связи, UF | `rules/tablet-map.md` |
+| `query()`, фильтры, вычисляемые поля, DISTINCT, страницы | `rules/reading.md` |
+| Коллекции: сохранение, удаление из состава, связи, find/filter, ключи | `rules/collections.md` |
+| add/update/delete, пакеты, атомарное увеличение, merge, deleteByFilter | `rules/writing.md` |
+| События ORM, кеш запросов, пользовательский ввод | `rules/events-cache-security.md` |
 
-## Invariants
+## Обязательные правила
 
-- Namespace `Bitrix\Main\ORM\*`. `Bitrix\Main\Entity\*` is a legacy alias list (`main/include/compatibility.php`): don't write it in new code or mix both in one file.
-- Build queries with `XxxTable::query()`, never `new Query(XxxTable::getEntity())`: `query()` honours the tablet's `getQueryClass()`.
-- `add`/`update`/`delete`/`save()` run events and `cleanCache()`. `MergeTrait::merge()` and `deleteByFilter()` fire no events; raw SQL also leaves the cache stale.
-- A collection has no `delete()`; `remove()` only detaches in memory.
-- Never pass request data into `select`, `order`, `group`, `runtime` or `ExpressionField` without a whitelist.
+- Пространство имён `Bitrix\Main\ORM\*`. `Bitrix\Main\Entity\*` — устаревший список псевдонимов (`main/include/compatibility.php`): не используй его в новом коде и не смешивай оба в файле.
+- Строй запрос через `XxxTable::query()`, не `new Query(XxxTable::getEntity())`: `query()` учитывает `getQueryClass()` таблета.
+- `add`/`update`/`delete`/`save()` вызывают события и `cleanCache()`. `MergeTrait::merge()` и `deleteByFilter()` не вызывают события; прямой SQL также оставляет кеш устаревшим.
+- У коллекции нет `delete()`; `remove()` меняет только её состав в памяти.
+- Данные запроса не должны попадать в `select`, `order`, `group`, `runtime`, `ExpressionField` без разрешённого списка.

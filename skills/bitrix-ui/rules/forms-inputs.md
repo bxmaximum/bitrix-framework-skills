@@ -1,18 +1,18 @@
-# Forms and inputs
+# Формы и поля
 
-| Need | Use |
+| Задача | Использовать |
 | --- | --- |
-| Server-rendered `input`/`select`/`textarea` styling | `ui.forms` (CSS only, `ui-ctl*`) |
-| "label — value" form grid, collapsible blocks | `ui.layout-form` (CSS + `LayoutForm`; includes `ui.forms`) |
-| JS-built field with label, error, clear/copy icons, chips | `ui.system.input` → `Input`, `PasswordInput`, `InputSize`, `InputDesign` (**Since ui 26.200\***; older: `ui.forms` markup) |
-| Tag / chip | `ui.system.chip` → `Chip`, `ChipDesign`, `ChipSize` (**Since ui 26.200\***; older: `ui.label`) |
-| Single value from a fixed list | `ui.select` → `Select` + load `ui.forms` |
-| Color from a palette | `color_picker` (global `BX.ColorPicker`) |
-| Users / entities / server search | `ui.entity-selector` (`rules/selectors.md`) |
+| Стили серверных input/select/textarea | `ui.forms`, только CSS, ui-ctl* |
+| Сетка «подпись — значение», сворачиваемые блоки | `ui.layout-form`: CSS + LayoutForm, включает ui.forms |
+| JS-поле с подписью, ошибкой, очисткой / копированием, метками | `ui.system.input` → Input, PasswordInput, InputSize, InputDesign (**Since ui 26.200\***; раньше разметка ui.forms) |
+| Метка / chip | `ui.system.chip` → Chip, ChipDesign, ChipSize (**Since ui 26.200\***; раньше ui.label) |
+| Одно значение фиксированного списка | `ui.select` → Select, отдельно загрузи ui.forms |
+| Цвет из палитры | color_picker, глобальный BX.ColorPicker |
+| Пользователи, сущности, серверный поиск | ui.entity-selector (`rules/selectors.md`) |
 
-## `ui.forms` markup
+## Разметка ui.forms
 
-Wrapper `.ui-ctl` + element `.ui-ctl-element`; every modifier goes on the wrapper. There is nothing to import.
+Обёртка .ui-ctl, внутри .ui-ctl-element; модификаторы задавай обёртке. Импортировать нечего.
 
 ```html
 <div class="ui-ctl-container">
@@ -21,66 +21,66 @@ Wrapper `.ui-ctl` + element `.ui-ctl-element`; every modifier goes on the wrappe
         <div class="ui-ctl-after ui-ctl-icon-angle"></div>
         <select class="ui-ctl-element" name="STATUS"><option value="new">New</option></select>
     </div>
-    <div class="ui-ctl-bottom">Error or hint text</div>
+    <div class="ui-ctl-bottom">Ошибка либо подсказка</div>
 </div>
 ```
 
-- Size `ui-ctl-lg|md|sm|xs` (48/40/32/26 px); width `ui-ctl-w100|w75|w50|w33|w25`, `ui-ctl-wa` (auto).
-- Types: `ui-ctl-textarea` (+ `ui-ctl-no-resize`), `ui-ctl-checkbox|radio`, `ui-ctl-file-drop|file-btn|file-link` (`<label>` + hidden file input), `ui-ctl-multiple-select`, `ui-ctl-date|time|datetime` (no picker included).
-- Icons: element `ui-ctl-before|after` + wrapper padding `ui-ctl-before-icon|after-icon`; `ui-ctl-icon-search|clear|calendar|…`. Icons ignore clicks: a clickable one must be a `<button>` (`<button class="ui-ctl-after ui-ctl-icon-clear">`).
-- Errors: `--error` on `.ui-ctl-element`, `ui-ctl-warning` / `ui-ctl-success` on `.ui-ctl-container` (colors `.ui-ctl-bottom`). No validation logic: toggle classes yourself.
-- `ui-ctl-disabled` is visual only (value still submitted); add the `disabled` attribute to block it.
+- Размер ui-ctl-lg|md|sm|xs (48/40/32/26 px); ширина ui-ctl-w100|w75|w50|w33|w25, ui-ctl-wa — авто.
+- Типы: ui-ctl-textarea (+ ui-ctl-no-resize), ui-ctl-checkbox|radio, ui-ctl-file-drop|file-btn|file-link (label + скрытый input file), ui-ctl-multiple-select, ui-ctl-date|time|datetime (без виджета календаря).
+- Иконки: ui-ctl-before|after, отступ обёртки ui-ctl-before-icon|after-icon; ui-ctl-icon-search|clear|calendar|…. Иконки игнорируют нажатия: интерактивная должна быть button (`<button class="ui-ctl-after ui-ctl-icon-clear">`).
+- Ошибки: --error у .ui-ctl-element, ui-ctl-warning / ui-ctl-success у .ui-ctl-container (цвета .ui-ctl-bottom). Валидации нет, классы переключай сам.
+- ui-ctl-disabled меняет только вид, значение отправляется. Для блокировки добавь атрибут disabled.
 
 ## `ui.layout-form`
 
-`.ui-form` > `.ui-form-row` > `.ui-form-label` + `.ui-form-content`; `.ui-form-line` (all rows horizontal), `.ui-form-section`, `.ui-form-row-inline`. Hints in labels need `ui.hint` loaded separately.
+.ui-form > .ui-form-row > .ui-form-label + .ui-form-content; .ui-form-line — все строки горизонтально, .ui-form-section, .ui-form-row-inline. Подсказки подписей требуют отдельной загрузки ui.hint.
 
 ```js
 import { LayoutForm } from 'ui.layout-form';
 
-// markup: <div data-form-row-hidden><input type="checkbox" class="ui-ctl-element">…</div>
-//         <div class="ui-form-row-hidden">…collapsed rows…</div>   ← next sibling
-const form = new LayoutForm({ container: formNode }); // scans once; one instance per container
+// разметка: <div data-form-row-hidden><input type="checkbox" class="ui-ctl-element">…</div>
+//           <div class="ui-form-row-hidden">…скрытые строки…</div> — следующий соседний узел
+const form = new LayoutForm({ container: formNode }); // один обход; экземпляр на контейнер
 form.subscribe('onToggle', (event) => { const { checkbox } = event.getData(); syncDisabled(checkbox.checked); });
 ```
 
-The checkbox never fires `change` (clicks are intercepted): use `onToggle`. A control without a checkbox breaks init of all blocks. Collapsed fields are still submitted.
+Checkbox не вызывает change: нажатия перехвачены, используй onToggle. Контрол без checkbox ломает инициализацию всех блоков. Скрытые поля отправляются.
 
 ## `ui.system.input`
 
 ```js
 import { Input, InputSize } from 'ui.system.input';
 
-const input = new Input({ label: 'Title', value: order.title, size: InputSize.Md, withClear: true, onInput: () => {} });
+const input = new Input({ label: 'Заголовок', value: order.title, size: InputSize.Md, withClear: true, onInput: () => {} });
 container.append(input.render());
-input.setError('Required');       // getValue(), setValue(), focus(), destroy()
+input.setError('Обязательное поле'); // getValue(), setValue(), focus(), destroy()
 ```
 
-No `name` attribute: read `getValue()` or mirror into a hidden input before submit.
+Атрибута name нет: читай `getValue()` либо копируй в скрытый input перед отправкой.
 
 ## `ui.select`
 
 ```js
-import { Select } from 'ui.select'; // global BX.Ui.Select (lowercase "Ui")
+import { Select } from 'ui.select'; // глобальный BX.Ui.Select, Ui с маленькой i
 
-const select = new Select({ options: [{ label: 'New', value: 'new' }], value: 'new', isSearchable: true });
-select.renderTo(container);        // clears container
+const select = new Select({ options: [{ label: 'Новый', value: 'new' }], value: 'new', isSearchable: true });
+select.renderTo(container); // очищает контейнер
 select.subscribe('update', (event) => hidden.value = event.getData());
 ```
 
-Single select, no server loading, no `setOptions()`/`destroy()` (recreate). `update` also fires on every close with a selection: dedupe. No hidden `<input name>`.
+Одиночный выбор, без сервера, `setOptions()`/`destroy()` нет — пересоздай. update вызывается и при каждом закрытии с выбором: убирай повторы. Скрытого input name нет.
 
 ## `color_picker`
 
-Main core extension, global only (no `import`): `Extension::load('color_picker')`.
+Расширение main, только глобальный объект, без import: `Extension::load('color_picker')`.
 
 ```js
 const picker = new BX.ColorPicker({
     bindElement: button,
     selectedColor: '#2fc6f6',
-    onColorSelected: (color) => { input.value = color; }, // lowercase #rrggbb
+    onColorSelected: (color) => { input.value = color; }, // #rrggbb в нижнем регистре
 });
 picker.open();
 ```
 
-`popupOptions` are read only in the constructor. `colors: string[][]` sets the palette; `allowCustomColor: false, colorPreview: false` hide the bottom panel.
+popupOptions читаются в конструкторе. colors: string[][] задаёт палитру; allowCustomColor: false, colorPreview: false скрывают нижнюю панель.

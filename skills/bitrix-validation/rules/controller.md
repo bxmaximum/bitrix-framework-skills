@@ -1,6 +1,6 @@
-# Validating controller input
+# Проверка ввода контроллера
 
-## Rules on action params (**Since main 26.250\***)
+## Правила параметров действий (**Since main 26.250\***)
 
 ```php
 use Bitrix\Main\Engine\Controller;
@@ -16,12 +16,12 @@ final class User extends Controller
 }
 ```
 
-- The binder validates before the call (`ValidationChecker`). Only the first failed rule is reported, as one error: `Invalid value to match parameter: [<param>] <message>.`. Use a DTO when the client needs per-field errors.
-- On 25.x the rule attributes target properties only, so on a parameter they are ignored without any error. Check the kernel version or validate a DTO.
+- Привязчик проверяет до вызова (`ValidationChecker`). Сообщает только первое нарушенное правило одной ошибкой: `Invalid value to match parameter: [<param>] <message>.`. Для ошибок по полям используй DTO.
+- На 25.x атрибуты правил применимы только к свойствам: на параметре игнорируются без ошибки. Проверь версию ядра либо проверяй DTO.
 
-## Request DTO via `ValidationParameter` (24.300+)
+## DTO запроса через `ValidationParameter` (24.300+)
 
-`Bitrix\Main\Validation\Engine\AutoWire\ValidationParameter` is an AutoWire `Parameter`: it builds the object with your closure, validates it, and on failure the action is not called and all errors are returned.
+`Bitrix\Main\Validation\Engine\AutoWire\ValidationParameter` — AutoWire `Parameter`: создаёт объект твоим замыканием, проверяет его; при отказе действие не вызывается, возвращаются все ошибки.
 
 ```php
 use Bitrix\Main\Engine\Controller;
@@ -41,7 +41,7 @@ final class Post extends Controller
 
     public function createAction(CreatePostRequest $request, PostService $posts): ?array
     {
-        $result = $posts->create($request); // reached only when valid
+        $result = $posts->create($request); // только после успешной проверки
         if (!$result->isSuccess())
         {
             $this->addErrors($result->getErrors());
@@ -75,9 +75,9 @@ final class CreatePostRequest
 }
 ```
 
-- Pick the source explicitly: form `getPostList()`, JSON body `getJsonList()` (not part of `get()`/`getPost()`).
-- Generate the skeleton: `php bitrix/bitrix.php make:request CreatePost -m vendor.blog --fields=title,body` (**Since main 25.900**).
+- Выбирай источник явно: форма `getPostList()`, тело JSON `getJsonList()` (не входит в `get()`/`getPost()`).
+- Каркас: `php bitrix/bitrix.php make:request CreatePost -m vendor.blog --fields=title,body` (**Since main 25.900**).
 
-## Errors from deeper layers
+## Ошибки нижних слоёв
 
-A service may `throw new \Bitrix\Main\Validation\ValidationException($validation->getErrors())`: the controller adds each error to the response (**Since main 26.250\***). On older kernels, return a `Result` and `addErrors()` it.
+Сервис может выбросить `new \Bitrix\Main\Validation\ValidationException($validation->getErrors())`: контроллер добавит каждую ошибку в ответ (**Since main 26.250\***). На старом ядре верни `Result` и передай его ошибки в `addErrors()`.

@@ -1,38 +1,38 @@
-# On-premise (box) specifics
+# Особенности коробки
 
-Same API as the cloud; the differences are versions, network and limits.
+Контракты облака применимы только к методам, имеющимся в конкретной коробке. Различаются версии, сеть и лимиты.
 
-## Where REST lives
+## Размещение REST
 
-- Module `rest`. `urlrewrite.php` maps `#^/rest/#` to `/bitrix/services/rest/index.php` (component `bitrix:rest.server`). Base path: option `rest` / `rest_server_path`, default `/rest`.
-- Webhooks and local apps: *Developer resources* at `/devops/`.
-- Webhooks require HTTPS: `Bitrix\Rest\APAuth\Auth` returns `INVALID_REQUEST` (`Https required.`) unless the constant `REST_APAUTH_ALLOW_HTTP` is defined. Define it only on a local dev stand. Behind a TLS-terminating proxy, make sure the request is seen as HTTPS.
-- Without module `bitrix24` (every box), plan checks are off: `Bitrix\Rest\Engine\Access::isFeatureEnabled()` returns `true`, and `FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN` never appears.
+- Модуль `rest`. `urlrewrite.php` направляет `#^/rest/#` в `/bitrix/services/rest/index.php`, компонент `bitrix:rest.server`. База: опция `rest/rest_server_path`, по умолчанию `/rest`.
+- Вебхуки/локальные приложения: «Ресурсы разработчика», `/devops/`.
+- `Bitrix\Rest\APAuth\Auth` требует HTTPS и отвечает `INVALID_REQUEST` (`Https required.`), если не определена `REST_APAUTH_ALLOW_HTTP`. Допускай константу только на локальном стенде. За TLS-прокси ядро должно видеть запрос как HTTPS.
+- В коробке без `bitrix24` облачные тарифные проверки не действуют: `Bitrix\Rest\Engine\Access::isFeatureEnabled()` возвращает `true`. Это не отменяет проверку пользовательских прав и доступности модулей.
 
-## Versions lag the cloud
+## Версии отстают от облака
 
-- Box updates ship after the cloud, and each box has its own module set and versions. Do not assume a method or event exists.
-- At install time check with `methods` / `method.get` (lower-case name) and `events`. If something is missing, tell the admin the module and the minimum version (*Settings > Product Settings > Modules*).
-- REST 3.0 needs rest 26.200+ and a V3-enabled version of the target module: check `rest.documentation.openapi` (`rules/rest-v3.md`).
+- У каждой коробки свой набор/версии модулей; обновления выходят после облака. Наличие метода/события проверяй отдельно.
+- При установке проверяй `methods`/`method.get` (имя в нижнем регистре) и `events`. При отсутствии API сообщи администратору модуль и минимальную подтверждённую версию («Настройки → Настройки продукта → Модули»).
+- REST 3.0 требует rest 26.200+ и поддержки V3 целевым модулем; проверяй `rest.documentation.openapi` (`rules/rest-v3.md`).
 
-## Authorization server and network
+## Сервер авторизации и сеть
 
-- The box validates app tokens against the authorization server: `oauth.bitrix24.tech` for RU/CIS license regions, `oauth.bitrix.info` otherwise (`Bitrix\Rest\Internal\Service\OAuth\AuthorizationServerUrlResolver`; option `rest` / `oauth_server` overrides, constant `BITRIX_OAUTH_URL` wins over both). Apps refresh tokens directly on that server (`rules/auth.md`).
-- Box outbound: the authorization server (install, tokens, events), `*.bitrixsoft.com` (Developer resources, app catalog). If these are closed, apps do not install and events do not arrive.
-- App server inbound: events and outbound webhooks come from Bitrix24 queue servers (`mp_actions-*`), not from the box. Build firewall rules from `https://dl.bitrix24.com/webhook/app-world.json` (`nodes`), refreshed every 5–10 min, not more than once a minute.
-- App server outbound: the box URL (REST calls) and the authorization server.
-- Outbound webhooks on a box need an active license; they do not work in demo mode.
-- Fully isolated box (no external access): a custom auth validator (event `rest` / `OnRestCheckAuth`) plus custom event and auth providers in a `/local/modules` module (docs: "Application Authorization in Isolated Bitrix24 Box"). That drops the authorization server and makes security your job; last resort. Server-side REST extension: `bitrix-rest`.
+- Токены приложения проверяются сервером авторизации: `oauth.bitrix24.tech` для RU/СНГ, иначе `oauth.bitrix.info` (`Bitrix\Rest\Internal\Service\OAuth\AuthorizationServerUrlResolver`). Опция `rest/oauth_server` перекрывает выбор региона; `BITRIX_OAUTH_URL` приоритетнее обоих. Обновляй токены прямо на этом сервере (`rules/auth.md`).
+- Исходящий доступ коробки: сервер авторизации (установка, токены, события), `*.bitrixsoft.com` (ресурсы разработчика, каталог приложений). Без доступа приложения не устанавливаются, события не доставляются.
+- Входящий доступ сервера приложения: события/вебхуки идут с серверов очередей Битрикс24 (`mp_actions-*`), не из коробки. Адреса бери из `nodes` файла `https://dl.bitrix24.com/webhook/app-world.json`, обновляя раз в 5–10 минут, не чаще раза в минуту.
+- Исходящий доступ приложения: URL коробки для REST и сервер авторизации.
+- Исходящему вебхуку коробки нужна активная лицензия; деморежим не поддерживается.
+- Полностью изолированной коробке нужны свой валидатор `rest/OnRestCheckAuth` и провайдеры событий/авторизации в `/local/modules` (официальная статья об авторизации приложений в изолированной коробке). Это замена сервера авторизации с собственной ответственностью за безопасность; используй только при необходимости. Серверные расширения: `bitrix-rest`.
 
-## Limits
+## Лимиты
 
-- No request-rate limit (`QUERY_LIMIT_EXCEEDED` is cloud infrastructure; it is not in the box kernel).
-- Method-time limiter `Bitrix\Rest\Engine\Access\LoadLimiter` is off by default. Options in module `rest`: `load_limiter_active` (`Y` to enable), `load_limiter_second_limit` (default 420 s per 10 min), `load_limiter_connection_name` (a cache connection from `.settings.php` `connections`, for example Redis). When it trips: `OPERATION_TIME_LIMIT` (429).
-- Execution time is capped only by PHP and web-server timeouts. Keep calls short anyway: the same code may run against the cloud.
+- `QUERY_LIMIT_EXCEEDED` относится к инфраструктуре облака; такого ограничителя частоты в ядре коробки нет.
+- `Bitrix\Rest\Engine\Access\LoadLimiter` выключен по умолчанию. Опции `rest`: `load_limiter_active=Y`, `load_limiter_second_limit` (420 секунд за 10 минут), `load_limiter_connection_name` (соединение кеша из `.settings.php/connections`, например Redis). Отказ: `OPERATION_TIME_LIMIT` (429).
+- Полное время запроса зависит от PHP/веб-сервера и включённых лимитеров. Сохраняй короткие вызовы для совместимости с облаком.
 
-## Checklist
+## Проверка
 
-- [ ] Required methods and events checked on the target box at install (`method.get`, `events`).
-- [ ] Box can reach the authorization server; app server accepts the `app-world.json` nodes.
-- [ ] Tokens refreshed on the authorization server from `server_endpoint`, not via the box.
-- [ ] HTTPS end to end; `REST_APAUTH_ALLOW_HTTP` absent on production.
+- [ ] Методы/события проверены на целевой коробке при установке (`method.get`, `events`).
+- [ ] Коробка видит сервер авторизации; сервер приложения принимает узлы `app-world.json`.
+- [ ] Токены обновляются на адресе из `server_endpoint`, без проксирования через коробку.
+- [ ] Работает HTTPS; на production нет `REST_APAUTH_ALLOW_HTTP`.

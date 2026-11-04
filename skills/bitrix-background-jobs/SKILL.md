@@ -1,25 +1,28 @@
 ---
 name: bitrix-background-jobs
-description: 'Deferred and async work in Bitrix — CAgent agents and cron, Application::addBackgroundJob, Messenger queues (messages, receivers, brokers, messenger:consume). Use when moving work out of the request or scheduling it.'
+description: 'Используй для отложенной работы Битрикса: агенты CAgent, cron, Application::addBackgroundJob после ответа и очереди Messenger (messenger:consume). Выбор механизма, повторы и ошибки.'
 ---
 
-# Background jobs
+# Фоновые задания
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| Periodic or delayed task, agents on cron, long agents | `rules/agents.md` |
-| Short tail work after the response | `rules/background-job.md` |
-| Queue: message, receiver, dispatch, retries | `rules/messenger.md` |
-| Queue config, brokers, `messenger:consume`, kernel queues | `rules/messenger-config.md` |
+| Периодическое или отложенное задание, агенты на cron, долгие агенты | `rules/agents.md` |
+| Короткая работа после ответа | `rules/background-job.md` |
+| Очередь: сообщение, получатель, отправка, повторы | `rules/messenger.md` |
+| Настройки очередей, брокеры, `messenger:consume`, очереди ядра | `rules/messenger-config.md` |
 
-Pick: schedule → agent (on cron); seconds of work after the response → `addBackgroundJob`; retries, volume, parallel workers → Messenger (**Since main 25.100.300**, alpha); one-off long migration → console command (`bitrix-console-commands`).
+Выбор: расписание → агент на cron; несколько секунд после ответа → `addBackgroundJob`; повторы, объём, параллельные исполнители → Messenger (**Since main 25.100.300**, альфа); разовая долгая миграция → консольная команда (`bitrix-console-commands`).
 
-## Invariants
+## Обязательные правила
 
-- Background code has no user context: agents and receivers set `global $USER = null`; no `$_SESSION`/cookies. Pass user/site IDs explicitly.
-- On hits, agents, `web`-mode Messenger and `addBackgroundJob()` run after the response is sent, after `OnAfterEpilog` and `session_write_close()`, with the DB pool forced to master.
-- Keep job code thin: resolve a service via `ServiceLocator::getInstance()->get()` and call it (no constructor DI in agents — `bitrix-framework`).
-- Jobs must be idempotent: agents can run twice in parallel, messages can be redelivered.
-- Log failures through a PSR-3 logger (`bitrix-logger`); remove your agents on module uninstall.
+- Фоновый код не имеет контекста пользователя: агенты и получатели устанавливают `global $USER = null`; не используй `$_SESSION`/cookies. Передавай ID пользователя/сайта явно.
+- На хитах агенты, Messenger в режиме `web` и `addBackgroundJob()` выполняются после отправки ответа, `OnAfterEpilog` и `session_write_close()`, с пулом БД, переключённым на master.
+- Код задания только получает сервис через `ServiceLocator::getInstance()->get()` и вызывает его (DI конструктора агента недоступен — `bitrix-framework`).
+- Задания должны быть идемпотентными: агент может запуститься параллельно дважды, сообщение может прийти повторно.
+- Ошибки записывай через PSR-3 (`bitrix-logger`); свои агенты удаляй при удалении модуля.

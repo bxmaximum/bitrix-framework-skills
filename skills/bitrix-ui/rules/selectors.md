@@ -1,15 +1,15 @@
-# Selectors: `ui.entity-selector`, `ui.entity-catalog`
+# Селекторы: ui.entity-selector, ui.entity-catalog
 
-## Entity selector
+## Выбор сущности
 
-`import { Dialog, TagSelector } from 'ui.entity-selector'` (global `BX.UI.EntitySelector`). `Dialog` is a popup picker, `TagSelector` a field showing selected items as tags. An item is identified by `entityId` + `id`; a local item needs `{ id, entityId, title }`.
+Dialog и TagSelector из ui.entity-selector, глобальный BX.UI.EntitySelector. Dialog — всплывающий выбор; TagSelector — поле выбранных тегов. Идентификатор: entityId + id; локальной записи нужны `{ id, entityId, title }`.
 
 ```js
 import { Dialog } from 'ui.entity-selector';
 
 const dialog = new Dialog({
-    targetNode: button,                 // existing DOM node
-    context: 'VENDOR_ORDER_RESPONSIBLE', // own context per field: recent items don't mix
+    targetNode: button,                 // существующий узел DOM
+    context: 'VENDOR_ORDER_RESPONSIBLE', // отдельный контекст поля, чтобы не смешивать недавние
     multiple: false,
     entities: [{ id: 'user' }, { id: 'project', dynamicLoad: true, dynamicSearch: true }],
     events: { 'Item:onSelect': (event) => { const { item } = event.getData(); setValue(item.getId()); } },
@@ -17,12 +17,12 @@ const dialog = new Dialog({
 button.addEventListener('click', () => dialog.show());
 ```
 
-- `TagSelector`: `new TagSelector({ multiple: true, dialogOptions: { ...same as Dialog } })`, then `selector.renderTo(container)`; `dialogOptions.preselectedItems: [['user', 1]]` loads selected items from the server.
-- Entity ids come from module `.settings.php` key `ui.entity-selector` (iblock: `iblock-element`; catalog: `product`, `store`; Bitrix24 modules: `user`, `department`, `project`, `meta-user`, …). Check the module's file for the exact id.
-- `dynamicLoad` / `dynamicSearch` work only with a registered, available PHP provider.
-- In `main.ui.filter`: field type `entity_selector` with `params.dialogOptions` (`rules/grid-filter.md`).
+- `new TagSelector({ multiple: true, dialogOptions: { ...dialogOptions } })`, затем selector.renderTo(container). dialogOptions.preselectedItems: [['user', 1]] загружает выбранные записи с сервера.
+- ID сущностей заданы в ui.entity-selector файла .settings.php модуля: iblock — iblock-element; catalog — product, store; Битрикс24 — user, department, project, meta-user, …. Точный ID проверь в файле модуля.
+- dynamicLoad / dynamicSearch работают только с зарегистрированным доступным PHP-поставщиком.
+- В main.ui.filter: тип entity_selector, params.dialogOptions (`rules/grid-filter.md`).
 
-### Custom provider
+### Свой поставщик
 
 ```php
 namespace Vendor\Orders\Integration\UI\EntitySelector;
@@ -35,7 +35,7 @@ use Bitrix\UI\EntitySelector\SearchQuery;
 
 final class ProjectProvider extends BaseProvider
 {
-    public function __construct(array $options = []) // must be public: created via newInstance($options)
+    public function __construct(array $options = []) // публичный: создаётся через newInstance($options)
     {
         parent::__construct();
         $this->options['onlyActive'] = (bool)($options['onlyActive'] ?? true);
@@ -43,7 +43,7 @@ final class ProjectProvider extends BaseProvider
 
     public function isAvailable(): bool
     {
-        return CurrentUser::get()->getId() > 0; // real rights check here
+        return CurrentUser::get()->getId() > 0; // здесь нужна проверка реальных прав
     }
 
     public function getItems(array $ids): array
@@ -69,12 +69,12 @@ final class ProjectProvider extends BaseProvider
 
     private function load(array $filter, int $limit = 0): array
     {
-        return []; // ORM query with rights filter
+        return []; // ORM-запрос с фильтром прав
     }
 }
 ```
 
-Register in the module `.settings.php`:
+Регистрация в .settings.php модуля:
 
 ```php
 'ui.entity-selector' => [
@@ -88,27 +88,27 @@ Register in the module `.settings.php`:
 ],
 ```
 
-JS `entities[].id` must equal `entityId`. The provider is the only access check: filter by rights in `getItems()`, `fillDialog()`, `doSearch()`.
+JS entities[].id должен равняться entityId. Поставщик — единственная проверка доступа: фильтруй по правам в `getItems()`, fillDialog(), doSearch().
 
-## Entity catalog
+## Каталог сущностей
 
-Popup picker over a grouped catalog (templates, robots). Vue 3 app. `import { EntityCatalog } from 'ui.entity-catalog'` (global `BX.UI.EntityCatalog`); or lazy `const { EntityCatalog } = await Runtime.loadExtension('ui.entity-catalog')`.
+Всплывающий выбор из группированного каталога (шаблоны, роботы), приложение Vue 3. `import { EntityCatalog } from 'ui.entity-catalog'`, глобальный BX.UI.EntityCatalog; отложенно — `const { EntityCatalog } = await Runtime.loadExtension('ui.entity-catalog')`.
 
 ```js
 const catalog = new EntityCatalog({
-    title: 'Add a block',                       // escaped
+    title: 'Добавить блок', // экранируется
     showSearch: true,
-    groups: [{ id: 'docs', name: 'Documents', selected: true }],
-    items: [{ id: 'invoice', title: 'Invoice', groupIds: ['docs'], button: {
-        text: 'Add',
-        action: (event) => { addBlock(event.getData().eventData.id); catalog.close(); }, // stays open otherwise
+    groups: [{ id: 'docs', name: 'Документы', selected: true }],
+    items: [{ id: 'invoice', title: 'Счёт', groupIds: ['docs'], button: {
+        text: 'Добавить',
+        action: (event) => { addBlock(event.getData().eventData.id); catalog.close(); }, // иначе остаётся открытым
     } }],
 });
 catalog.show();
 ```
 
-- Group `icon` is raw HTML and `slots` are Vue template strings compiled unescaped: never build them from user or server data.
-- `close()` destroys the popup with its subscriptions: pass `popupOptions.events` or re-subscribe after each `show()`.
-- `setItems()` does not redraw the open group; `updateItemById(id, patch)` and `updateGroupCounter(groupId, n)` do (**Since ui 26.200\***; older: recreate the catalog).
-- Search: title/description substring + exact tag match. Filters: `filterOptions: { filterItems: [{ id, text, action: (item) => bool }], multiple }`.
-- `disabled` / `locked` are visual only: check again inside `action`.
+- icon группы — сырой HTML; slots — строки шаблонов Vue, компилируемые без экранирования. Не собирай из данных пользователя / сервера.
+- close() уничтожает окно и подписки: передавай popupOptions.events либо подписывайся после каждого `show()`.
+- `setItems()` не перерисовывает открытую группу; updateItemById(id, patch), updateGroupCounter(groupId, n) перерисовывают (**Since ui 26.200\***; раньше пересоздавай каталог).
+- Поиск: подстрока title/description, точный тег. Фильтры: `filterOptions: { filterItems: [{ id, text, action: (item) => bool }], multiple }`.
+- disabled / locked меняют только вид: проверяй снова в action.

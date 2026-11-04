@@ -1,45 +1,45 @@
 # HttpRequest
 
-`$this->getRequest()` in controllers, `Context::getCurrent()->getRequest()` elsewhere.
+В контроллере используй `$this->getRequest()`, вне его — `Context::getCurrent()->getRequest()`.
 
-| Source | API |
+| Источник | API |
 | --- | --- |
-| Query string | `getQuery('id')` / `getQueryList()` |
-| Form body | `getPost('body')` / `getPostList()` |
-| Uploaded files | `getFile('upload')` / `getFileList()` |
-| Header | `getHeader('X-Auth-Token')` / `getHeaders()` |
-| Cookie (prefix stripped, decrypted) | `getCookie('guest_id')` / `getCookieList()`; raw: `getCookieRaw()` |
-| Query + form merged | `get('id')`, `$request['id']` — only if the source truly doesn't matter |
+| Строка запроса | `getQuery('id')` / `getQueryList()` |
+| Тело формы | `getPost('body')` / `getPostList()` |
+| Загруженные файлы | `getFile('upload')` / `getFileList()` |
+| Заголовок | `getHeader('X-Auth-Token')` / `getHeaders()` |
+| Cookie без префикса, расшифрованный | `getCookie('guest_id')` / `getCookieList()`; исходный: `getCookieRaw()` |
+| Объединённые строка запроса и форма | `get('id')`, `$request['id']` — только когда источник действительно не важен |
 
 ```php
 $request = Context::getCurrent()->getRequest();
 
 $id = (int)$request->getQuery('id');
 $body = (string)$request->getPost('body');
-$file = $request->getFile('upload'); // $_FILES-style array or null
+$file = $request->getFile('upload'); // массив формата $_FILES либо null
 ```
 
-- Values pass through system filters (proactive protection). That is not SQL/XSS protection: cast, validate, escape.
-- `getPostList()`/`getQueryList()` return `ParameterDictionary`: `get()`, `getRaw()` (before filters), `getValues()`, `isEmpty()`, array access.
-- Typed input for controllers: action params or a Request DTO (`bitrix-validation`).
+- Значения проходят системные фильтры (проактивная защита). Это не защита от SQL/XSS: приводи типы, проверяй и экранируй.
+- `getPostList()`/`getQueryList()` возвращают `ParameterDictionary`: `get()`, `getRaw()` (до фильтров), `getValues()`, `isEmpty()`, доступ как к массиву.
+- Типизированный ввод контроллеров: параметры действия или DTO запроса (`bitrix-validation`).
 
-## JSON body
+## Тело JSON
 
-`application/json` bodies are decoded at start into a separate list. They are not in `get()`/`getPost()` and are not bound to controller action params, except in `JsonController` (its `ContentType([JSON])` prefilter adds the top-level keys).
+Тело `application/json` разбирается при старте в отдельный список. Не входит в `get()`/`getPost()` и не связывается с параметрами действия, кроме `JsonController`: его фильтр `ContentType([JSON])` добавляет ключи верхнего уровня.
 
-| Need | API |
+| Задача | API |
 | --- | --- |
-| Controller action | `JsonPayload $payload` param → `$payload->getData()`; `JsonController` enforces the content type and binds top-level keys by name |
-| Decoded body | `isJson()` + `getJsonList()` |
-| Must be valid JSON | `decodeJsonStrict()` (throws `SystemException`) |
-| Raw body | `HttpRequest::getInput()` |
+| Действие контроллера | Параметр `JsonPayload $payload` → `$payload->getData()`; `JsonController` требует тип содержимого и связывает ключи верхнего уровня по имени |
+| Разобранное тело | `isJson()` + `getJsonList()` |
+| Обязательный корректный JSON | `decodeJsonStrict()` (выбрасывает `SystemException`) |
+| Исходное тело | `HttpRequest::getInput()` |
 
-No `json_decode(file_get_contents('php://input'))`.
+Не используй `json_decode(file_get_contents('php://input'))`.
 
-## Request info
+## Сведения о запросе
 
 ```php
-$request->getRequestMethod();   // 'GET', 'PUT'… (no isGet()/isPut()/isDelete())
+$request->getRequestMethod();   // 'GET', 'PUT'… (методов isGet()/isPut()/isDelete() нет)
 $request->isPost();
 $request->isAjaxRequest();      // X-Requested-With: XMLHttpRequest
 $request->isHttps();
@@ -53,4 +53,4 @@ $request->getUserAgent();
 $request->getAcceptedLanguages();
 ```
 
-Server values: `Context::getCurrent()->getServer()` → `get('REMOTE_ADDR')`, `getDocumentRoot()`, `getHttpHost()`.
+Значения сервера: `Context::getCurrent()->getServer()` → `get('REMOTE_ADDR')`, `getDocumentRoot()`, `getHttpHost()`.

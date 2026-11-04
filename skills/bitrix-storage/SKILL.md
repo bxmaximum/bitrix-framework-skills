@@ -1,44 +1,46 @@
 ---
 name: bitrix-storage
-description: 'Where to keep state in Bitrix — Config\Option module settings, Config\Feature feature flags, PersistentStorageInterface TTL storage, DeferredStorageDecorator vs cache and session. Use when storing settings, toggles or temporary server state.'
+description: 'Используй для хранения состояния Битрикса: Config\Option, флаги Config\Feature и временные данные PersistentStorage. Выбор между БД, кешем и сессией.'
 ---
 
-# Storage: Option, Feature, Persistent storage
+# Хранение: Option, Feature и данные с TTL
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Need | Use |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+
+| Задача | Использовать |
 | --- | --- |
-| Deploy-time config, secrets | `.settings_extra.php` / env (`bitrix-settings`) |
-| Permanent admin-editable module setting | `Config\Option` + `default_option.php` |
-| Feature toggle, gradual rollout per user | `Config\Feature` (**Since main 26.700**); older: `Option` `Y`/`N` |
-| Server state that must live N seconds | `PersistentStorageInterface` (**Since main 25.1100**); older: own ORM table with an expiry column |
-| Derived data, may vanish anytime | cache (`bitrix-caching`) |
-| Per-visitor state | session (`bitrix-sessions`) |
-| Large blobs | files (`bitrix-files`) |
+| Конфигурация развёртывания и секреты | `.settings_extra.php` / env (`bitrix-settings`) |
+| Постоянная настройка модуля, редактируемая администратором | `Config\Option` + `default_option.php` |
+| Флаг возможности, постепенное включение по пользователям | `Config\Feature` (**Since main 26.700**); раньше `Option` `Y`/`N` |
+| Серверное состояние на N секунд | `PersistentStorageInterface` (**Since main 25.1100**); раньше своя ORM-таблица со сроком действия |
+| Производные данные, которые можно потерять | Кеш (`bitrix-caching`) |
+| Состояние посетителя | Сессия (`bitrix-sessions`) |
+| Большие двоичные данные | Файлы (`bitrix-files`) |
 
-Don't use `Option` for chatty runtime state (progress, tokens, checkpoints), cache for data that must survive, or Persistent storage for secrets.
+Не используй `Option` для частых изменений прогресса, токенов и контрольных точек; кеш — для обязательного сохранения данных; Persistent storage — для секретов.
 
 ## Option
 
 ```php
 use Bitrix\Main\Config\Option;
 
-$interval = (int)Option::get('vendor.module', 'sync_interval');   // falls back to default_option.php
+$interval = (int)Option::get('vendor.module', 'sync_interval');   // запасное значение из default_option.php
 Option::set('vendor.module', 'sync_interval', (string)$interval);
-$stored = Option::getRealValue('vendor.module', 'sync_interval'); // null if never stored
+$stored = Option::getRealValue('vendor.module', 'sync_interval'); // null, если никогда не сохранялось
 $all = Option::getForModule('vendor.module');
-Option::delete('vendor.module', ['name' => 'sync_interval']);   // no filter = all module options
+Option::delete('vendor.module', ['name' => 'sync_interval']);   // без фильтра удаляет все настройки модуля
 ```
 
-- Values are strings; cast at the boundary. Defaults: `bitrix-modules` (`default_option.php`).
-- Site override: pass `$siteId`; empty site = global.
-- `set()` clears the options cache, runs `option_triggers.php`, fires `OnAfterSetOption_<name>` / `OnAfterSetOption` — not for per-hit writes.
-- Distinguish "unset" from default: `getRealValue()` or a sentinel default (`Option::get('main', 'x', 'Z')`).
+- Значения — строки: приводи типы на границе. Значения по умолчанию: `bitrix-modules` (`default_option.php`).
+- Для значения по сайту передавай `$siteId`; пустой сайт означает глобальное значение.
+- `set()` очищает кеш настроек, запускает `option_triggers.php`, отправляет `OnAfterSetOption_<name>` / `OnAfterSetOption`. Не подходит для записи на каждом хите.
+- Отличай отсутствие записи от значения по умолчанию: `getRealValue()` или сигнальное значение (`Option::get('main', 'x', 'Z')`).
 
-## Feature flags — **Since main 26.700**
+## Флаги возможностей (**Since main 26.700**)
 
-A flag is a class in your module's `lib/` (the module is derived from the namespace: `Vendor\Shop\…` → `vendor.shop`):
+Флаг — класс в `lib/` своего модуля (модуль определяется по пространству имён: `Vendor\Shop\…` → `vendor.shop`):
 
 ```php
 namespace Vendor\Shop\Config\Feature;
@@ -55,7 +57,7 @@ final class NewCheckoutFlag extends AbstractFlag
 
     public function getRequirements(): array
     {
-        return [static fn (Context $context): bool => $context->userId !== null]; // all must pass
+        return [static fn (Context $context): bool => $context->userId !== null]; // должны пройти все требования
     }
 }
 ```
@@ -64,28 +66,28 @@ final class NewCheckoutFlag extends AbstractFlag
 use Bitrix\Main\Config\Feature;
 use Bitrix\Main\Config\Feature\Rules\UserIdRule;
 
-if (Feature::isEnabled(NewCheckoutFlag::class)) { /* new flow */ }
-Feature::allow(NewCheckoutFlag::class, UserIdRule::class, ['userIds' => [1, 42]]); // beta users
-Feature::enable(NewCheckoutFlag::class);          // everyone; stored in b_feature_flag
-Feature::resetToDefault(NewCheckoutFlag::class);  // rules stay: clearRules()
+if (Feature::isEnabled(NewCheckoutFlag::class)) { /* новый сценарий */ }
+Feature::allow(NewCheckoutFlag::class, UserIdRule::class, ['userIds' => [1, 42]]); // тестовые пользователи
+Feature::enable(NewCheckoutFlag::class);          // для всех; хранится в b_feature_flag
+Feature::resetToDefault(NewCheckoutFlag::class);  // правила остаются: clearRules()
 ```
 
-- Decision order: requirements → `deny` rules → `allow` rules → stored value → `enabledByDefault()`.
-- Rules: `UserIdRule` (`userIds`), `ModuleMinVersionRule` (`module`, `minVersion`); own rule extends `AbstractRule` (`static createFromConfig(array $config)`, `check(Context $context): bool`).
-- Context: current user by default; `new Context(?int $userId = null, array $params = [])`, IDs < 1 = anonymous.
-- Pitfalls: an unknown/unloadable flag class returns **true** ("shipped and removed"); `enable()`/`disable()` silently do nothing if the namespace's module is not installed — never define flags in `php_interface`. Values and rules are cached 24 h; after direct table edits call `Feature::clearCache()`. `onEnable()`/`onDisable()` fire only on a real stored change.
+- Порядок решения: требования → правила `deny` → правила `allow` → сохранённое значение → `enabledByDefault()`.
+- Правила: `UserIdRule` (`userIds`), `ModuleMinVersionRule` (`module`, `minVersion`); своё наследует `AbstractRule` (`static createFromConfig(array $config)`, `check(Context $context): bool`).
+- Контекст: текущий пользователь по умолчанию; `new Context(?int $userId = null, array $params = [])`; ID < 1 означает гостя.
+- Неизвестный/незагружаемый класс флага возвращает **true** («поставлен и удалён»); `enable()`/`disable()` молча пропускаются, если модуль пространства имён не установлен. Не определяй флаги в `php_interface`. Значения и правила кешируются 24 часа; после прямых изменений таблиц вызывай `Feature::clearCache()`. `onEnable()`/`onDisable()` срабатывают только при реальном изменении сохранённого значения.
 
-## Persistent storage — **Since main 25.1100**
+## Постоянное хранилище с TTL (**Since main 25.1100**)
 
 ```php
 $storage = \Bitrix\Main\DI\ServiceLocator::getInstance()
     ->get(\Bitrix\Main\Data\Storage\PersistentStorageInterface::class);
 
-$storage->set('vendor.module.import.42', ['step' => 3], 3600); // TTL required
-$state = $storage->get('vendor.module.import.42');              // null after expiry
+$storage->set('vendor.module.import.42', ['step' => 3], 3600); // TTL обязателен
+$state = $storage->get('vendor.module.import.42');              // null после истечения
 $storage->delete('vendor.module.import.42');
 ```
 
-- PSR-16 API; DB-backed (`ConnectionBasedPersistentStorage`). Key ≤ 255 chars (`module.feature.id`), JSON-serializable value.
-- TTL: positive `int` seconds or `DateInterval`; `null`/`≤ 0` → `InvalidTtlException`. Keep ≤ 7 days. `clear()` is not supported.
-- `new DeferredStorageDecorator($storage)` buffers writes until `save()` or destruction — many writes per hit, loss on crash acceptable.
+- API PSR-16 с БД (`ConnectionBasedPersistentStorage`). Ключ до 255 символов (`module.feature.id`), значение сериализуемо в JSON.
+- TTL: положительное число секунд `int` или `DateInterval`; `null`/`≤ 0` вызывает `InvalidTtlException`. Ограничивай семью днями. `clear()` не поддерживается.
+- `new DeferredStorageDecorator($storage)` откладывает записи до `save()` или уничтожения: для множества записей за хит, когда потеря при сбое допустима.

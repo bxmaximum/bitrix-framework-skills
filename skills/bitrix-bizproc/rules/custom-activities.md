@@ -1,18 +1,18 @@
-# Custom activities
+# Свои действия
 
-Search order (`Bitrix\Bizproc\Runtime\ActivitySearcher\Searcher`): `/local/activities`, `/local/activities/custom`, `/bitrix/activities/custom`, `/bitrix/activities/bitrix`, `/bitrix/modules/bizproc/activities`. Discovery is a folder scan; nothing goes into `.settings.php`.
+Порядок поиска (`Bitrix\Bizproc\Runtime\ActivitySearcher\Searcher`): `/local/activities`, `/local/activities/custom`, `/bitrix/activities/custom`, `/bitrix/activities/bitrix`, `/bitrix/modules/bizproc/activities`. Система сканирует каталоги; регистрация в `.settings.php` не нужна.
 
 ```
 /local/activities/vendorapprove/
-├── .description.php     # ActivityDescription
-├── vendorapprove.php    # class CBPVendorApprove extends CBPActivity
-├── properties_dialog.php  # optional designer form
+├── .description.php       # описание ActivityDescription
+├── vendorapprove.php      # класс CBPVendorApprove extends CBPActivity
+├── properties_dialog.php  # необязательная форма дизайнера
 └── lang/ru/*.php
 ```
 
-## .description.php
+## Описание .description.php
 
-Pattern of `bizproc/install/activities/bitrix/delayactivity/.description.php`:
+Образец: `bizproc/install/activities/bitrix/delayactivity/.description.php`:
 
 ```php
 <?php
@@ -27,18 +27,18 @@ $arActivityDescription = (new ActivityDescription(
     description: Loc::getMessage('VENDOR_APPROVE_DESCR'),
     type: [ActivityType::ACTIVITY->value],
 ))
-    ->setClass('VendorApprove') // class name without "CBP"
+    ->setClass('VendorApprove') // имя класса без «CBP»
     ->setCategory(['ID' => 'other'])
     ->toArray();
 ```
 
-Older bizproc without `ActivityDescription`: a plain array with the same keys (`NAME`, `DESCRIPTION`, `TYPE` = `'activity'`, `CLASS`, `CATEGORY`); the current searcher still accepts it.
+В старом bizproc без `ActivityDescription` используй массив с ключами `NAME`, `DESCRIPTION`, `TYPE` = `'activity'`, `CLASS`, `CATEGORY`. Текущий поиск также принимает этот формат.
 
-- A `.description.php` that throws is skipped silently: the activity just disappears. The warning goes to logger `bizproc.runtime.activity_searcher` (enable it in `loggers`, `bitrix-logger`). **Since bizproc 26.1100**.
-- `->setFilter(['MIN_API_VERSION' => 4])` hides the activity on runtimes older than API 4 (`CBPRuntime::ACTIVITY_API_VERSION`, 4 since bizproc 26.1100). Use it when the activity needs 26.1100+ APIs.
-- The designer AI derives a description from the properties map. Opt out: `->setAiAutoDescription(false)` (array key `AI_AUTO_DESCRIPTION` = `N`); own text: `->setAiDescription('…')`.
+- При исключении в `.description.php` действие пропускается и исчезает из каталога. Предупреждение пишет логгер `bizproc.runtime.activity_searcher`; включи его в `loggers` (`bitrix-logger`). **Since bizproc 26.1100**; на старом модуле проверяй загрузку описания самостоятельно.
+- `->setFilter(['MIN_API_VERSION' => 4])` скрывает действие на исполнителе до API 4 (`CBPRuntime::ACTIVITY_API_VERSION`, значение 4 с bizproc 26.1100). Используй для действий с API 26.1100+; на старом модуле не устанавливай такое действие.
+- ИИ дизайнера строит описание по карте свойств. Отключение: `->setAiAutoDescription(false)` (`AI_AUTO_DESCRIPTION` = `N`); свой текст: `->setAiDescription('…')`.
 
-## Class
+## Класс
 
 ```php
 class CBPVendorApprove extends CBPActivity
@@ -52,29 +52,29 @@ class CBPVendorApprove extends CBPActivity
     public function execute()
     {
         $documentId = $this->getDocumentId();
-        $comment = (string)$this->Comment; // properties via magic __get
-        // short work only; long jobs → Messenger + wait for an external event
+        $comment = (string)$this->Comment; // свойства доступны через __get
+        // Только короткая работа; долгую передай Messenger и жди внешнее событие.
         return CBPActivityExecutionStatus::Closed;
     }
 }
 ```
 
-- Validation for the designer: `public static function ValidateProperties($arTestProperties = [], ?CBPWorkflowTemplateUser $user = null)` → error list merged with `parent::`.
-- Handle errors inside `execute()`. **Since bizproc 26.1100** a `HandleFault` that throws 3 times terminates the workflow.
-- Overriding a kernel activity: keep the parent's visibility and signature. **Since bizproc 26.1100** `CBPMailActivity::getPropertiesMap(array $documentType, array $context = []): array` is `public static`; a `protected` override is a Fatal.
+- Валидация дизайнера: `public static function ValidateProperties($arTestProperties = [], ?CBPWorkflowTemplateUser $user = null)`. Объединяй свои ошибки со списком из `parent::`.
+- Обрабатывай ошибки внутри `execute()`. **Since bizproc 26.1100** три исключения из `HandleFault` завершают процесс; на старом модуле ограничивай повторы самостоятельно.
+- При наследовании действия сохраняй видимость и сигнатуру родителя. **Since bizproc 26.1100** `CBPMailActivity::getPropertiesMap(array $documentType, array $context = []): array` — `public static`; переопределение как `protected` вызывает фатальную ошибку. На старом модуле сверяй его собственную сигнатуру.
 
-## Reserved member names (Fatal at class load)
+## Зарезервированные члены: ошибка при загрузке класса
 
-`CBPActivity` uses trait `Bitrix\Bizproc\Public\Activity\Mixins\ChildFlowTraversal` (**Since bizproc 26.1400**; the two types methods since 26.1200). A same-named method with another signature or static-ness, or an untyped same-named property, is a Fatal. Don't declare in custom activities:
+`CBPActivity` использует `Bitrix\Bizproc\Public\Activity\Mixins\ChildFlowTraversal` (**Since bizproc 26.1400**; методы двух карт типов появились в 26.1200). Одноимённый метод с другой сигнатурой/static или одноимённое нетипизированное свойство вызывают фатальную ошибку. Сохраняй префиксы помощников и на старом модуле. Не объявляй:
 
-- Methods: `OnEvent`, `getActivityCode`, `getRawPropertyValue`, `markSkippedByEngine`, `getPropertiesTypes`, `getVariablesTypes`, `close`, `startChildFlow`, `getStartActivityNames`, `onDeadEndReached`, `executeByNames`, `executeActivity`, `getInputNames`, `getOutputNames`, `getAuxNames`, `extractActivityNameFromLink`, `createInputName`, `createOutputName`.
-- Properties: `$activityQueue`, `$pendingQueue`, `$childFlowStarted`, `$childContainerEnabled`.
+- Методы: `OnEvent`, `getActivityCode`, `getRawPropertyValue`, `markSkippedByEngine`, `getPropertiesTypes`, `getVariablesTypes`, `close`, `startChildFlow`, `getStartActivityNames`, `onDeadEndReached`, `executeByNames`, `executeActivity`, `getInputNames`, `getOutputNames`, `getAuxNames`, `extractActivityNameFromLink`, `createInputName`, `createOutputName`.
+- Свойства: `$activityQueue`, `$pendingQueue`, `$childFlowStarted`, `$childContainerEnabled`.
 
-Prefix your helpers (`vendorLoadData()`).
+Используй префикс помощников (`vendorLoadData()`).
 
-Subclasses of `Bitrix\Bizproc\Public\Activity\Structure\FlowDirectedActivity` must override `getStartActivityNames(): array` and `onDeadEndReached(\CBPActivity $lastActivity): array` (return `[]` or `[static::createInputName($name, 0)]`). **Since bizproc 26.1400** the constructor throws `NotImplementedException` otherwise; in 26.1100–26.1300 they were abstract, and before 26.1100 `onDeadEndReached()` returned `void`.
+Наследники `Bitrix\Bizproc\Public\Activity\Structure\FlowDirectedActivity` переопределяют `getStartActivityNames(): array` и `onDeadEndReached(\CBPActivity $lastActivity): array` (результат `[]` либо `[static::createInputName($name, 0)]`). **Since bizproc 26.1400** иначе конструктор бросает `NotImplementedException`; в 26.1100–26.1300 методы абстрактные, до 26.1100 `onDeadEndReached()` возвращал `void`. Для старого модуля сохраняй его сигнатуру.
 
-## Waiting for another module's event (**Since bizproc 26.1050**)
+## Ожидание события другого модуля (**Since bizproc 26.1050**)
 
 ```php
 class CBPVendorWaitSigned extends CBPActivity implements IBPActivityExternalEventListener
@@ -85,7 +85,7 @@ class CBPVendorWaitSigned extends CBPActivity implements IBPActivityExternalEven
 
     public function execute()
     {
-        // hash = first positional string argument the event will carry
+        // hash — первый позиционный строковый аргумент будущего события.
         $this->subscribeOnExternalEvents('vendor.sign', self::EVENTS, (string)$this->Comment, 86400);
 
         return CBPActivityExecutionStatus::Executing;
@@ -98,11 +98,11 @@ class CBPVendorWaitSigned extends CBPActivity implements IBPActivityExternalEven
         }
         $this->unsubscribeFromExternalEvents('vendor.sign', self::EVENTS);
         if ($this->isExternalEventTimeout($arEventParameters)) {
-            $this->WriteToTrackingService('Timed out');
+            $this->WriteToTrackingService('Время ожидания истекло');
         }
         $this->workflow->closeActivity($this);
     }
 }
 ```
 
-Fire the event with `new \Bitrix\Main\Event('vendor.sign', 'OnDocumentSigned', [$hash, …])` → `send()`, or legacy `ExecuteModuleEventEx`.
+Отправляй событие через `new \Bitrix\Main\Event('vendor.sign', 'OnDocumentSigned', [$hash, …])` и `send()` либо legacy `ExecuteModuleEventEx`. На модуле до 26.1050 реализуй подписку/отписку и таймаут через собственный обработчик.

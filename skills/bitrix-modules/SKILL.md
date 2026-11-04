@@ -1,23 +1,26 @@
 ---
 name: bitrix-modules
-description: 'Custom Bitrix modules in /local/modules — CModule installer (DoInstall/DoUninstall), version.php, make:module, install/migrations tables/events/agents, options page, autoload. Use when creating, installing or uninstalling a module.'
+description: 'Используй для своих модулей Битрикса в /local/modules: CModule с DoInstall/DoUninstall, version.php, make:module, таблицы, обработчики, агенты, настройки и автозагрузка.'
 ---
 
-# Bitrix modules
+# Модули Битрикса
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| New module: id, skeleton, `install/index.php`, version, lang, uninstall | `rules/installer.md` |
-| Tables, events, agents in `install/migrations/*.php` (main 26.600+) | `rules/install-migrations.md` |
-| Options page, `default_option.php`, PSR-4 autoload, module routes | `rules/options-autoload.md` |
+| Новый модуль: ID, каркас, `install/index.php`, версия, языки, удаление | `rules/installer.md` |
+| Таблицы, события, агенты в `install/migrations/*.php` (main 26.600+) | `rules/install-migrations.md` |
+| Страница настроек, `default_option.php`, PSR-4, маршруты модуля | `rules/options-autoload.md` |
 
-## Invariants
+## Обязательные правила
 
-- Module dir `/local/modules/<vendor>.<module>/`; id lowercase `vendor.module`; installer class `vendor_module`; namespace `Vendor\Module` (one-word id `mymodule` → `Bitrix\Mymodule`).
-- Nothing works until the module is registered in `b_module`: `Loader::includeModule()` returns `false`, and module `.settings.php` (`services`, `controllers`, `console`, `messenger`) is not read.
-- Install/uninstall are symmetric: every table, handler, agent and option you create has a removal path; re-running install must not fail.
-- Event registration uses kernel parameter names (`fromModuleId:`) or positional args; handler signature depends on the dispatcher — `bitrix-events`.
-- Module routes are `require`d from `/local/routes/web.php`; a `routing` section in module `.settings.php` is ignored (`bitrix-routing`).
-- Project data/content migrations (iblocks, options per environment) belong to `bitrix-sprint-migration`, not to the installer.
+- Каталог `/local/modules/<vendor>.<module>/`; ID в нижнем регистре `vendor.module`; класс установщика `vendor_module`; пространство имён `Vendor\Module` (однословный ID `mymodule` → `Bitrix\Mymodule`).
+- До регистрации модуля в `b_module` загрузка не работает: `Loader::includeModule()` возвращает `false`, `.settings.php` модуля (`services`, `controllers`, `console`, `messenger`) не читается.
+- Установка и удаление симметричны: у каждой созданной таблицы, регистрации, агента и настройки есть путь удаления; повторная установка не должна падать.
+- При регистрации событий используй имена параметров ядра (`fromModuleId:`) или позиционные аргументы; сигнатура обработчика зависит от отправителя (`bitrix-events`).
+- Маршруты модуля подключаются через `require` из `/local/routes/web.php`; секция `routing` в `.settings.php` модуля игнорируется (`bitrix-routing`).
+- Миграции данных/контента проекта (инфоблоки, настройки окружения) относятся к `bitrix-sprint-migration`, а не установщику.

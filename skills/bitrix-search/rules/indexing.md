@@ -1,17 +1,17 @@
-# Indexing custom content
+# Индексация своего содержимого
 
-Legacy API only: `CSearch` (no D7 class, no ORM tablet). Wrap it in your own service; call it from ORM/tablet events or your write service.
+Только `CSearch`, без D7 и ORM. Оберни сервисом, вызывай из событий ORM / таблетов либо сервиса записи.
 
 ```php
 if (\Bitrix\Main\Loader::includeModule('search'))
 {
     CSearch::Index('vendor.docs', (string)$doc->getId(), [
         'TITLE' => $doc->getTitle(),
-        'BODY' => CSearch::KillTags($doc->getHtml()),       // BODY is not stripped for you
+        'BODY' => CSearch::KillTags($doc->getHtml()), // BODY сам не очищается
         'TAGS' => 'contract, 2026',
         'SITE_ID' => ['s1' => '/docs/' . $doc->getId() . '/'],
         'URL' => '/docs/' . $doc->getId() . '/',
-        'PERMISSIONS' => [2],                                // group ids or access codes
+        'PERMISSIONS' => [2], // ID групп либо коды доступа
         'PARAM1' => 'contract',
         'PARAM2' => (string)$doc->getSectionId(),
         'DATE_CHANGE' => $doc->getUpdatedAt()->format('d.m.Y H:i:s'),
@@ -19,46 +19,46 @@ if (\Bitrix\Main\Loader::includeModule('search'))
 }
 ```
 
-Signature: `CSearch::Index($MODULE_ID, $ITEM_ID, $arFields, $bOverWrite = false, $SEARCH_SESS_ID = '')` → index id, `0` (nothing indexed or deleted) or `false`. Unique key is (`MODULE_ID`, `ITEM_ID`).
+`CSearch::Index($MODULE_ID, $ITEM_ID, $arFields, $bOverWrite = false, $SEARCH_SESS_ID = '')` → ID индекса, 0 (ничего не проиндексировано / удалено) либо `false`. Уникальный ключ — (`MODULE_ID`, `ITEM_ID`).
 
-## Fields
+## Поля
 
-| Key | Rule |
+| Ключ | Правило |
 | --- | --- |
-| `TITLE`, `BODY`, `TAGS` | Plain text; HTML → `CSearch::KillTags()`. Both `TITLE` and `BODY` empty → a new item is skipped, an existing one is **deleted** |
-| `SITE_ID` | `'s1'`, `['s1', 's2']` or `['s1' => '/url/']` (per-site URL wins). Empty array → nothing indexed. Site ids are 2 chars |
-| `URL` | `#SITE_DIR#`, `#SERVER_NAME#`, `#LANG#` are replaced on read. A value starting with `=` is resolved by `OnSearchGetURL` |
-| `DATE_CHANGE` | Always `DD.MM.YYYY HH:MI:SS` (`d.m.Y H:i:s`). Or `LAST_MODIFIED` in site date format. One of them is required |
-| `DATE_FROM`, `DATE_TO` | Site date format or `false`; applied when searching with `CHECK_DATES = 'Y'` |
-| `PERMISSIONS` | `[2]` → `G2` (everyone, incl. anonymous); strings kept: `AU`, `U5`, `G12`, codes added by `OnSearchCheckPermissions` |
-| `PARAM1`, `PARAM2` | Your filter keys (type, section). Also used by custom-rank rules |
-| `PARAMS` | `['brand' => 'x', 'color' => ['red', 'blue']]`, values ≤ 100 chars, filterable |
-| `USER_ID`, `ENTITY_TYPE_ID`, `ENTITY_ID`, `CUSTOM_RANK` | Stored columns |
-| `INDEX_TITLE` | `false` keeps the item out of title search |
+| `TITLE`, `BODY`, `TAGS` | Текст без HTML: `CSearch::KillTags()`. Если `TITLE` и `BODY` пусты, новая запись пропускается, существующая **удаляется** |
+| `SITE_ID` | `'s1'`, `['s1', 's2']` либо `['s1' => '/url/']` (адрес сайта приоритетнее). Пустой массив ничего не индексирует. ID сайта — 2 символа |
+| `URL` | `#SITE_DIR#`, `#SERVER_NAME#`, `#LANG#` заменяются при чтении. Значение с `=` разрешается через `OnSearchGetURL` |
+| `DATE_CHANGE` | Всегда `DD.MM.YYYY HH:MI:SS` (`d.m.Y H:i:s`), либо `LAST_MODIFIED` в формате даты сайта. Одно обязательно |
+| `DATE_FROM`, `DATE_TO` | Формат даты сайта либо `false`; применяются с `CHECK_DATES = 'Y'` |
+| `PERMISSIONS` | `[2]` → G2 (все, включая гостей); строки сохраняются: AU, U5, G12, коды `OnSearchCheckPermissions` |
+| `PARAM1`, `PARAM2` | Ключи своего фильтра (тип, раздел); участвуют и в правилах ранга |
+| `PARAMS` | `['brand' => 'x', 'color' => ['red', 'blue']]`, значения до 100 символов, доступны фильтру |
+| `USER_ID`, `ENTITY_TYPE_ID`, `ENTITY_ID`, `CUSTOM_RANK` | Сохраняемые столбцы |
+| `INDEX_TITLE` | `false` исключает из поиска по заголовку |
 
-Other keys are dropped silently.
+Остальные ключи молча отбрасываются.
 
-## Update semantics
+## Обновление
 
-- With `$bOverWrite = false` and an unchanged `DATE_CHANGE`, `Index()` updates only permissions/sites/params and skips title, body, tags. Pass `true` (or a new date) when content changes.
-- Empty `PERMISSIONS` never clears rights on update. To change rights only: `CSearch::ChangePermission($MODULE_ID, $arGroups, $ITEM_ID)`; `[]` clears (then only admins find it). Don't pass its `$SITE_ID` argument — the query breaks.
-- Metadata only (no text rebuild): `CSearch::ChangeIndex($MODULE_ID, $arFields, $ITEM_ID)`, `CSearch::ChangeSite($MODULE_ID, ['s1' => '/url/'], $ITEM_ID)`.
-- Always send the full document: title and tag indexes read `SITE_ID` from the same call.
-- search < 25.200 did not refresh the text of an existing item on the default, `mysql` and `pgsql` engines; there: `DeleteIndex()` then `Index()`.
+- При `$bOverWrite = false` и неизменном `DATE_CHANGE` обновляются только права / сайты / параметры, не заголовок, тело, теги. При смене содержимого передавай `true` либо новую дату.
+- Пустой `PERMISSIONS` не очищает права при обновлении. Для прав — `CSearch::ChangePermission($MODULE_ID, $arGroups, $ITEM_ID)`; `[]` очищает, искать сможет только администратор. Аргумент `$SITE_ID` не передавай: ломает запрос.
+- Только метаданные: `CSearch::ChangeIndex($MODULE_ID, $arFields, $ITEM_ID)`, `CSearch::ChangeSite($MODULE_ID, ['s1' => '/url/'], $ITEM_ID)`.
+- Передавай документ целиком: индексы заголовков и тегов читают `SITE_ID` того же вызова.
+- search < 25.200 не обновлял текст существующей записи на стандартном / mysql / pgsql движке; там вызывай `DeleteIndex()`, затем `Index()`.
 
-## Delete
+## Удаление
 
 ```php
-CSearch::DeleteIndex('vendor.docs', (string)$id);          // one item
-CSearch::DeleteIndex('vendor.docs', false, 'contract');    // by PARAM1
-// DANGER: CSearch::DeleteIndex('vendor.docs') wipes the whole module index
+CSearch::DeleteIndex('vendor.docs', (string)$id); // одна запись
+CSearch::DeleteIndex('vendor.docs', false, 'contract'); // по PARAM1
+// ОПАСНО: CSearch::DeleteIndex('vendor.docs') удалит весь индекс модуля
 ```
 
-Signature: `DeleteIndex($MODULE_ID, $ITEM_ID = false, $PARAM1 = false, $PARAM2 = false, $SITE_ID = false)`; `%` in `$ITEM_ID` becomes `LIKE`.
+`DeleteIndex($MODULE_ID, $ITEM_ID = false, $PARAM1 = false, $PARAM2 = false, $SITE_ID = false)`; `%` в `$ITEM_ID` превращается в LIKE.
 
-## Adjust other modules' items (`BeforeIndex`)
+## Изменение записи другого модуля (`BeforeIndex`)
 
-`search:BeforeIndex` receives `$arFields` (with `MODULE_ID`, `ITEM_ID`); return the modified array. Filter by module first:
+`search:BeforeIndex` получает `$arFields` с `MODULE_ID`, `ITEM_ID`; верни изменённый массив. Сначала отфильтруй модуль:
 
 ```php
 public static function onBeforeIndex(array $fields): array
@@ -71,6 +71,11 @@ public static function onBeforeIndex(array $fields): array
 }
 ```
 
-Iblock items: `ITEM_ID` = element id or `S<id>` (section), `PARAM1` = iblock type, `PARAM2` = iblock id; indexed only when the iblock has `INDEX_ELEMENT`/`INDEX_SECTION = 'Y'`.
+Инфоблок: `ITEM_ID` — ID элемента либо `S<id>` раздела; `PARAM1` — тип, `PARAM2` — ID инфоблока. Индексация только с `INDEX_ELEMENT`/`INDEX_SECTION = 'Y'`.
 
-Debug a stored item: `CSearch::GetIndex($MODULE_ID, $ITEM_ID)`.
+Проверка сохранённого: `CSearch::GetIndex($MODULE_ID, $ITEM_ID)`.
+
+## Изменения search 26.0
+
+- `CSearch::AddPermission($moduleId, $accessCode, $filter)` / `DeletePermission(...)` меняют один код доступа для выбранных записей, без переиндекса всего текста; Sphinx/OpenSearch синхронизируются очередью search_sync_perm. На старом модуле используй ChangePermission() для каждого ITEM_ID.
+- UpdateSite() больше не переписывает URL существующей привязки сайта. После смены адресов проверь фактическую выдачу и выполни полный переиндекс; простая повторная передача SITE_ID => [site => url] не обновит ссылку. На старом модуле проверь прежнее поведение.

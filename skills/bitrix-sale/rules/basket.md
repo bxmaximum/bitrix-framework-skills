@@ -1,20 +1,20 @@
-# Basket and Fuser
+# Корзина и Fuser
 
-## Fuser (basket owner)
+## Fuser: владелец корзины
 
-Anonymous and authorized baskets are keyed by **Fuser** (`Bitrix\Sale\Fuser`), not `USER_ID`.
+Анонимная и авторизованная корзины привязаны к **Fuser** (`Bitrix\Sale\Fuser`), а не `USER_ID`.
 
 ```php
 use Bitrix\Sale\Fuser;
 
-$fuserId = Fuser::getId();                // creates if missing
-$fuserId = Fuser::getId(true);            // skip create → null if none
-$fuserId = Fuser::getIdByUserId($userId); // false if it cannot resolve/create
+$fuserId = Fuser::getId();                // создаёт, если нет
+$fuserId = Fuser::getId(true);            // без создания: null, если нет
+$fuserId = Fuser::getIdByUserId($userId); // false при ошибке поиска / создания
 ```
 
-`USER_ID` (site account, required on a saved order) and `FUSER_ID` (basket owner) are different; never substitute one for the other.
+`USER_ID` — учётная запись сайта, обязательна у сохранённого заказа; `FUSER_ID` — владелец корзины. Не подменяй один другим.
 
-## Add to basket
+## Добавление в корзину
 
 ```php
 <?php declare(strict_types=1);
@@ -24,27 +24,27 @@ use Bitrix\Sale\Basket;
 use Bitrix\Sale\Basket\RefreshFactory;
 use Bitrix\Sale\Fuser;
 
-$basket = Basket::loadItemsForFUser(Fuser::getId(), $siteId); // only rows with ORDER_ID = null
+$basket = Basket::loadItemsForFUser(Fuser::getId(), $siteId); // только строки ORDER_ID = null
 
-// Preferred for catalog products: sets module, provider and product data
+// Для товаров каталога: задаёт модуль, поставщика и данные товара
 $r = CatalogBasket::addProductToBasket($basket, ['PRODUCT_ID' => $productId, 'QUANTITY' => 1], ['SITE_ID' => $siteId]);
-// merges into an existing row; 4th arg ['USE_MERGE' => 'N'] for a separate row
+// Объединяет с существующей строкой; четвёртый аргумент USE_MERGE = N создаёт отдельную
 
-// Manual alternative
+// Ручной вариант
 $item = $basket->createItem('catalog', $productId);
 $item->setFields(['QUANTITY' => 1, 'PRODUCT_PROVIDER_CLASS' => CatalogBasket::getDefaultProviderName()]);
-$basket->refresh(RefreshFactory::createSingle($item->getBasketCode())); // provider fills PRICE, CURRENCY, NAME, VAT, weight
+$basket->refresh(RefreshFactory::createSingle($item->getBasketCode())); // поставщик заполняет PRICE, CURRENCY, NAME, НДС, вес
 
-$result = $basket->save(); // only for a basket NOT bound to an order
+$result = $basket->save(); // только для корзины БЕЗ привязки к заказу
 ```
 
-- Don't set `PRICE`/`CURRENCY` for catalog products; the provider does. Own pricing: `CUSTOM_PRICE => 'Y'` + `PRICE` + `CURRENCY`.
-- With SKUs put the **offer ID** in `PRODUCT_ID`, never the parent. Check the element is a product (`Bitrix\Catalog\ProductTable`) before adding.
-- Basket of a saved order: `$order->getBasket()`, saved by `Order::save()`. Never `loadItemsForFUser()` / `$basket->save()` for it.
-- Before creating an order: `$basket->refresh()` (`refreshData()` is deprecated), then `$basket->getOrderableItems()` → a basket with only purchasable, non-delayed items.
-- Item properties: `$item->getPropertyCollection()->createItem()` / `redefine()`. Prices: `getPrice()`, `getBasePrice()`, `getPriceWithVat()`, `getDiscountPrice()`.
+- `PRICE`/`CURRENCY` товара каталога заполняет поставщик. Своя цена: `CUSTOM_PRICE => 'Y'` + `PRICE` + `CURRENCY`.
+- Для SKU в `PRODUCT_ID` передавай **ID предложения**, не родителя. Перед добавлением проверь, что элемент — товар (`Bitrix\Catalog\ProductTable`).
+- Корзина сохранённого заказа: `$order->getBasket()`, сохранение `Order::save()`. Не используй для неё `loadItemsForFUser()` / `$basket->save()`.
+- До создания заказа: `$basket->refresh()` (`refreshData()` устарел), затем `$basket->getOrderableItems()` — только доступные для покупки и не отложенные позиции.
+- Свойства позиции: `$item->getPropertyCollection()->createItem()` / `redefine()`. Цены: `getPrice()`, `getBasePrice()`, `getPriceWithVat()`, `getDiscountPrice()`.
 
-## Discount preview before checkout
+## Предварительный расчёт скидок
 
 ```php
 use Bitrix\Sale\Discount;
@@ -52,9 +52,9 @@ use Bitrix\Sale\Discount;
 $discount = Discount::buildFromBasket($basket, new Discount\Context\Fuser($basket->getFUserId()));
 $calc = $discount->calculate();
 if ($calc->isSuccess()) {
-    $basket->applyDiscount($calc->getData()['BASKET_ITEMS'] ?? []); // same data path as Order::doFinalAction()
+    $basket->applyDiscount($calc->getData()['BASKET_ITEMS'] ?? []); // тот же путь, что в Order::doFinalAction()
 }
-// display prices without touching the basket: $discount->getShowPrices()['BASKET'][$basketCode]
+// показать без изменения корзины: $discount->getShowPrices()['BASKET'][$basketCode]
 ```
 
-Never use `buildFromBasket()` on an order-bound basket: saved orders recalc via `Order::doFinalAction(true)` (`rules/discounts.md`).
+Не вызывай `buildFromBasket()` для корзины заказа: пересчёт через `Order::doFinalAction(true)` (`rules/discounts.md`).

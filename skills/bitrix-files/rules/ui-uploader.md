@@ -1,6 +1,6 @@
-# ui.uploader: server side
+# ui.uploader: серверная часть
 
-The JS widget (`bitrix-ui`) calls the `ui.fileuploader.*` actions, which build your `UploaderController` from its name. Uploaded files become temp b_file rows, the form submits tokens, and your save code commits them.
+JS-виджет (`bitrix-ui`) вызывает `ui.fileuploader.*`, создающие `UploaderController` по имени. Загрузки — временные строки b_file; форма отправляет токены, код сохранения закрепляет файлы.
 
 ```php
 namespace Vendor\Docs\Uploader;   // /local/modules/vendor.docs/lib/Uploader/DocController.php
@@ -17,7 +17,7 @@ final class DocController extends UploaderController
 {
     private const MIME = ['application/pdf'];
 
-    public function __construct(array $options)          // must be public; normalize options here
+    public function __construct(array $options) // публичный; нормализуй настройки здесь
     {
         parent::__construct(['docId' => (int)($options['docId'] ?? 0)]);
     }
@@ -33,20 +33,20 @@ final class DocController extends UploaderController
 
     public function verifyFileOwner(FileOwnershipCollection $files): void
     {
-        $own = $this->loadDocFileIds();                   // ids already bound to the doc
+        $own = $this->loadDocFileIds(); // ID файлов, уже привязанных к документу
         foreach ($files as $file)
         {
             if (in_array($file->getId(), $own, true)) { $file->markAsOwn(); }
         }
     }
 
-    public function onUploadComplete(UploadResult $uploadResult): void   // committed to b_file already
+    public function onUploadComplete(UploadResult $uploadResult): void // уже сохранено в b_file
     {
         $fileId = $uploadResult->getFileInfo()?->getFileId();
         $path = $fileId ? (\CFile::MakeFileArray($fileId)['tmp_name'] ?? '') : '';
         if ($path === '' || !in_array(MimeType::getByFilePath($path), self::MIME, true))
         {
-            $uploadResult->addError(new UploaderError(UploaderError::FILE_TYPE_NOT_ALLOWED)); // file is deleted
+            $uploadResult->addError(new UploaderError(UploaderError::FILE_TYPE_NOT_ALLOWED)); // файл удаляется
         }
     }
 
@@ -55,24 +55,24 @@ final class DocController extends UploaderController
 }
 ```
 
-- JS name: `controller: 'vendor:docs.uploader.docController'`, with `controllerOptions: { docId: 42 }`. `vendor:module.path.class` maps to `\Vendor\Module\Path\Class`.
-- The module is auto-included only if its `.settings.php` has `'ui.uploader' => ['value' => ['allowUseControllers' => true], 'readonly' => true]`.
-- The class must live under `/local/modules/<id>/lib/`: the module id and the default `getCommitOptions()` (`moduleId`, `savePath`) come from its file path.
-- The endpoint has no `Authentication` prefilter. `isAvailable()` and `can*()` are the only gates, and `preview`/`download` are GET without CSRF.
+- Имя в JS: `controller: 'vendor:docs.uploader.docController'`, `controllerOptions: { docId: 42 }`. `vendor:module.path.class` соответствует `\Vendor\Module\Path\Class`.
+- Модуль подключается автоматически, только если в его `.settings.php` есть `'ui.uploader' => ['value' => ['allowUseControllers' => true], 'readonly' => true]`.
+- Класс размещай в `/local/modules/<id>/lib/`: по пути определяются ID модуля и стандартные `getCommitOptions()` (`moduleId`, `savePath`).
+- У точки входа нет фильтра `Authentication`. Защита — `isAvailable()` и `can*()`; `preview`/`download` доступны GET без CSRF.
 
-Commit when the entity is saved:
+Закрепляй при сохранении сущности:
 
 ```php
 use Bitrix\UI\FileUploader\Uploader;
 
 $pending = (new Uploader(new DocController(['docId' => $docId])))->getPendingFiles($tokens);
-$newFileIds = $pending->getFileIds();                 // only valid tokens
-// ... bind $newFileIds to the doc, then:
-$pending->makePersistent();                           // else temp files and their b_file rows are removed after ~1 day
+$newFileIds = $pending->getFileIds(); // только корректные токены
+// привяжи $newFileIds к документу, затем:
+$pending->makePersistent(); // иначе временные файлы и строки b_file удалятся примерно через сутки
 ```
 
-- The form field mixes new tokens (`guid.signature` strings) with existing b_file IDs (numbers). Pass only the tokens to `getPendingFiles()`, and check numeric IDs against the entity: they are client input.
-- A token is signed with the controller name, its options and `bitrix_sessid()`. Commit in the same session with identical, normalized options; otherwise the pending file gets an error (`$pendingFile->isValid()`, `getErrors()`).
-- `Configuration` checks accepted types by extension or client MIME and decodes only images, hence the content check in `onUploadComplete()`.
-- That check is mandatory with presigned uploads (**Since ui 26.600**, `ui` → `uploader.settings`, see `bitrix-settings`). The bytes bypass PHP, so `canUpload()` sees only client-declared data.
-- Extend only `UploaderController`. Don't subclass `Uploader` or `Controller\FileUploader` (signatures changed in ui 26.600).
+- Поле формы смешивает новые токены (`guid.signature`) и существующие числовые ID b_file. В `getPendingFiles()` передавай только токены, ID проверяй на принадлежность сущности: они приходят от клиента.
+- Токен подписан именем контроллера, настройками и `bitrix_sessid()`. Закрепляй в той же сессии с идентичными нормализованными настройками; иначе у файла ошибка (`$pendingFile->isValid()`, `getErrors()`).
+- `Configuration` проверяет расширение либо MIME клиента, декодирует только изображения. Поэтому нужна проверка содержимого в `onUploadComplete()`.
+- Она обязательна для загрузок по подписанному URL (**Since ui 26.600**, `ui` → `uploader.settings`, см. `bitrix-settings`): байты обходят PHP, `canUpload()` видит только данные клиента.
+- Наследуй только `UploaderController`, а не `Uploader` / `Controller\FileUploader`: сигнатуры изменились в ui 26.600.

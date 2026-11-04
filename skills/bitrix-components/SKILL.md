@@ -1,25 +1,27 @@
 ---
 name: bitrix-components
-description: 'Bitrix components — class.php, params, template overrides, result_modifier/component_epilog, result cache, paged lists, SEF, Controllerable AJAX. Use when building, overriding or caching components in /local.'
+description: 'Компоненты Битрикс в /local: class.php, шаблоны, result_modifier, кеш, ЧПУ и AJAX через Controllerable. Используй при создании компонента, переопределении шаблона и постраничном выводе.'
 ---
 
-# Bitrix components
+# Компоненты Битрикс
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
+
+| Задача | Читать |
 | --- | --- |
-| Placement, scaffold, `class.php`, params, `.description.php`, `.parameters.php` | `rules/structure.md` |
-| Template search order and overrides, `template.php`, `result_modifier.php`, `component_epilog.php` | `rules/template.md` |
-| Result cache, paged list, complex SEF, AJAX actions | `rules/cache-sef-ajax.md` |
-| `PageNavigation`, pager templates | `bitrix-cms-basics` |
-| Grid, filter, toolbar in templates | `bitrix-ui` |
+| Размещение, заготовка, `class.php`, параметры, `.description.php`, `.parameters.php` | `rules/structure.md` |
+| Поиск и переопределение шаблона, `template.php`, `result_modifier.php`, `component_epilog.php` | `rules/template.md` |
+| Кеш результата, постраничный список, комплексный ЧПУ, AJAX-действия | `rules/cache-sef-ajax.md` |
+| `PageNavigation`, шаблоны навигации | `bitrix-cms-basics` |
+| Грид, фильтр, панель инструментов в шаблонах | `bitrix-ui` |
 
-## Invariants
+## Общие правила
 
-- Own components in `/local/components/<vendor>/`; kernel components are changed only by copying their template to `/local/templates/<site>/components/…`.
-- Logic in `class.php` and services; templates only render `$arResult`, escaping output.
-- `onPrepareComponentParams()` casts every param; `~KEY` is the raw value.
-- Everything that changes output is in the cache key (user groups, page number, filter).
-- Nested components get `$component` as the 4th `IncludeComponent()` argument.
-- AJAX through `Controllerable` actions with prefilters and signed parameters.
+- Свои компоненты — в `/local/components/<vendor>/`; компонент ядра меняй копией шаблона в `/local/templates/<site>/components/…`.
+- Логика — в `class.php` и сервисах; шаблон только выводит `$arResult`, экранируя значения.
+- `onPrepareComponentParams()` приводит тип каждого параметра; `~KEY` содержит исходное значение.
+- Всё влияющее на вывод входит в ключ кеша: группы пользователя, страница, фильтр.
+- Вложенному компоненту передавай `$component` четвёртым аргументом `IncludeComponent()`.
+- AJAX — через действия `Controllerable` с предварительными фильтрами и подписанными параметрами.

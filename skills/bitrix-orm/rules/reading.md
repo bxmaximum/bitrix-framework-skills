@@ -1,19 +1,19 @@
-# Reading
+# Чтение
 
-| Need | Use |
+| Задача | Использовать |
 | --- | --- |
-| New query | `XxxTable::query()` + fluent API |
-| OR / nested / column-to-column conditions | `Query::filter()` → `ConditionTree` |
-| Entity with relations, later mutation | `fetchObject()` / `fetchCollection()` |
-| Flat list, aggregates, hot path | `fetch()` / `fetchAll()` |
-| Existing array-style code | `getList()` (compat) |
-| ORM filter as SQL `WHERE` | `Query::buildFilterSql($entity, $filter)` |
+| Новый запрос | `XxxTable::query()` и цепочка методов |
+| OR / вложенные условия / сравнение столбцов | `Query::filter()` → `ConditionTree` |
+| Сущность со связями и последующим изменением | `fetchObject()` / `fetchCollection()` |
+| Плоский список, агрегаты, критичный по скорости код | `fetch()` / `fetchAll()` |
+| Существующий код с массивами | `getList()` (совместимость) |
+| Фильтр ORM как SQL `WHERE` | `Query::buildFilterSql($entity, $filter)` |
 
-- `query()` creates `static::getQueryClass()` (iblock element tablets return their own `Query`); `new Query($entity)` loses that. A `getList()` override is ignored by `query()`: put table-specific logic in `getQueryClass()` / `setDefaultScope()`.
-- Objects are not for `GROUP BY` / aggregate shapes.
-- Runtime fields as `ExpressionField` objects, not array expressions.
-- `disableDataDoubling()` only when a 1:N filter duplicates rows. `enablePrivateFields()` only when needed.
-- Unknown field in any clause → `ArgumentException`; `addOrder()` accepts only `ASC`/`DESC`.
+- `query()` создаёт `static::getQueryClass()` (таблеты элементов инфоблоков возвращают свой `Query`); `new Query($entity)` теряет это. Переопределение `getList()` не влияет на `query()`: помещай логику таблета в `getQueryClass()` / `setDefaultScope()`.
+- Объекты не подходят для результата `GROUP BY` / агрегатов.
+- Вычисляемые поля задавай объектами `ExpressionField`, не массивами выражений.
+- `disableDataDoubling()` нужен только при дублировании строк фильтром 1:N. `enablePrivateFields()` включай только при необходимости.
+- Неизвестное поле в любой части запроса вызывает `ArgumentException`; `addOrder()` принимает только `ASC`/`DESC`.
 
 ## `query()` + `ConditionTree`
 
@@ -37,7 +37,7 @@ $post = PostTable::query()->setSelect(['*', 'AUTHOR', 'COMMENTS'])->where('ID', 
 $authorName = $post?->getAuthor()?->getName();
 ```
 
-## Runtime fields, aggregates, DISTINCT
+## Вычисляемые поля, агрегаты, DISTINCT
 
 ```php
 use Bitrix\Main\ORM\Fields\ExpressionField;
@@ -50,16 +50,16 @@ $query = PostTable::query()
 $stats = $query->fetchAll();
 
 $authors = PostTable::query()->setSelect(['AUTHOR_ID'])->setDistinct()->fetchAll();   // SELECT DISTINCT
-$sql = $query->getQuery();                                                                // SQL, not executed
+$sql = $query->getQuery();                                                                // SQL без выполнения
 ```
 
-`setDistinct(false)` clears it. `hasDistinct()` is also true when a select `ExpressionField` contains `DISTINCT` (then the query flag is dropped to avoid double DISTINCT).
+`setDistinct(false)` сбрасывает признак. `hasDistinct()` также true, если выбранный `ExpressionField` содержит `DISTINCT`: тогда флаг запроса снимается против двойного DISTINCT.
 
-## Pagination
+## Постраничная навигация
 
 ```php
 $nav = (new \Bitrix\Main\UI\PageNavigation('posts'))->allowAllRecords(false)->setPageSize(20);
-$nav->setRecordCount(PostTable::getCount($filter));   // before initFromUri(): clamps the page number
+$nav->setRecordCount(PostTable::getCount($filter));   // до initFromUri(): ограничивает номер страницы
 $nav->initFromUri();
 
 $items = PostTable::query()
@@ -70,9 +70,9 @@ $items = PostTable::query()
     ->fetchCollection();
 ```
 
-Alternative: `->countTotal(true)->exec()` then `$result->getCount()` (same filter guaranteed; count arrives after `initFromUri()`, so no clamping). `getCount()` without `countTotal(true)` throws. Huge tables: fetch `limit + 1` rows instead of counting.
+Другой вариант: `->countTotal(true)->exec()`, затем `$result->getCount()` (гарантирован тот же фильтр; число строк приходит после `initFromUri()`, поэтому номер не ограничивается). Без `countTotal(true)` вызов `getCount()` выбрасывает исключение. Для больших таблиц выбирай `limit + 1` строк вместо подсчёта.
 
-## Legacy `getList`
+## Устаревший `getList`
 
 ```php
 $rows = PostTable::getList([
@@ -84,4 +84,4 @@ $rows = PostTable::getList([
 ])->fetchAll();
 ```
 
-Only in existing array-style code. The fluent equivalent of `cache` is `setCacheTtl()` / `cacheJoins()`.
+Только для существующего кода с массивами. Аналог `cache` в цепочке методов — `setCacheTtl()` / `cacheJoins()`.

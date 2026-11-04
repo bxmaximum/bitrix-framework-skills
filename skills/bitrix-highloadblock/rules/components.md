@@ -1,40 +1,40 @@
-# Components `highloadblock.list` / `highloadblock.view`
+# Компоненты `highloadblock.list` / `highloadblock.view`
 
-Read-only public output. No caching (no `CACHE_TYPE`/`CACHE_TIME`), always `select *`.
+Публичный вывод только для чтения. Кеша нет (`CACHE_TYPE`/`CACHE_TIME` не поддерживаются), всегда `select *`.
 
 ## `bitrix:highloadblock.list`
 
-| Param | Behaviour |
+| Параметр | Поведение |
 | --- | --- |
-| `BLOCK_ID`* | block ID |
-| `ROWS_PER_PAGE` | default 0 = **all rows**, no `nav_object` |
-| `PAGEN_ID` | default `page`; unique per list on one page |
-| `FILTER_NAME` | name of a global array with an ORM filter; must match `^[A-Za-z_][A-Za-z0-9_]*$`, else ignored |
-| `SORT_FIELD` / `SORT_ORDER` | field must be an existing UF code (else `ID`); order `ASC`/`DESC`, default `DESC` |
+| `BLOCK_ID`* | ID блока |
+| `ROWS_PER_PAGE` | По умолчанию 0: **все строки**, без `nav_object` |
+| `PAGEN_ID` | По умолчанию `page`; уникальный для каждого списка на странице |
+| `FILTER_NAME` | Имя глобального массива ORM-фильтра; только `^[A-Za-z_][A-Za-z0-9_]*$`, иначе игнорируется |
+| `SORT_FIELD` / `SORT_ORDER` | Код существующего UF, иначе `ID`; `ASC`/`DESC`, по умолчанию `DESC` |
 | `DETAIL_URL` | `#ID#`, `#BLOCK_ID#` |
-| `CHECK_PERMISSIONS` | `Y` → see below |
+| `CHECK_PERMISSIONS` | `Y`: см. ниже |
 
-- Legacy GET overrides: `sort_type` beats even an explicit `SORT_ORDER`; `sort_id` is used when `SORT_FIELD` is not a valid UF. Both are whitelisted, not injectable.
-- Paging calls `allowAllRecords(true)`: any visitor can fetch the whole table with `?<PAGEN_ID>=page-all`. The total comes from running the full unpaged query. Do not use it on large blocks; write your own component with `count_total` and a hard limit (`bitrix-components`).
-- `$arResult`: `rows` (fields with `SHOW_IN_LIST = Y` pre-rendered as HTML, values escaped — don't escape again; other fields raw), `fields`, `tableColumns`, `sort_id`, `sort_type`, `nav_object`.
-- On block/rights errors it calls `ShowError()` and skips the template.
+- Старые GET-параметры: `sort_type` перекрывает даже явный `SORT_ORDER`; `sort_id` используется, если `SORT_FIELD` не код UF. Оба проверяются по разрешённым значениям, инъекции нет.
+- Пагинация включает `allowAllRecords(true)`: любой посетитель выгрузит всю таблицу через `?<PAGEN_ID>=page-all`. Количество получается полным запросом без лимита. Для больших блоков нужен свой компонент с `count_total` и жёстким лимитом (`bitrix-components`).
+- `$arResult`: `rows` (поля `SHOW_IN_LIST = Y` уже HTML с экранированием, повторно не экранируй; остальные сырые), `fields`, `tableColumns`, `sort_id`, `sort_type`, `nav_object`.
+- При ошибке блока / прав вызывает `ShowError()`, шаблон не выполняется.
 
 ## `bitrix:highloadblock.view`
 
-| Param | Behaviour |
+| Параметр | Поведение |
 | --- | --- |
-| `BLOCK_ID`*, `ROW_ID`* | block, key value |
-| `ROW_KEY` | default `ID`; used as `'=' . ROW_KEY` in the filter — never take it from the request (unknown field → exception) |
+| `BLOCK_ID`*, `ROW_ID`* | Блок и значение ключа |
+| `ROW_KEY` | По умолчанию `ID`; используется как `'=' . ROW_KEY` в фильтре. Не бери из запроса: неизвестное поле вызывает исключение |
 | `LIST_URL` | `#BLOCK_ID#` |
-| `CHECK_PERMISSIONS` | `Y` → see below |
+| `CHECK_PERMISSIONS` | `Y`: см. ниже |
 
-`$arResult`: `ERROR`, `row` (raw; `false` if missing; duplicates → first row), `fields` (`getUserFieldsWithReadyData`, render via `$USER_FIELD_MANAGER->getListView()`). On block/rights errors `row`/`fields` are absent but the template still runs with `ERROR`.
+`$arResult`: `ERROR`, `row` (сырые данные, `false` без записи, при дублях первая), `fields` (`getUserFieldsWithReadyData`, вывод через `$USER_FIELD_MANAGER->getListView()`). При ошибке блока / прав `row`/`fields` отсутствуют, но шаблон выполняется с `ERROR`.
 
-## Rights and HTTP status
+## Права и статус HTTP
 
-`CHECK_PERMISSIONS = 'Y'` passes with **any** operation (admins always pass) and reports denial as "not found". Components set no HTTP status. For a real 404/403 check before including them: valid IDs → block exists (404) → read right (403, `rules/events-rights.md`) → record exists (404). Don't reveal existence before the rights check. `CHECK_PERMISSIONS` does not protect your own queries in templates or AJAX.
+`CHECK_PERMISSIONS = 'Y'` пропускает с **любой** операцией (администратор всегда), отказ показывает как «не найдено». HTTP-статус компоненты не меняют. Для 404/403 проверь до подключения: корректные ID → блок существует (404) → право чтения (403, `rules/events-rights.md`) → запись существует (404). До проверки прав не раскрывай наличие записи. `CHECK_PERMISSIONS` не защищает свои запросы шаблона / AJAX.
 
-## Templates
+## Шаблоны
 
-- Customize by copying to `/local/templates/<site_template>/components/bitrix/highloadblock.list/<name>/`, pass `<name>` as the 2nd `IncludeComponent` argument.
-- `bitrix:highloadblock.field.element` is the internal renderer of the `hlblock` UF type (`main.view`, `main.edit`, `main.edit_form`, `main.filter_html`, `main.admin_list_view_html`, `main.admin_list_edit_html`, `main.admin_settings`, `main.public_text`). Don't place it on pages; override its templates to change how the field renders.
+- Копируй в `/local/templates/<site_template>/components/bitrix/highloadblock.list/<name>/`, передавай `<name>` вторым аргументом `IncludeComponent`.
+- `bitrix:highloadblock.field.element` — внутренний вывод типа UF `hlblock`: `main.view`, `main.edit`, `main.edit_form`, `main.filter_html`, `main.admin_list_view_html`, `main.admin_list_edit_html`, `main.admin_settings`, `main.public_text`. Не размещай на странице; для изменения вывода переопредели шаблоны.

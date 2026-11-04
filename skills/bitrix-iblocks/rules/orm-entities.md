@@ -1,46 +1,46 @@
-# Compiled ORM classes
+# Компилируемые классы ORM
 
-## Elements
+## Элементы
 
-Class `\Bitrix\Iblock\Elements\Element{ucfirst(API_CODE)}Table` (API_CODE `News` → `ElementNewsTable`). It autoloads on first reference (`Bitrix\Iblock\ORM\Loader`), so `ElementNewsTable::query()` works directly. Resolve dynamically:
+`\Bitrix\Iblock\Elements\Element{ucfirst(API_CODE)}Table`: `API_CODE = News` → `ElementNewsTable`. Автозагрузка при первом обращении (`Bitrix\Iblock\ORM\Loader`), можно сразу `ElementNewsTable::query()`. Динамическое получение:
 
 ```php
 use Bitrix\Iblock\Iblock;
 use Bitrix\Iblock\IblockTable;
 
-$elementClass = Iblock::wakeUp($iblockId)->getEntityDataClass(); // null + E_USER_WARNING without API_CODE
-$entity = IblockTable::compileEntity('News');                     // ElementEntity|false (API_CODE or Iblock object)
+$elementClass = Iblock::wakeUp($iblockId)->getEntityDataClass(); // без API_CODE: null и E_USER_WARNING
+$entity = IblockTable::compileEntity('News'); // ElementEntity|false, принимает API_CODE либо Iblock
 $elementClass = $entity ? $entity->getDataClass() : null;
 ```
 
-- Parent class: `ORM\ElementV1Table` or `ORM\ElementV2Table` by storage version (both extend `ORM\CommonElementTable`). `IblockTable::compileAllEntities()` compiles every iblock with an `API_CODE`.
-- `SECTIONS`: ManyToMany to `SectionTable` via `SectionElementTable`, direct links only. `setIblockSectionId()` keeps it in sync with `IBLOCK_SECTION_ID`.
-- `Bitrix\Iblock\ElementTable` knows only base fields and its `add/update/delete` **always return an error** (`ELEMENT_ENTITY_MESS_*_BLOCKED`). Use it for reads of base fields only.
-- Don't override `getMap()` in a subclass of `Element{ApiCode}Table` (the compiled map wins). Use `runtime`/`registerRuntimeField()` per query; never reuse names of system fields or property codes.
+- Родитель: `ORM\ElementV1Table` / `ORM\ElementV2Table` по версии хранения, оба наследуют `ORM\CommonElementTable`. `IblockTable::compileAllEntities()` компилирует все инфоблоки с `API_CODE`.
+- `SECTIONS`: ManyToMany с `SectionTable` через `SectionElementTable`, только прямые связи. `setIblockSectionId()` синхронизирует с `IBLOCK_SECTION_ID`.
+- `Bitrix\Iblock\ElementTable` знает базовые поля; `add/update/delete` **всегда возвращают ошибку** (`ELEMENT_ENTITY_MESS_*_BLOCKED`). Используй только для чтения базовых полей.
+- Не переопределяй `getMap()` наследника `Element{ApiCode}Table`: побеждает скомпилированная карта. Используй `runtime`/`registerRuntimeField()` запроса, без имён системных полей и кодов свойств.
 
-## Sections
+## Разделы
 
-`Model\Section::compileEntityByIblock($iblock)` takes an ID, an `API_CODE` or an `Iblock` object and returns the FQCN of the runtime class `Section<IBLOCK_ID>Table` in namespace `Bitrix\Iblock` (or `null`). It adds `PARENT_SECTION`, UF entity `IBLOCK_{ID}_SECTION` (`UF_*` fields) and a default scope on `IBLOCK_ID`.
+`Model\Section::compileEntityByIblock($iblock)` принимает ID, `API_CODE` или `Iblock`; возвращает FQCN runtime-класса `Section<IBLOCK_ID>Table` в `Bitrix\Iblock` либо `null`. Добавляет `PARENT_SECTION`, UF-сущность `IBLOCK_{ID}_SECTION` (`UF_*`) и стандартное ограничение `IBLOCK_ID`.
 
-## Property values
+## Значения свойств
 
-Each property with a `CODE` becomes a field named after the `CODE` (properties without `CODE` are skipped). Single → reference, multiple → collection of value objects. Value entity `\Bitrix\Iblock\Elements\IblockProperty{PROPERTY_ID}Table`: `VALUE` (+ `DESCRIPTION` when enabled).
+Свойство с `CODE` становится одноимённым полем; без кода пропускается. Одиночное — связь, множественное — коллекция объектов значений. Сущность `\Bitrix\Iblock\Elements\IblockProperty{PROPERTY_ID}Table`: `VALUE`, также `DESCRIPTION`, если разрешено.
 
-| Type | `VALUE` | Auto relation |
+| Тип | `VALUE` | Автоматическая связь |
 | --- | --- | --- |
 | `S` | string | — |
 | `N` | float | — |
 | `F` | int | `FILE` (`b_file`) |
 | `L` | int | `ITEM` (`PropertyEnumerationTable`: `VALUE`, `XML_ID`) |
-| `E` | int | `ELEMENT` (only if the linked iblock has `API_CODE`) |
+| `E` | int | `ELEMENT` (только при `API_CODE` связанного инфоблока) |
 | `G` | int | `SECTION` (`SectionTable`) |
 
-Custom property types can add fields through the `GetORMFields` callback.
+Свой тип может добавить поля обработчиком `GetORMFields`.
 
-## Side effects of ORM writes
+## Побочные действия ORM-записи
 
-Compiled element classes **do**: required-property check (`onBeforeAdd`), iblock tag cache clear (`CIBlock::clearIblockTagCache`), facet index update/delete, property rows removal on delete, the v2 single-value row on add. Section classes **do**: tag cache clear and tree recount (`LEFT/RIGHT_MARGIN`, `DEPTH_LEVEL`, `GLOBAL_ACTIVE`). The docs say you must do these by hand; the kernel already does them.
+Компилируемые классы элементов **выполняют** проверку обязательных свойств (`onBeforeAdd`), очистку тегов инфоблока (`CIBlock::clearIblockTagCache`), обновление / удаление фасетного индекса, удаление значений свойств, создание одиночной строки v2. Классы разделов очищают теги и пересчитывают дерево (`LEFT/RIGHT_MARGIN`, `DEPTH_LEVEL`, `GLOBAL_ACTIVE`). Документация предлагает делать вручную, но ядро уже выполняет это.
 
-ORM **does not**: search index, SEO (inherited property) recalculation, rights set/check, workflow/business processes, `PREVIEW/DETAIL_PICTURE` resize, auto `CODE`, disk quota, catalog availability and SKU price recalculation, iblock event log, section property binding, classic `OnBeforeIBlockElement*`/`OnAfterIBlockElement*` events. Need any of these → `CIBlockElement::Add/Update/Delete`, `CIBlockSection`.
+ORM **не выполняет**: индексацию поиска, пересчёт наследуемых SEO-свойств, проверку / установку прав, документооборот / бизнес-процессы, уменьшение `PREVIEW/DETAIL_PICTURE`, авто-`CODE`, квоту диска, пересчёт доступности каталога / цен SKU, журнал инфоблока, привязку свойств раздела, классические `OnBeforeIBlockElement*`/`OnAfterIBlockElement*`. Если нужно — `CIBlockElement::Add/Update/Delete`, `CIBlockSection`.
 
-Section `$object->delete()` removes only the section: children and elements stay orphaned. `CIBlockSection::Delete($id)` cascades and cleans search and cache.
+`$object->delete()` раздела удаляет только его, оставляя дочерние разделы и элементы без родителя. `CIBlockSection::Delete($id)` удаляет каскадно, чистит поиск и кеш.

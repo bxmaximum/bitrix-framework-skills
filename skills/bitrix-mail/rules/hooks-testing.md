@@ -1,16 +1,16 @@
-# Hooks, queue processing, testing
+# События, очередь, тестирование
 
-## Hooks (module `main`)
+## События модуля `main`
 
-| Event | Handler gets | Effect |
+| Событие | Аргументы обработчика | Действие |
 | --- | --- | --- |
-| `OnBeforeEventAdd` | legacy: `(&$event, &$lid, &$arFields, &$messageId, &$files, &$languageId)` | `false` cancels before queue/immediate send. **Since main 26.250\*** also fires for `Mail\Event::send()`/`sendImmediate()`; before, only for `CEvent::*` |
-| `OnBeforeEventSend` | legacy: `(&$arFields, &$eventMessage, Mail\Context $context, &$arResult)` | per template at send time (also in the queue worker); `false` skips this template |
-| `OnBeforeMailSend` | D7: `$event->getParameter(0)` = mail params (`TO`, `SUBJECT`, `HEADER`, …) | alter or cancel any outgoing mail, including other modules' |
-| `OnBeforePhpMail` | D7: `$event->getParameter('arguments')` object with `to`, `subject`, `message`, `additional_headers`, `additional_parameters`, `context` (by reference) | last hop before SMTP/`mail()` |
-| `OnMailEventMailClickRedirect` | D7: `$event->getParameter(0)` = `['url' => …, 'isSigned' => bool]` | tracked-link click; return `EventResult` with `['url' => …]` to rewrite it — applied only if the origin stays the same. **Since main 26.800\*** |
+| `OnBeforeEventAdd` | Старый формат: `(&$event, &$lid, &$arFields, &$messageId, &$files, &$languageId)` | `false` отменяет постановку / немедленную отправку. **Since main 26.250\*** вызывается и для `Mail\Event::send()`/`sendImmediate()`, раньше только `CEvent::*` |
+| `OnBeforeEventSend` | Старый формат: `(&$arFields, &$eventMessage, Mail\Context $context, &$arResult)` | Для каждого шаблона при отправке, включая очередь; `false` пропускает шаблон |
+| `OnBeforeMailSend` | D7: `$event->getParameter(0)` — параметры письма (`TO`, `SUBJECT`, `HEADER`, …) | Изменить / отменить любое письмо, в том числе другого модуля |
+| `OnBeforePhpMail` | D7: `$event->getParameter('arguments')` — объект с `to`, `subject`, `message`, `additional_headers`, `additional_parameters`, `context` по ссылке | Перед SMTP/`mail()` |
+| `OnMailEventMailClickRedirect` | D7: `$event->getParameter(0)` = `['url' => …, 'isSigned' => bool]` | Переход по отслеживаемой ссылке; `EventResult` с `['url' => …]` меняет адрес только внутри исходного origin. **Since main 26.800\*** |
 
-Register legacy events with `addEventHandlerCompatible()`, D7 ones with `addEventHandler()` (`bitrix-events`).
+Старый формат регистрируй через `addEventHandlerCompatible()`, D7 — `addEventHandler()` (`bitrix-events`).
 
 ```php
 use Bitrix\Main\Error;
@@ -22,42 +22,42 @@ EventManager::getInstance()->addEventHandler('main', 'OnBeforeMailSend', static 
     $params = $event->getParameter(0);
     if (str_ends_with((string)$params['TO'], '@blocked.example'))
     {
-        // 'error' reaches Mail::sendResult() callers (Since main 26.800); earlier ERROR just cancels
-        return new EventResult(EventResult::ERROR, ['error' => new Error('Domain blocked', 'VENDOR_BLOCKED')]);
+        // error приходит в Mail::sendResult() с main 26.800; раньше ERROR только отменял отправку
+        return new EventResult(EventResult::ERROR, ['error' => new Error('Домен запрещён', 'VENDOR_BLOCKED')]);
     }
 
     return null;
 });
 ```
 
-- A `SUCCESS` result's parameters are `array_merge`d into the mail params, so return an array (`['TO' => $to]`) or return `null`. `SUCCESS` without an array, or a non-array return value, throws a `TypeError`.
-- **Since main 26.800**, `OnBeforePhpMail` can reject with `$args->context->setSendingError(new Error(...))`.
-- `OnBeforeEventSend` can route a template through a sender with `$context->setSenderIdentity(...)` (Since main 26.800).
+- Параметры `SUCCESS` объединяются с параметрами письма через `array_merge`: возвращай массив (`['TO' => $to]`) либо `null`. `SUCCESS` без массива и возврат не-массива вызывают `TypeError`.
+- **Since main 26.800** обработчик `OnBeforePhpMail` может отказать через `$args->context->setSendingError(new Error(...))`.
+- `OnBeforeEventSend` может выбрать отправителя через `$context->setSenderIdentity(...)` (**Since main 26.800**).
 
-## Queue processing
+## Обработка очереди
 
-- `Mail\EventManager::checkEvents()` runs as a background job after every hit, unless option `main:check_events` is `N`. One run sends up to option `main:mail_event_bulk` (5) queued events, guarded by the DB lock `event`.
-- Low traffic means mail is late. Busy sites, or sites that need a steady rate, should use cron. In `dbconn.php` add `define('BX_CRONTAB_SUPPORT', true);` so hits skip the queue (this also moves non-periodic agents to cron). Then run `php -f /path/to/bitrix/modules/main/tools/cron_events.php` every minute: it defines `BX_CRONTAB`, and the same job runs at the end of the script. Raise `mail_event_bulk` for volume, and don't set `check_events = N`, which disables the job on cron too. Agents and cron details: `bitrix-background-jobs`.
-- Drain one batch now (tests, CLI): `CEvent::ExecuteEvents()`. It skips the cron/hit checks.
+- `Mail\EventManager::checkEvents()` запускается фоновым заданием после хита, если `main:check_events` не `N`. За запуск отправляет до `main:mail_event_bulk` (5) событий под блокировкой БД `event`.
+- При малом трафике почта опаздывает; для стабильной обработки используй cron. В `dbconn.php` добавь `define('BX_CRONTAB_SUPPORT', true);`: хиты пропустят очередь, непериодические агенты тоже перейдут в cron. Каждую минуту запускай `php -f /path/to/bitrix/modules/main/tools/cron_events.php`: скрипт определяет `BX_CRONTAB`, задание выполняется в конце. Для объёма увеличь `mail_event_bulk`. Не задавай `check_events = N`: это отключит обработку и в cron. Подробности: `bitrix-background-jobs`.
+- Обработать пакет сразу (тест, CLI): `CEvent::ExecuteEvents()` обходит проверки cron/хита.
 
-## Diagnostics
+## Диагностика
 
 `b_event.SUCCESS_EXEC`:
 
-| Value | Meaning |
+| Значение | Смысл |
 | --- | --- |
-| `N` | queued |
-| `Y` | all templates sent |
-| `P` | some templates failed |
-| `F` | all templates failed (transport, or `StopException` in a template) |
-| `0` | no template: check the type, `ACTIVE = Y`, site binding for `LID`, and `LANGUAGE_ID` |
-| `E` | exception; logged by the exception handler, and the worker stops this run |
+| `N` | В очереди |
+| `Y` | Все шаблоны отправлены |
+| `P` | Часть шаблонов не отправлена |
+| `F` | Все шаблоны завершились ошибкой транспорта либо `StopException` в шаблоне |
+| `0` | Нет шаблона: проверь тип, `ACTIVE = Y`, привязку сайта `LID`, `LANGUAGE_ID` |
+| `E` | Исключение, записанное обработчиком ошибок; текущий запуск обработчика прекращается |
 
-Rows are purged after option `main:mail_event_period` days (14) by `CEvent::CleanUpAgent()`.
+Строки удаляет `CEvent::CleanUpAgent()` через `main:mail_event_period` дней (14).
 
-## Testing
+## Тестирование
 
-- Stage/QA whitelist: add `define('ONLY_EMAIL', 'qa@example.com');` to `dbconn.php`. Messages whose `TO` differs are dropped and still reported as sent.
-- Capture instead of sending (no SMTP in use): define a global `custom_mail($to, $subject, $message, $additionalHeaders, $additionalParameters, $context)` before the first send (e.g. in `/local/php_interface/init.php`). Write the message to a file and return `true`.
-- SMTP dialogue log: `smtp` → `debug` + `log_file`/`logFile` in `.settings.php` (`bitrix-settings`).
-- `Mail::sendResult()` error codes tell a cancel from a transport failure. `Event::sendImmediate()` returns only a status letter.
+- Ограничение получателя stage/QA: `define('ONLY_EMAIL', 'qa@example.com');` в `dbconn.php`. Письма с другим `TO` отбрасываются, но отмечаются отправленными.
+- Перехват без SMTP: до первой отправки определи глобальную `custom_mail($to, $subject, $message, $additionalHeaders, $additionalParameters, $context)`, например в `/local/php_interface/init.php`. Запиши письмо в файл, верни `true`.
+- Журнал SMTP: `smtp` → `debug` + `log_file`/`logFile` в `.settings.php` (`bitrix-settings`).
+- Коды `Mail::sendResult()` различают отмену и ошибку транспорта. `Event::sendImmediate()` возвращает только букву статуса.

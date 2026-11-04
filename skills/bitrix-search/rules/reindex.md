@@ -1,11 +1,11 @@
-# Reindex
+# Переиндексация
 
-## Make your module reindexable (`search:OnReindex`)
+## Поддержка переиндекса своего модуля (`search:OnReindex`)
 
-Admin "Reindex" and `CSearch::ReIndexAll()` / `ReindexModule()` call every `OnReindex` handler with `($NS, $callback, 'Index')`. The indexed `MODULE_ID` is the handler's `TO_MODULE_ID`, so register the handler **persistently with your module id** in the installer — a runtime `addEventHandler()` has no module id and items get an empty `MODULE_ID`.
+Административная переиндексация и `CSearch::ReIndexAll()` / `ReindexModule()` вызывают `OnReindex` с `($NS, $callback, 'Index')`. `MODULE_ID` берётся из `TO_MODULE_ID` обработчика: регистрируй **постоянно под ID своего модуля** в установщике. У `addEventHandler()` нет ID модуля, записи получат пустой `MODULE_ID`.
 
 ```php
-// install/index.php DoInstall(); mirror with unRegisterEventHandler() on uninstall
+// DoInstall() в install/index.php; при удалении unRegisterEventHandler()
 \Bitrix\Main\EventManager::getInstance()->registerEventHandlerCompatible(
     'search', 'OnReindex', 'vendor.docs', \Vendor\Docs\Search\Indexer::class, 'onReindex'
 );
@@ -21,37 +21,37 @@ public static function onReindex($NS = [], $callback = null, $callbackMethod = '
     ]);
     while ($row = $rows->fetch())
     {
-        $item = ['ID' => (string)$row['ID']] + self::buildFields($row); // same fields as CSearch::Index()
+        $item = ['ID' => (string)$row['ID']] + self::buildFields($row); // поля CSearch::Index()
         if (!call_user_func([$callback, $callbackMethod], $item))
         {
-            return (string)$row['ID']; // time is up: resume from here on the next step
+            return (string)$row['ID']; // время вышло: продолжить с этого ID на следующем шаге
         }
     }
-    return false; // done
+    return false; // готово
 }
 ```
 
-- `$item['ID']` is the `ITEM_ID`; the rest are `CSearch::Index()` fields.
-- The callback returns `false` when the step time is over — after indexing the current item.
-- Return: `false` = finished; string = last id (resume point, honoured only for stepped runs); array of items = legacy mode.
-- `$NS` keys: `MODULE` (whose step it is), `ID` (your last id), `SITE_ID`, `MODULE_ID`, `CNT`, `SESS_ID`, `CLEAR`.
-- Reference implementation: `CIBlock::OnSearchReindex()`.
-- The callback indexes with `$bOverWrite = false`: items whose `DATE_CHANGE` didn't change keep old text unless the run is full.
+- `$item['ID']` — `ITEM_ID`, остальные — поля `CSearch::Index()`.
+- Обработчик обратного вызова возвращает `false` по истечении времени, уже после индексации текущей записи.
+- Результат: `false` — конец; строка — последний ID для продолжения, только пошагово; массив записей — старый режим.
+- Ключи `$NS`: `MODULE` (модуль шага), `ID` (последний ID), `SITE_ID`, `MODULE_ID`, `CNT`, `SESS_ID`, `CLEAR`.
+- Эталон: `CIBlock::OnSearchReindex()`.
+- Индексация выполняется с `$bOverWrite = false`: без изменения `DATE_CHANGE` остаётся старый текст, кроме полного запуска.
 
-## Run it
+## Запуск
 
-| Way | Call |
+| Способ | Вызов |
 | --- | --- |
-| Admin | `/bitrix/admin/search_reindex.php` (stepped, `max_execution_time` option, default 20 s) |
-| One module | `CSearch::ReindexModule('vendor.docs', true)` — `true` deletes the module's items first |
-| Everything | `CSearch::ReIndexAll(true, 0)` — **DANGER**: `$bFull = true` truncates the whole index first |
-| Stepped | `$NS = CSearch::ReIndexAll(false, 20, $NS)` until it returns an int (count) |
+| Административный интерфейс | `/bitrix/admin/search_reindex.php`, шаги, опция `max_execution_time`, по умолчанию 20 с |
+| Один модуль | `CSearch::ReindexModule('vendor.docs', true)`: `true` сначала удаляет записи модуля |
+| Всё | `CSearch::ReIndexAll(true, 0)`; **ОПАСНО:** `$bFull = true` сначала очищает весь индекс |
+| По шагам | `$NS = CSearch::ReIndexAll(false, 20, $NS)` до возврата int (количества) |
 
-Signatures: `ReIndexAll($bFull = false, $max_execution_time = 0, $NS = [], $clear_suggest = false)` (array = continue, int = done); `ReindexModule($MODULE_ID, $bFull = false)`.
+Сигнатуры: `ReIndexAll($bFull = false, $max_execution_time = 0, $NS = [], $clear_suggest = false)` (массив — продолжить, int — готово); `ReindexModule($MODULE_ID, $bFull = false)`.
 
-- No console command or agent for reindex exists in the kernel. Wrap `ReindexModule()` in your own console command (`bitrix-console-commands`) or agent (`bitrix-background-jobs`).
-- Step time counts from `START_EXEC_TIME` (request start). Run one step per request/process; in a loop inside one CLI process every later step indexes ~1 item. For CLI use `0` (one shot).
-- A `ReIndexAll()` call runs in one DB transaction; a one-shot full run on a large site holds it for the whole run.
-- Non-full `ReIndexAll()` deletes items not touched in this session (`DeleteOld`) — your handler must emit every live item.
-- `ReindexModule()` with a callback-style handler returns right after the handler; stale items are not deleted — use `$bFull = true`.
-- After switching the full-text engine, stemming or `letters` option, run a full reindex.
+- **Since search 26.0** команда `php bitrix/bitrix.php search:reindex --step-duration=20` выполняет пошаговый переиндекс. `--full` сначала очищает индекс, `--continue` продолжает сохранённое состояние (срок сутки). Есть `--site`, `--module`, `--clear-suggest`; `--trace` выводит SQL, только для диагностики. На старом модуле оберни ReindexModule() своей командой. Агента переиндекса нет.
+- Время callback-шага считается от `CSearchCallback::$startTime` (начально START_EXEC_TIME). Штатная search:reindex сбрасывает его на каждом шаге. Самодельный цикл без сброса после первого шага обрабатывает около одной записи за итерацию; используй штатную команду либо однократный ReIndexAll с временем 0.
+- `ReIndexAll()` выполняется в транзакции БД; полный запуск большого сайта удерживает её до конца.
+- Неполный `ReIndexAll()` удаляет записи, не затронутые текущей сессией (`DeleteOld`): обработчик должен выдать все живые записи.
+- `ReindexModule()` с callback-обработчиком завершается сразу после него, старые записи не удаляет: используй `$bFull = true`.
+- После смены движка, морфологии, `letters` выполни полный переиндекс.

@@ -1,6 +1,6 @@
-# Custom triggers (Nodes designer)
+# Свои триггеры узлового дизайнера
 
-A trigger starts `TYPE=nodes` templates on an event of your module. It is an activity folder like any other (`rules/custom-activities.md`); kernel samples: `bizproc/install/activities/bitrix/createdocumenttrigger/`, `fieldchangedtrigger/`.
+Триггер запускает шаблоны `TYPE=nodes` по событию модуля. Его каталог устроен как каталог действия (`rules/custom-activities.md`). Образцы ядра: `bizproc/install/activities/bitrix/createdocumenttrigger/`, `fieldchangedtrigger/`.
 
 ```php
 class CBPVendorOrderPaidTrigger extends \Bitrix\Bizproc\Activity\BaseTrigger
@@ -12,14 +12,14 @@ class CBPVendorOrderPaidTrigger extends \Bitrix\Bizproc\Activity\BaseTrigger
 
     public static function getPropertiesMap(array $documentType, array $context = []): array
     {
-        return []; // designer fields; values arrive in checkApplyRules()
+        return []; // поля дизайнера; значения поступают в checkApplyRules()
     }
 
     public function checkApplyRules(
         array $rules,
         \Bitrix\Bizproc\Activity\Trigger\TriggerParameters $parameters,
     ): \Bitrix\Bizproc\Result {
-        return \Bitrix\Bizproc\Result::createOk(); // or an error Result to skip this start
+        return \Bitrix\Bizproc\Result::createOk(); // ошибочный Result отменяет этот запуск
     }
 
     protected static function getModuleId(): ?string
@@ -29,11 +29,11 @@ class CBPVendorOrderPaidTrigger extends \Bitrix\Bizproc\Activity\BaseTrigger
 }
 ```
 
-- `.description.php` of a trigger uses `type: []`. Whether a code is a trigger is decided by `CBPRuntime::getRuntime()->isTriggerActivity($code)` (**Since bizproc 26.1400**), not by the `Trigger` suffix.
-- Override `getDocumentComplexType(): array` (default: the `WORKFLOW` pseudo-type) and `getSection()` when the trigger belongs to a document type. External callers read it via `getEventDocumentComplexType()` (**Since bizproc 26.1400**).
-- Hook for designer values: `protected static applyPropertiesDialogValues()` (**Since bizproc 26.1200**).
+- В `.description.php` триггера задавай `type: []`. **Since bizproc 26.1400** тип определяет `CBPRuntime::getRuntime()->isTriggerActivity($code)`, а не суффикс `Trigger`; на старом модуле сверяй его механизм регистрации.
+- Если триггер относится к документу, переопредели `getDocumentComplexType(): array` (по умолчанию псевдотип `WORKFLOW`) и `getSection()`. **Since bizproc 26.1400** внешний код читает тип через `getEventDocumentComplexType()`; на старом модуле используй доступный API его класса.
+- Сохранение значений дизайнера: `protected static applyPropertiesDialogValues()` (**Since bizproc 26.1200**). На старом модуле используй штатную форму соответствующей версии.
 
-## Firing
+## Отправка события
 
 ```php
 use Bitrix\Bizproc\Starter\Dto\ContextDto;
@@ -50,8 +50,8 @@ $result = Starter::getByScenario(Scenario::onEvent)
     ->start();
 ```
 
-`addEvent(string $code, array $documents = [], array $parameters = [])`: `$code` is the trigger class name without `CBP`; without documents the event starts processes with no document (kernel: `bizproc/lib/integration/intranet/eventhandler.php`).
+`addEvent(string $code, array $documents = [], array $parameters = [])`: `$code` — имя класса триггера без `CBP`. Без документов запускаются процессы без документа. Образец ядра: `bizproc/lib/Integration/Intranet/EventHandler.php`.
 
-## Retiring a trigger
+## Замена старого триггера
 
-A document module maps old trigger types to new ones in its `ModuleSettings::getTriggerUpgradeMap(): array<string, TriggerUpgradeDto>` with `new \Bitrix\Bizproc\Starter\Dto\TriggerUpgradeDto($newTriggerType, $extraProperties)` (**Since bizproc 26.1400**). `getInterchangeableTriggerPairs()` from 26.1200 was removed in 26.1400 and is no longer read.
+Модуль документа сопоставляет старые типы с новыми через `ModuleSettings::getTriggerUpgradeMap(): array<string, TriggerUpgradeDto>` и `new \Bitrix\Bizproc\Starter\Dto\TriggerUpgradeDto($newTriggerType, $extraProperties)` (**Since bizproc 26.1400**). На 26.1200 используй прежний `getInterchangeableTriggerPairs()`; в 26.1400 он удалён и не читается. <!-- verify:negative -->

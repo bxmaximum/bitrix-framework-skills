@@ -1,20 +1,20 @@
-# Links between blocks, iblock directory property
+# Связи блоков и свойство-справочник инфоблока
 
-## UF type `hlblock`
+## Тип UF `hlblock`
 
-Stores the target record's numeric `ID`. `SETTINGS` (invalid values fall back to defaults):
+Хранит числовой ID целевой записи. `SETTINGS`, недопустимые значения заменяются стандартными:
 
-| Key | Default | Meaning |
+| Ключ | По умолчанию | Назначение |
 | --- | --- | --- |
-| `HLBLOCK_ID` | 0 | target block (required for links) |
-| `HLFIELD_ID` | 0 | UF id shown as label, 0 = `ID` |
+| `HLBLOCK_ID` | 0 | Целевой блок, обязателен для связи |
+| `HLFIELD_ID` | 0 | ID UF для подписи; 0 — `ID` |
 | `DISPLAY` | `CUserTypeHlblock::DISPLAY_LIST` | `DISPLAY_CHECKBOX`, `DISPLAY_UI`, `DISPLAY_DIALOG` |
-| `LIST_HEIGHT` | 1 single / 5 multiple | list size |
+| `LIST_HEIGHT` | 1 одиночное / 5 множественное | Размер списка |
 | `DEFAULT_VALUE` | `''` / `[]` | int / int[] |
 
-`MULTIPLE` belongs to the field, not `SETTINGS`. `DISPLAY_DIALOG` uses UI entity selector entity `highloadblock-element` (options `highloadblockId`, `valueField`, `titleField`, `orderField`, `direction`, `queryMethod`; see `bitrix-ui`).
+`MULTIPLE` — свойство поля, а не `SETTINGS`. `DISPLAY_DIALOG` использует сущность селектора `highloadblock-element`: `highloadblockId`, `valueField`, `titleField`, `orderField`, `direction`, `queryMethod` (см. `bitrix-ui`).
 
-- Single field → auto reference `UF_X_REF`. It exists only when `HLBLOCK_ID` is set and the target block exists. Compiling the source also compiles the target.
+- Одиночное поле автоматически создаёт `UF_X_REF`, только если задан `HLBLOCK_ID` и целевой блок существует. Компиляция источника компилирует и цель.
 
 ```php
 $rows = $dataClass::getList([
@@ -23,34 +23,34 @@ $rows = $dataClass::getList([
 ])->fetchAll();
 ```
 
-- Multiple field → no `_REF`. The value is an array of IDs; `UF_X_SINGLE` filters by one value (JOIN). To load targets, collect IDs and run one query with `'@ID' => $ids`.
-- No foreign keys: target existence is never checked and dangling links are never cleaned. Validate before save. On target delete pick one rule: block / clear links / replace with fallback / tolerate. Check-then-delete is not atomic. Check rights on both blocks.
-- Self-reference (`UF_PARENT` tree) is allowed: reject self-links, walk parents with a depth limit.
-- Across environments: resolve the target by a stable code (`UF_CODE`) in the target environment, store its local `ID`.
+- Множественное поле не имеет `_REF`: значение — массив ID; `UF_X_SINGLE` фильтрует по одному (JOIN). Для загрузки целей собери ID, сделай один запрос `'@ID' => $ids`.
+- Внешних ключей нет: существование цели не проверяется, оборванные ссылки не очищаются. Проверяй перед записью. При удалении цели выбери: запрет, очистка ссылок, замена запасным значением либо сохранение. Проверка с последующим удалением не атомарна. Проверяй права обоих блоков.
+- Ссылка на себя (`UF_PARENT`, дерево) разрешена: запрещай самоссылки, обходи родителей с пределом глубины.
+- Между средами находи цель по стабильному `UF_CODE` в целевой среде, сохраняй её локальный ID.
 
-## Iblock `directory` property (Справочник)
+## Свойство инфоблока `directory` (справочник)
 
-Type class `CIBlockPropertyDirectory` lives in **highloadblock** (registered on iblock `OnIBlockPropertyBuildList`): load both modules. The value stored is the HL record's **`UF_XML_ID`** (string), not `ID`.
+`CIBlockPropertyDirectory` находится в **highloadblock**, регистрируется на `OnIBlockPropertyBuildList` модуля iblock: загрузи оба модуля. Значение — строковый **`UF_XML_ID`**, а не ID записи HL.
 
 ```php
 use Bitrix\Iblock\PropertyTable;
 
 $property = new \CIBlockProperty();
 $propId = $property->Add([
-    'IBLOCK_ID' => $iblockId, 'NAME' => 'Color', 'CODE' => 'COLOR',
+    'IBLOCK_ID' => $iblockId, 'NAME' => 'Цвет', 'CODE' => 'COLOR',
     'PROPERTY_TYPE' => PropertyTable::TYPE_STRING,
     'USER_TYPE' => PropertyTable::USER_TYPE_DIRECTORY,            // 'directory'
-    'USER_TYPE_SETTINGS' => ['TABLE_NAME' => $hl['TABLE_NAME']], // exact TABLE_NAME of the block
-    'MULTIPLE' => 'N',                                           // multiplicity here, not in settings
+    'USER_TYPE_SETTINGS' => ['TABLE_NAME' => $hl['TABLE_NAME']], // точное TABLE_NAME блока
+    'MULTIPLE' => 'N', // множественность здесь, не в настройках
 ]);
 if (!$propId) { /* $property->LAST_ERROR */ }
 
-\CIBlockElement::SetPropertyValuesEx($elementId, $iblockId, ['COLOR' => 'red']); // no result: re-read to verify
+\CIBlockElement::SetPropertyValuesEx($elementId, $iblockId, ['COLOR' => 'red']); // результата нет: перечитай для проверки
 ```
 
-- Directory HL fields: `UF_XML_ID` (required, stable, unique — nothing enforces it), `UF_NAME`, `UF_SORT`, `UF_FILE`, `UF_DEF`, `UF_DESCRIPTION`, `UF_FULL_DESCRIPTION`, `UF_LINK`. Blocks created from property settings UI get `TABLE_NAME` `b_hlbd_<name>` cut to 30 chars; API-created blocks keep yours.
-- Options need `UF_XML_ID` (absent → empty list). Order: `UF_SORT`, then `UF_NAME` (else `UF_XML_ID`), then `ID`. Without `UF_NAME` the label is `UF_XML_ID`.
-- A record with `UF_DEF = 1` becomes the property `DEFAULT_VALUE` (first by `UF_SORT`, `UF_NAME`).
-- Resolve values: read the property → `$dataClass::getList(['filter' => ['@UF_XML_ID' => $values]])`. Validate incoming values the same way; value order is not meaningful.
-- After a `TABLE_NAME` rename: read the full `USER_TYPE_SETTINGS`, replace `TABLE_NAME`, `CIBlockProperty::Update()`. Otherwise options stop loading.
-- Lookups by `TABLE_NAME` are cached (ORM 86400 s + static); `HighloadBlockTable::cleanCache()` resets the static part.
+- Поля справочника: `UF_XML_ID` (обязательный стабильный уникальный ключ, уникальность не проверяется), `UF_NAME`, `UF_SORT`, `UF_FILE`, `UF_DEF`, `UF_DESCRIPTION`, `UF_FULL_DESCRIPTION`, `UF_LINK`. Блок из интерфейса свойств получает `TABLE_NAME = b_hlbd_<name>` до 30 символов; API сохраняет заданное имя.
+- Для вариантов нужен `UF_XML_ID`, иначе список пуст. Порядок: `UF_SORT`, `UF_NAME` (без него `UF_XML_ID`), `ID`. Без `UF_NAME` подпись — `UF_XML_ID`.
+- Запись с `UF_DEF = 1` становится `DEFAULT_VALUE` свойства; первая по `UF_SORT`, `UF_NAME`.
+- Преобразование: прочитай свойство → `$dataClass::getList(['filter' => ['@UF_XML_ID' => $values]])`. Так же проверяй входящие значения; порядок незначим.
+- При переименовании `TABLE_NAME` прочитай полные `USER_TYPE_SETTINGS`, замени `TABLE_NAME`, вызови `CIBlockProperty::Update()`. Иначе варианты не загрузятся.
+- Поиск по `TABLE_NAME` кешируется ORM на 86400 с и статически; `HighloadBlockTable::cleanCache()` сбрасывает статическую часть.

@@ -1,16 +1,16 @@
-# Tablet map
+# Карта таблета
 
-## Naming and location
+## Имена и размещение
 
-- `SomethingTable extends \Bitrix\Main\ORM\Data\DataManager`; the name without `Table` is the object class (`Post`, generated `EO_Post`, `EO_Post_Collection`).
-- Project convention: `lib/Model/`. `make:tablet` builds the map from an **existing** DB table (needs `perfmon`) and defaults to `Vendor\Module\Tablet`:
+- `SomethingTable extends \Bitrix\Main\ORM\Data\DataManager`; имя без `Table` — класс объекта (`Post`, сгенерированные `EO_Post`, `EO_Post_Collection`).
+- Соглашение проекта: `lib/Model/`. `make:tablet` строит карту **существующей** таблицы БД (нужен `perfmon`), по умолчанию в `Vendor\Module\Tablet`:
 
 ```bash
 php bitrix/bitrix.php make:tablet vendor_module_post vendor.module --namespace 'Vendor\Module\Model'
-php bitrix/bitrix.php orm:annotate -m vendor.module     # EO_* classes for the IDE
+php bitrix/bitrix.php orm:annotate -m vendor.module     # классы EO_* для IDE
 ```
 
-## Skeleton
+## Каркас
 
 ```php
 <?php declare(strict_types=1);
@@ -31,7 +31,7 @@ final class PostTable extends DataManager
 
     public static function getUfId(): string
     {
-        return 'VENDOR_MODULE_POST';   // only if the entity has user fields
+        return 'VENDOR_MODULE_POST';   // только если у сущности есть пользовательские поля
     }
 
     public static function getMap(): array
@@ -52,15 +52,15 @@ final class PostTable extends DataManager
 }
 ```
 
-Fluent `configure*()` over the legacy array format (`['primary' => true]`).
+Предпочитай цепочку `configure*()` устаревшему массиву `['primary' => true]`.
 
-## Field types
+## Типы полей
 
 - `IntegerField`, `FloatField`, `DecimalField`, `StringField`, `TextField`, `BooleanField` (`configureValues('N', 'Y')`), `EnumField` (`configureValues([...])`).
 - `DateField` / `DatetimeField` → `Type\Date` / `Type\DateTime` (`bitrix-datetime`).
-- `ExpressionField('FULL_NAME', 'CONCAT(%s, " ", %s)', ['NAME', 'LAST_NAME'])` — computed.
-- `CryptoField` — encrypted at rest (`bitrix-security`).
-- `ArrayField` stores **JSON** by default; keep it. For a legacy PHP-serialized column never decode objects:
+- `ExpressionField('FULL_NAME', 'CONCAT(%s, " ", %s)', ['NAME', 'LAST_NAME'])` — вычисляемое поле.
+- `CryptoField` — шифрование хранимого значения (`bitrix-security`).
+- `ArrayField` по умолчанию хранит **JSON**; сохраняй этот формат. Для старого PHP-сериализованного столбца не разрешай восстановление объектов:
 
 ```php
 (new Fields\ArrayField('PARAMS'))
@@ -68,9 +68,11 @@ Fluent `configure*()` over the legacy array format (`['primary' => true]`).
     ->configureUnserializeCallback(static fn ($v) => unserialize((string)$v, ['allowed_classes' => false]));
 ```
 
-## Per-field data modifiers
+**Since main 26.900** `ArrayField::decodePhp()` и `Field::unserialize()` используют `allowed_classes=false`. Старые записанные объекты (включая `Type\DateTime` и DTO) читаются как `__PHP_Incomplete_Class`; скаляры и массивы сохраняют поведение. Переведи такие значения в JSON/скаляры отдельной миграцией; не включай создание объектов обратно для недоверенных данных. На старом ядре оставляй явный безопасный обработчик десериализации из примера выше.
 
-There is no tablet-level `fetchDataModification()`. Modifiers live on fields:
+## Преобразователи данных поля
+
+Метода таблета `fetchDataModification()` нет. Преобразователи задаются на полях:
 
 ```php
 (new Fields\StringField('PHONE'))
@@ -78,12 +80,12 @@ There is no tablet-level `fetchDataModification()`. Modifiers live on fields:
     ->addFetchDataModifier(static fn ($value, $query, array $row, string $alias) => '+' . $value);
 ```
 
-Fetch modifiers run after DB type conversion. Array format: `'fetch_data_modification' => fn () => [$callable]`.
+Преобразователи чтения выполняются после приведения типов БД. Формат массива: `'fetch_data_modification' => fn () => [$callable]`.
 
-## Relations
+## Связи
 
 ```php
-(new Fields\Relations\OneToMany('COMMENTS', CommentTable::class, 'POST'))   // 'POST' = Reference in CommentTable
+(new Fields\Relations\OneToMany('COMMENTS', CommentTable::class, 'POST'))   // 'POST' = Reference в CommentTable
     ->configureJoinType('LEFT'),
 (new Fields\Relations\ManyToMany('TAGS', TagTable::class))
     ->configureTableName('vendor_module_post_tag')
@@ -96,8 +98,8 @@ new Fields\Relations\Reference(
 ),
 ```
 
-`Join::on()` returns a `ConditionTree`; compare two columns with `new \Bitrix\Main\ORM\Query\Filter\Expressions\ColumnExpression('this.CODE')`.
+`Join::on()` возвращает `ConditionTree`; два столбца сравнивай через `new \Bitrix\Main\ORM\Query\Filter\Expressions\ColumnExpression('this.CODE')`.
 
-## User fields
+## Пользовательские поля
 
-`getUfId()` attaches `UF_*` to select/filter and objects (`get('UF_X')`, `set('UF_X', $v)`). `Bitrix\Main\Entity\UField` is deprecated.
+`getUfId()` подключает `UF_*` к select/filter и объектам (`get('UF_X')`, `set('UF_X', $v)`). `Bitrix\Main\Entity\UField` устарел.

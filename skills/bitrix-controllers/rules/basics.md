@@ -1,29 +1,29 @@
-# Files, action names, autowire
+# Файлы, имена действий, автосборка
 
-## Files and action names
+## Файлы и имена действий
 
-Module `.settings.php` (`/local/modules/vendor.module/.settings.php`):
+`.settings.php` модуля (`/local/modules/vendor.module/.settings.php`):
 
 ```php
 'controllers' => [
     'value' => [
         'defaultNamespace' => '\\Vendor\\Module\\Infrastructure\\Controller',
         'namespaces' => [
-            '\\Vendor\\Module\\Infrastructure\\Controller\\Web' => 'web', // alias segment
+            '\\Vendor\\Module\\Infrastructure\\Controller\\Web' => 'web', // сегмент псевдонима
         ],
-        'restIntegration' => ['enabled' => true], // only for the REST scope
+        'restIntegration' => ['enabled' => true], // только для области REST
     ],
     'readonly' => true,
 ],
 ```
 
-- `lib/Infrastructure/Controller/Post.php` → action `vendor:module.Post.create` (`Post::createAction`), URL `/bitrix/services/main/ajax.php?action=vendor:module.Post.create`.
-- `Web\Post::getAction` → `vendor:module.web.Post.get`. No `Controller` suffix is added or stripped.
-- Case: if the controller segment starts lower-case, the resolver lower-cases the whole default-namespace path, and the loader then looks for `lib/infrastructure/controller/post.php`. With PascalCase files that works on macOS and returns "action not found" on Linux. Kernel: `Engine/Resolver.php` `buildControllerClassName()`, `Loader::autoLoad()`.
+- `lib/Infrastructure/Controller/Post.php` → действие `vendor:module.Post.create` (`Post::createAction`), URL `/bitrix/services/main/ajax.php?action=vendor:module.Post.create`.
+- `Web\Post::getAction` → `vendor:module.web.Post.get`. Суффикс `Controller` неизменен.
+- Если сегмент контроллера начинается со строчной буквы, разрешитель приводит весь путь пространства имён по умолчанию к нижнему регистру: загрузчик ищет `lib/infrastructure/controller/post.php`. Файлы PascalCase находятся на macOS, но на Linux дают "action not found". Ядро: `Engine/Resolver.php`, `buildControllerClassName()`, `Loader::autoLoad()`.
 
-## Minimal controller
+## Минимальный контроллер
 
-The engine builds controllers with `Request` only (`ControllerBuilder`). No constructor DI.
+Движок создаёт контроллер только с `Request` (`ControllerBuilder`). DI конструктора нет.
 
 ```php
 <?php declare(strict_types=1);
@@ -41,20 +41,20 @@ use Vendor\Module\Application\Service\PostService;
 final class Post extends Controller
 {
     #[HttpMethod([ActionFilter\HttpMethod::METHOD_GET])]
-    #[DisablePrefilters([ActionFilter\Csrf::class])] // read-only; Authentication stays
+    #[DisablePrefilters([ActionFilter\Csrf::class])] // только чтение; Authentication сохраняется
     public function getAction(int $id, PostService $posts): ?array
     {
         $post = $posts->find($id);
         if ($post === null)
         {
-            $this->addError(new Error('Post not found', 'POST_NOT_FOUND'));
+            $this->addError(new Error('Запись не найдена', 'POST_NOT_FOUND'));
             return null;
         }
 
         return ['post' => $post];
     }
 
-    #[HttpMethod([ActionFilter\HttpMethod::METHOD_POST])] // defaults keep Authentication + Csrf
+    #[HttpMethod([ActionFilter\HttpMethod::METHOD_POST])] // стандартные Authentication + Csrf сохраняются
     public function createAction(string $title, PostService $posts, CurrentUser $user): ?array
     {
         $result = $posts->create($title, (int)$user->getId());
@@ -69,26 +69,26 @@ final class Post extends Controller
 }
 ```
 
-Attributes need main 26.250\*; the same config for older kernels: `rules/filters.md` → `configureActions()`. `JsonController` = `Controller` + `ContentType([JSON])` prefilter.
+Атрибуты требуют main 26.250\*; для старого ядра настройка через `configureActions()` в `rules/filters.md`. `JsonController` — это `Controller` с предварительным фильтром `ContentType([JSON])`.
 
-Lifecycle: `__construct(Request)` → `init()` (builds the filter config; call `parent::init()` first) → `processBeforeAction()` → prefilters → action → postfilters, `processAfterAction()` → response. `processBeforeAction()` runs before `Authentication`/`Csrf`: never put side effects or rights-dependent code there. Keep logic out of these hooks. Component controllers (`class.php` implementing `Controllerable`) get `onPrepareComponentParams()` for AJAX actions, never `executeComponent()` (`bitrix-components`).
+Порядок: `__construct(Request)` → `init()` (строит конфигурацию фильтров; сначала вызывай `parent::init()`) → `processBeforeAction()` → предварительные фильтры → действие → последующие фильтры, `processAfterAction()` → ответ. `processBeforeAction()` выполняется до `Authentication`/`Csrf`: не размещай там побочные эффекты и логику, зависящую от прав. Компоненты (`class.php`, `Controllerable`) вызывают `onPrepareComponentParams()` для AJAX, но не `executeComponent()` (`bitrix-components`).
 
-## Action parameters (`Engine\AutoWire\Binder`)
+## Параметры действий (`Engine\AutoWire\Binder`)
 
-Class-typed parameter, first match wins:
+Для типа-класса выбирается первое совпадение:
 
-1. Controller `getPrimaryAutoWiredParameter()` / `getAutoWiredParameters()` and the global ones: `PageNavigation` (id `nav`), `JsonPayload`, `CurrentUser`. Subclasses match too.
-2. Backed enum → `tryFrom()` of the request value with the parameter's name.
-3. The parameter's default value.
-4. `ServiceLocator::get(FQCN)`, but only when `class_exists()`. An interface type is never resolved, even if registered. Type-hint the concrete class.
+1. `getPrimaryAutoWiredParameter()` / `getAutoWiredParameters()` контроллера и глобальные фабрики: `PageNavigation` (ID `nav`), `JsonPayload`, `CurrentUser`. Также подклассы.
+2. Перечисление со значениями: `tryFrom()` от значения запроса с именем параметра.
+3. Значение параметра по умолчанию.
+4. `ServiceLocator::get(FQCN)`, но только при `class_exists()`. Тип-интерфейс не разрешается даже после регистрации. Указывай конкретный класс.
 
-Scalars and `array`: POST form, then query string, by name (header `BX-AJAX-QB` → from the `bx_data` JSON), then the default value. Not from `$_FILES`; not from a JSON body unless the `ContentType([JSON])` prefilter ran (`JsonController`), which adds the body's top-level keys as a last source. Otherwise take `JsonPayload $payload` and read `$payload->getData()`. Missing or wrong type → `BinderArgumentException` → error response. Union types are rejected.
+Скаляры и `array` по имени: форма POST, затем строка запроса (при заголовке `BX-AJAX-QB` — JSON из `bx_data`), затем значение по умолчанию. Не из `$_FILES` и не из тела JSON, кроме случая с фильтром `ContentType([JSON])` (`JsonController`): он добавляет верхние ключи тела последним источником. Иначе принимай `JsonPayload $payload` и читай `$payload->getData()`. Пропуск/неверный тип → `BinderArgumentException` и ошибка ответа. Объединённые типы запрещены.
 
-Not injectable: `HttpRequest` (error) → `$this->getRequest()`; `Session` (the locator builds a new object, not the app session) → `Application::getInstance()->getSession()`. `HttpRequest` and `Route` are injected only into closure routes (`bitrix-routing`). Validated request DTO: `ValidationParameter` (`bitrix-validation`).
+`HttpRequest` не внедряется: `$this->getRequest()`. Для `Session` контейнер создаёт новый объект; сессию приложения бери через `Application::getInstance()->getSession()`. `HttpRequest` и `Route` внедряются только в замыкания маршрутов (`bitrix-routing`). Проверяемый DTO запроса — `ValidationParameter` (`bitrix-validation`).
 
-### Loading an entity by id
+### Загрузка сущности по ID
 
-There is no built-in ORM binding. Declare one; a closure with a second argument receives the request value `<paramName>Id`:
+Привязку ORM объяви сам: второй аргумент замыкания получает `<paramName>Id` из запроса:
 
 ```php
 public function getAutoWiredParameters(): array
@@ -101,16 +101,16 @@ public function getAutoWiredParameters(): array
     ];
 }
 
-public function viewAction(Post $post): array { /* request key: postId */ }
+public function viewAction(Post $post): array { /* ключ запроса: postId */ }
 ```
 
-`null` from the closure → error, unless the parameter is nullable. Check rights on the loaded object; take its type/owner from the record, never from the request (`bitrix-security`).
+`null` из замыкания допустим только для nullable-параметра. Проверяй права на объект, тип/владельца бери из записи, не запроса (`bitrix-security`).
 
 ## PageNavigation
 
-`PageNavigation $nav` is built from the query key `nav`: sizes 1–50 (other `size` → default 20), no record count, `page-all` ignored, page not clamped. Pass `$nav->getOffset()`/`getLimit()` to the service, then `$nav->setRecordCount($total)`. Another id, other sizes or two lists → `new PageNavigation('my-nav')` yourself. Don't type-hint `ReversePageNavigation`/`AdminPageNavigation`: the global factory returns the base class → `TypeError`.
+`PageNavigation $nav` строится из ключа запроса `nav`: размер 1–50 (при другом `size` — 20), без числа записей; `page-all` игнорируется, номер страницы не ограничивается. Передай `$nav->getOffset()`/`getLimit()` сервису, затем вызови `$nav->setRecordCount($total)`. Для другого ID, размера, двух списков создавай `new PageNavigation('my-nav')` самостоятельно. Не указывай тип `ReversePageNavigation`/`AdminPageNavigation`: глобальная фабрика возвращает базовый класс, что вызовет `TypeError`.
 
-## Front-end call
+## Вызов из браузера
 
 ```js
 BX.ajax.runAction('vendor:module.Post.list', {

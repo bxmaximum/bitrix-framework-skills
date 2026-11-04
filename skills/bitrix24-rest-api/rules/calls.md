@@ -1,34 +1,49 @@
-# Call mechanics
+# Выполнение вызовов
 
-## Request and response
+## Запрос и ответ
 
-- Send `POST {base}{method}` with a JSON body and headers `Content-Type: application/json`, `Accept: application/json`, `User-Agent: {integration}/{version}`.
-  - Webhook base: `https://{host}/rest/{userId}/{code}/`.
-  - App base: `client_endpoint` (for example `https://{host}/rest/`), token in the `auth` field.
-- Use GET with a query string only for quick manual tests: the URL, webhook code included, lands in browser history and access logs.
-- `.json` after the method name is optional (JSON is the default). `.xml` switches the response to XML.
-- A successful response holds `result` and `time` (`start`, `finish`, `duration`, `processing`; cloud also `operating`, `operating_reset_at`). Lists add `total` and `next`.
-- Download signed file links (`DOWNLOAD_URL`, `urlMachine`) with a separate GET and a non-empty `User-Agent`. Do not change the auth parts of the link.
-- Domain change (cloud): the old host answers 301/302, and many HTTP clients replay a POST as a GET without the body. The method then reports missing parameters. Do not auto-follow redirects for POST. Refresh the base from `client_endpoint` (token response or event `auth`) and store it per `member_id`.
+- Отправляй `POST {base}{method}` с JSON и заголовками `Content-Type: application/json`, `Accept: application/json`, `User-Agent: {integration}/{version}`.
+  - База вебхука: `https://{host}/rest/{userId}/{code}/`.
+  - База приложения: `client_endpoint`, например `https://{host}/rest/`; токен в поле `auth`.
+- GET с query string оставь для ручной проверки: URL вместе с кодом вебхука попадает в историю и журналы доступа.
+- Суффикс `.json` необязателен, JSON используется по умолчанию. `.xml` включает XML.
+- Успех содержит `result` и `time` (`start`, `finish`, `duration`, `processing`; в облаке также `operating`, `operating_reset_at`). Списки добавляют `total`, `next`.
+- Подписанные ссылки `DOWNLOAD_URL`/`urlMachine` скачивай отдельным GET с непустым `User-Agent`. Не меняй части авторизации ссылки.
+- При смене домена облака старый адрес отвечает 301/302. Многие HTTP-клиенты меняют POST на GET и теряют тело, после чего метод сообщает об отсутствующих параметрах. Не следуй перенаправлениям POST автоматически. Обнови базу из `client_endpoint` токенов/события и храни по `member_id`.
 
-## Lists
+## Проверка базового URL
 
-- A page holds 50 items. Pass `next` from the response as `start` of the next call. Stop when `next` is absent.
-- For exports, do not walk `start += 50`: every page recounts `total`. Page by ID and pass `start: -1` to skip the count:
+Значение из env тоже проверяй до отправки реквизитов. HTTPS в примере не заменяет проверку реального значения:
+
+```php
+$baseUrl = (string)getenv('B24_WEBHOOK_URL');
+if (parse_url($baseUrl, PHP_URL_SCHEME) !== 'https' || !parse_url($baseUrl, PHP_URL_HOST))
+{
+    throw new \InvalidArgumentException('Нужен базовый HTTPS URL');
+}
+$baseUrl = rtrim($baseUrl, '/') . '/';
+```
+
+Не выводи URL в ошибке. У HTTP-клиента отключи автоматические редиректы POST; проверяй транспорт, HTTP-статус, JSON и REST-ошибку отдельно. Ядерный PHP-клиент нужен только внутри коробки (`rules/php-client.md`).
+
+## Списки
+
+- Типовая страница содержит 50 элементов. Передавай `next` ответа как `start` следующего запроса; останавливайся при отсутствии `next`. Размер уточняй для метода.
+- Для экспорта избегай `start += 50`: каждая страница пересчитывает `total`. Если метод поддерживает, иди по ID с `start: -1`, отключая подсчёт:
 
 ```json
 {"entityTypeId": 2, "order": {"id": "ASC"}, "filter": {">id": 1200}, "select": ["id", "title"], "start": -1}
 ```
 
-  Put the last received `id` into `>id` and repeat until a page has fewer than 50 items. Kernel: `IRestService::getNavData()` (`start < 0` → no count) and `Bitrix\Rest\Engine\RestManager::DONT_CALCULATE_COUNT`.
-- Field and filter key case follows the method family: `id` / `>id` in `crm.item.*`, `ID` / `>ID` in legacy methods.
-- The result shape differs: `crm.item.list` returns `result.items`, many legacy lists return a plain array in `result`. Check the method page.
-- Always pass `select` with the fields you use.
+  Последний `id` передавай в `>id`; остановись, когда страница короче 50. Ядро: `IRestService::getNavData()` (`start < 0` отключает подсчёт), `Bitrix\Rest\Engine\RestManager::DONT_CALCULATE_COUNT`.
+- Регистр зависит от семейства: `id`/`>id` у `crm.item.*`, `ID`/`>ID` у legacy-методов.
+- `crm.item.list` возвращает `result.items`, многие старые списки — массив прямо в `result`. Сверяй страницу метода.
+- Явно указывай используемые поля в `select`.
 
-## Batch
+## Пакетные вызовы batch
 
-- `POST batch` with `{"halt": 0, "cmd": {"key": "method?query-string"}}`. Up to 50 commands (`CRestUtil::BATCH_MAX_LENGTH`). Each extra one returns `ERROR_BATCH_LENGTH_EXCEEDED`, the first 50 still run.
-- A command is a query string: build it with `http_build_query()`. In a JSON body the `cmd` values need no further encoding. In a GET URL the whole batch is encoded twice.
+- `POST batch` с `{"halt": 0, "cmd": {"key": "method?query-string"}}`. Не более 50 команд (`CRestUtil::BATCH_MAX_LENGTH`). Лишние получают `ERROR_BATCH_LENGTH_EXCEEDED`, первые 50 выполняются.
+- Команда — query string, собирай через `http_build_query()`. В JSON значения `cmd` дополнительно не кодируются; в URL GET весь batch кодируется дважды.
 
 ```php
 $cmd = [];
@@ -36,12 +51,12 @@ foreach (array_slice($dealIds, 0, 50) as $i => $id)
 {
     $cmd['deal_' . $i] = 'crm.item.get?' . http_build_query(['entityTypeId' => 2, 'id' => $id]);
 }
-$response = $client->call('batch', ['halt' => 0, 'cmd' => $cmd]); // $client: rules/limits-errors.md
+$response = $client->call('batch', ['halt' => 0, 'cmd' => $cmd]); // клиент из rules/limits-errors.md
 ```
 
-- Commands run sequentially. Reference an earlier result as `$result[key][FIELD]`; for list results add the row index: `$result[users][0][ID]`.
-- `halt: 1` stops at the first failed command, `halt: 0` runs all of them.
-- The response is HTTP 200 even if commands fail. Read `result.result`, `result.result_error`, `result.result_total`, `result.result_next`, `result.result_time`, all keyed by command key. `result_error` is always present, so count its entries.
-- Not allowed inside batch: `batch` itself and file upload or download (`ERROR_BATCH_METHOD_NOT_ALLOWED`).
-- Batch saves HTTP requests (the rate limit), not method cost: every nested call counts towards `OPERATION_TIME_LIMIT`, and in the cloud the whole batch must finish within 60 s.
-- REST 3.0 batch has a different format (`$ref`, `$refArray`): `rules/rest-v3.md`.
+- Команды выполняются последовательно. Ссылка на прежний результат: `$result[key][FIELD]`; для списка добавь индекс строки: `$result[users][0][ID]`.
+- `halt: 1` останавливает пакет на первой ошибке; `halt: 0` выполняет все команды.
+- HTTP 200 возможен и при ошибках команд. Читай `result.result`, `result.result_error`, `result.result_total`, `result.result_next`, `result.result_time` по ключам команд. `result_error` присутствует всегда; проверяй число записей, не само наличие.
+- Внутри batch запрещены вложенный `batch`, загрузка и скачивание файлов (`ERROR_BATCH_METHOD_NOT_ALLOWED`).
+- Batch экономит HTTP-запросы, но не время методов: каждый вложенный вызов учитывается в `OPERATION_TIME_LIMIT`; в облаке весь пакет должен уложиться в 60 секунд.
+- У batch REST 3.0 другой формат с `$ref`/`$refArray`: `rules/rest-v3.md`.

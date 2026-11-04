@@ -1,13 +1,13 @@
 # GeoIP
 
-Always through `Bitrix\Main\Service\GeoIp\Manager`, never a handler class directly.
+Используй только `Bitrix\Main\Service\GeoIp\Manager`, без прямого обращения к классу обработчика.
 
-| Need | API | Miss |
+| Задача | API | При отсутствии |
 | --- | --- | --- |
-| One attribute | `getCountryCode()`, `getCountryName()`, `getCityName()`, `getTimezoneName()`, … | `''` |
-| Coordinates | `getGeoPosition()` | `null` |
-| Several fields, handler info | `getDataResult($ip, $lang, $required)` | `null` |
-| Client IP | `getRealIp()` | |
+| Один атрибут | `getCountryCode()`, `getCountryName()`, `getCityName()`, `getTimezoneName()`, … | `''` |
+| Координаты | `getGeoPosition()` | `null` |
+| Несколько полей и сведения об обработчике | `getDataResult($ip, $lang, $required)` | `null` |
+| IP клиента | `getRealIp()` | |
 
 ```php
 use Bitrix\Main\Service\GeoIp\Manager;
@@ -19,8 +19,8 @@ if ($result && $result->isSuccess())
 }
 ```
 
-- Empty `$ip` means the current request (`getRealIp()`); pass stored or proxied addresses explicitly.
-- `$required` (names of `GeoIp\Data` properties) skips handlers that can't provide them.
-- `getRealIp()` takes the first public IPv4 from `X-Forwarded-For` as sent by the client: fine for geo hints, never for access control or rate limits.
-- Results are cached in managed cache (`geoip_manager`, TTL `cache_flags.geoip_manager`, default a week); reset with `Manager::cleanCache()`.
-- Own provider: event `main:onMainGeoIpHandlersBuildList` + subclass of `GeoIp\Base`; post-process results in `main:onGeoIpGetResult`. Logger id: `main.GeoIpManager`.
+- Пустой `$ip` означает текущий запрос (`getRealIp()`); сохранённые адреса или адреса за прокси передавай явно.
+- `$required` (имена свойств `GeoIp\Data`) исключает обработчики, не умеющие их вернуть.
+- `getRealIp()` берёт первый публичный IPv4 из присланного клиентом `X-Forwarded-For`: пригоден для геоподсказок, но не для контроля доступа и лимитов.
+- Результаты хранятся в управляемом кеше (`geoip_manager`, TTL `cache_flags.geoip_manager`, по умолчанию неделя); сброс через `Manager::cleanCache()`.
+- Свой провайдер: событие `main:onMainGeoIpHandlersBuildList` и наследник `GeoIp\Base`; последующая обработка результата — `main:onGeoIpGetResult`. ID логгера: `main.GeoIpManager`.

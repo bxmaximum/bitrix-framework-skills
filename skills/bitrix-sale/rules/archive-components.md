@@ -1,24 +1,24 @@
-# Lists, archive, components, behaviour changes
+# Списки, архив, компоненты, изменения поведения
 
-## Lists and mass operations
+## Списки и массовые операции
 
-- Lists/aggregates: `Internals\*Table` ORM with explicit `select`. Batch related tables by an `ORDER_ID` array (no N+1). Order-level flags `PAYED`/`DEDUCTED`/`CANCELED` avoid loading collections.
-- Mass updates: pick IDs in chunks, then load/change/save each order. One `doFinalAction(true)` and one `save()` per logical operation.
-- `Result::isSuccess()` can be true while `getWarningMessages()` hides sub-object failures: reload and verify critical state.
+- Списки / агрегаты: ORM `Internals\*Table` с явным `select`. Связанные таблицы загружай пакетом по массиву `ORDER_ID`, без N+1. Флаги заказа `PAYED`/`DEDUCTED`/`CANCELED` позволяют не загружать коллекции.
+- Массовые изменения: выбирай ID пакетами, затем загружай / меняй / сохраняй каждый заказ. Один `doFinalAction(true)` и `save()` на логическую операцию.
+- При `Result::isSuccess() === true` в `getWarningMessages()` могут быть ошибки вложенных объектов: перечитай и проверь критичное состояние.
 
-## Archive
+## Архив
 
-- Archived orders leave the active tables. Read: `Archive\Manager::getList()`, `getById()`, `getBasketList()`, `getBasketItemById()`. `returnArchivedOrder($id)` gives a **read-only** object; never save it as active. Combine active + archive explicitly.
-- Write: `Archive\Manager::archiveOrders($filter, $limit, $timeExecution)` archives **and deletes the active orders**. `archiveByOptions($limit, $timeExecution)` runs one batch with the module settings (call from your own scheduler). `archiveOnAgent()` is the system agent, don't call it. `delete($id)` also removes archived basket rows. `OnSaleOrderBeforeArchived` fires before each.
+- Архивные заказы уходят из активных таблиц. Чтение: `Archive\Manager::getList()`, `getById()`, `getBasketList()`, `getBasketItemById()`. `returnArchivedOrder($id)` даёт объект **только для чтения**: не сохраняй как активный. Активный и архивный списки объединяй явно.
+- Запись: `Archive\Manager::archiveOrders($filter, $limit, $timeExecution)` архивирует **и удаляет активные заказы**. `archiveByOptions($limit, $timeExecution)` выполняет пакет по настройкам модуля из своего планировщика. Системный агент `archiveOnAgent()` не вызывай вручную. `delete($id)` удаляет и архивную корзину. Перед каждым заказом вызывается `OnSaleOrderBeforeArchived`.
 
-## Components, controllers
+## Компоненты и контроллеры
 
-- Public checkout: `bitrix:sale.order.ajax`. Customize business logic via the object model and events, not by patching component internals.
-- Own endpoints: thin Engine controllers + services reusing sale entities (`bitrix-controllers`). `sale` enables `controllers.restIntegration`.
-- **Since sale 26.500** the `ajax.php` of `sale.personal.order.list`, `sale.personal.order.detail`, `sale.order.payment.change` needs POST **and** a valid `sessid`. Custom templates sending GET or no `sessid` get an empty response.
+- Оформление: `bitrix:sale.order.ajax`. Меняй бизнес-логику объектной моделью и событиями, не правками компонента.
+- Свои точки входа: тонкие Engine-контроллеры и сервисы над сущностями sale (`bitrix-controllers`). Модуль включает `controllers.restIntegration`.
+- **Since sale 26.500** `ajax.php` компонентов `sale.personal.order.list`, `sale.personal.order.detail`, `sale.order.payment.change` требует POST **и** корректный `sessid`. Свой шаблон с GET / без `sessid` получит пустой ответ.
 
-## Other behaviour changes (sale 26.500)
+## Другие изменения sale 26.500
 
-- Receipts (`Cashbox\Check`): VAT comes from the basket item `VAT_RATE` first (0 included), catalog VAT second. Fix VAT on basket rows, not only in the catalog.
-- `admin/print.php` pre-escapes string values in `$arOrderProps`. Custom print forms in `/bitrix/admin/reports/` must not escape them again (`&amp;quot;`).
-- Fresh installs create money columns (basket, payment, shipment) as `decimal(26,8)`; sites installed earlier have `decimal(18,4)`. Don't assume the precision.
+- Чеки (`Cashbox\Check`): сначала НДС строки корзины `VAT_RATE` (включая 0), затем НДС каталога. Исправляй НДС строк, не только каталога.
+- `admin/print.php` заранее экранирует строки `$arOrderProps`. Свои формы `/bitrix/admin/reports/` не должны экранировать повторно (`&amp;quot;`).
+- Новая установка создаёт денежные столбцы корзины / оплаты / отгрузки как `decimal(26,8)`; старые сайты имеют `decimal(18,4)`. Не предполагаем одинаковую точность.

@@ -1,4 +1,4 @@
-# Routes, handlers, params, groups
+# Маршруты, обработчики, параметры и группы
 
 ## `web.php`
 
@@ -17,57 +17,57 @@ return function (RoutingConfigurator $routes): void {
 };
 ```
 
-## Verbs
+## HTTP-методы
 
-- `get` (also answers `HEAD`), `post`, `put`, `patch`, `delete`, `options`, `any`.
-- Several verbs: `$routes->any('/api/posts/{id}', $handler)->methods(['PUT', 'PATCH'])`.
-- There is no `head()` (the docs example is wrong), and `$routes->match(...)` throws "Unknown method" on the configurator.
+- `get` (также отвечает на `HEAD`), `post`, `put`, `patch`, `delete`, `options`, `any`.
+- Несколько методов: `$routes->any('/api/posts/{id}', $handler)->methods(['PUT', 'PATCH'])`.
+- Метода `head()` нет (пример документации неверен), `$routes->match(...)` вызывает "Unknown method" у конфигуратора.
 
-## Handlers
+## Обработчики
 
-- `[Controller::class, 'view']`: `Engine\Controller` action; `'viewAction'` works too (suffix stripped). Runs with controller filters, autowire and the JSON envelope (`bitrix-controllers`).
-- Closure: params autowired by name from the route, plus `Bitrix\Main\Routing\Route` and `Bitrix\Main\HttpRequest`. The prolog is loaded before the call. No filters and no CSRF: closures are for public read-only endpoints.
-- Class string implementing `Engine\Contract\RoutableAction`.
-- `new PublicPageController('/path/page.php')`: legacy include (`rules/public-pages.md`).
+- `[Controller::class, 'view']`: действие `Engine\Controller`; допустимо и `'viewAction'` (суффикс удаляется). Работают фильтры контроллера, автосборка и JSON-обёртка (`bitrix-controllers`).
+- Замыкание: параметры из маршрута по имени плюс `Bitrix\Main\Routing\Route` и `Bitrix\Main\HttpRequest`. Пролог загружается до вызова. Фильтров и CSRF нет: замыкания — для публичных действий только чтения.
+- Строка класса, реализующего `Engine\Contract\RoutableAction`.
+- `new PublicPageController('/path/page.php')`: подключение старой страницы (`rules/public-pages.md`).
 
-Closure return value:
+Возвращаемое значение замыкания:
 
-- `HttpResponse` (incl. `Engine\Response\*`) → sent as is.
-- `array` → `Engine\Response\Json` (no `status`/`data` envelope).
-- anything else → cast to string body.
-- `null` → nothing sent.
+- `HttpResponse` (включая `Engine\Response\*`) отправляется без изменений.
+- `array` → `Engine\Response\Json` (без обёртки `status`/`data`).
+- Прочее приводится к строке тела.
+- `null` ничего не отправляет.
 
 ```php
 use Bitrix\Main\Engine\Response\Render\Component;
 
-$routes->get('/health', fn () => 'ok'); // string body
+$routes->get('/health', fn () => 'ok'); // строка тела ответа
 
-// HTML page with a component inside the site template (Since main 25.700)
+// HTML-страница с компонентом внутри шаблона сайта (Since main 25.700)
 $routes->get('/about/', fn () => new Component(
     'bitrix:main.include', '', ['AREA_FILE_SHOW' => 'file', 'PATH' => '/include/about.php'],
 ));
 ```
 
-`Engine\Response\Component` is the AJAX JSON payload, not a page. Page rendering in controllers: `renderView()` / `renderComponent()`.
+`Engine\Response\Component` — JSON-данные AJAX, не страница. Рендеринг страниц контроллера: `renderView()` / `renderComponent()`.
 
-## Parameters
+## Параметры
 
-- `{name}` matches `[^/]+`. Constrain it: `->where('id', '\d+')` or `->where(['section' => '[a-z]+', 'slug' => '[a-z0-9\-]+'])`. No `#` in patterns (the regex delimiter).
-- Optional: give the param a default, then it may be empty: `$routes->get('/posts/{page}', $h)->default('page', 1)` matches `/posts/` too. There is no `{page?}` syntax (the name regex is `[a-z0-9_]+`).
-- A `default()` for a name not in the URI is still passed to the handler (and to `$_GET` for `PublicPageController`).
-- Controllers receive params as action arguments; don't read `getCurrentRoute()` elsewhere.
+- `{name}` соответствует `[^/]+`. Ограничивай: `->where('id', '\d+')` или `->where(['section' => '[a-z]+', 'slug' => '[a-z0-9\-]+'])`. В шаблоне нельзя `#` (разделитель выражения).
+- Необязательный параметр получает значение по умолчанию и может быть пустым: `$routes->get('/posts/{page}', $h)->default('page', 1)` совпадёт и с `/posts/`. Синтаксиса `{page?}` нет (имя соответствует `[a-z0-9_]+`).
+- Значение `default()` для имени вне URI всё равно передаётся обработчику (и в `$_GET` у `PublicPageController`).
+- Контроллер получает параметры аргументами действия; не читай `getCurrentRoute()` в других местах.
 
-## Names and URLs
+## Имена и URL
 
 ```php
 $url = (string)\Bitrix\Main\Application::getInstance()->getRouter()->route('post.get', ['id' => 42]);
 ```
 
-Names must be unique across all route files.
+Имена должны быть уникальны среди всех файлов маршрутов.
 
-## Groups
+## Группы
 
-`group()` takes only a closure; set `prefix`/`name`/`where`/`default`/`domain` in the chain before it:
+`group()` принимает только замыкание; `prefix`/`name`/`where`/`default`/`domain` задай перед ним в цепочке:
 
 ```php
 $routes->prefix('api')->name('api.')->group(function (RoutingConfigurator $routes) {
@@ -79,7 +79,7 @@ $routes->prefix('api')->name('api.')->group(function (RoutingConfigurator $route
 });
 ```
 
-- No Laravel-style `group(['prefix' => …], fn)`.
-- `prefix()` takes a path without a leading slash (`api`, `ltrim($siteDir, '/')`).
-- Register narrow routes before a catch-all `{any}` + `->where('any', '.*')`.
-- Leaf paths without a param: prefer a trailing slash (`/settings/`). A dotted last segment may be treated as a static file by the web server.
+- Формат Laravel `group(['prefix' => …], fn)` не поддерживается.
+- `prefix()` принимает путь без начального слеша (`api`, `ltrim($siteDir, '/')`).
+- Узкие маршруты регистрируй перед универсальным `{any}` с `->where('any', '.*')`.
+- Конечный путь без параметра лучше завершать слешем (`/settings/`): сегмент с точкой веб-сервер может принять за статический файл.

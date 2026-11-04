@@ -1,19 +1,19 @@
-# Payments and pay system handlers
+# Оплаты и обработчики платёжных систем
 
-## Payments in an order
+## Оплаты заказа
 
-- Create: `$order->getPaymentCollection()->createItem($service)`. Several payments per order = split or partial payment.
-- Available services: `PaySystem\Manager::getListWithRestrictions($payment, RestrictionManager::MODE_CLIENT|MODE_MANAGER)`, or `getListWithRestrictionsByOrder($order)` before a payment exists.
-- Manual confirm: `$payment->setPaid('Y')`. Refund: `$payment->setReturn(Payment::RETURN_PS|RETURN_INNER|RETURN_NONE)`; partial: `$service->refund($payment, $sum)` (handler implements `PaySystem\IRefund`). Recurring: `PaySystem\IRecurring`, `$service->isRecurring($payment)`, `$service->repeatRecurrent($payment)`.
-- Inner account: `PaySystem\Manager::getInnerPaySystemId()`, `$payment->isInner()`. Balance: legacy `CSaleUserAccount::GetByUserID($userId, $currency)`, `CSaleUserAccount::UpdateAccount($userId, $delta, $currency, …)` — **pass the delta, not the new total**. Journal: `Internals\UserTransactTable`. Buyer aggregates: `Bitrix\Sale\BuyerStatistic`.
+- Создание: `$order->getPaymentCollection()->createItem($service)`. Несколько оплат — разделённый / частичный платёж.
+- Доступные службы: `PaySystem\Manager::getListWithRestrictions($payment, RestrictionManager::MODE_CLIENT|MODE_MANAGER)` либо `getListWithRestrictionsByOrder($order)` до создания оплаты.
+- Ручное подтверждение: `$payment->setPaid('Y')`. Возврат: `$payment->setReturn(Payment::RETURN_PS|RETURN_INNER|RETURN_NONE)`; частичный — `$service->refund($payment, $sum)`, обработчик реализует `PaySystem\IRefund`. Повторный платёж: `PaySystem\IRecurring`, `$service->isRecurring($payment)`, `$service->repeatRecurrent($payment)`.
+- Внутренний счёт: `PaySystem\Manager::getInnerPaySystemId()`, `$payment->isInner()`. Баланс: `CSaleUserAccount::GetByUserID($userId, $currency)`, `CSaleUserAccount::UpdateAccount($userId, $delta, $currency, …)` — **передавай изменение, не новый итог**. Журнал: `Internals\UserTransactTable`; агрегаты покупателя: `Bitrix\Sale\BuyerStatistic`.
 
-## Start payment from a request
+## Запуск оплаты по запросу
 
 ```php
 use Bitrix\Sale\Order;
 use Bitrix\Sale\PaySystem\BaseServiceHandler;
 
-// rights first: CSaleOrder::CanUserViewOrder($orderId, $groups, $userId)
+// сначала права: CSaleOrder::CanUserViewOrder($orderId, $groups, $userId)
 $order = Order::load($orderId) ?? throw new \RuntimeException('not found');
 $payment = $order->getPaymentCollection()->getItemById($paymentId);
 if (!$payment || (int)$payment->getPaymentSystemId() !== $requestedPaySystemId || $payment->isPaid()) {
@@ -24,17 +24,21 @@ $result = $service->initiatePay($payment, $request, BaseServiceHandler::STRING);
 // $result->isSuccess(), getTemplate(), getPaymentUrl(), getQr()
 ```
 
-**Since sale 26.500** the kernel endpoints `sale_ps_ajax.php` and `sale/applepay_gateway.php` enforce the same payment ↔ order ↔ pay system match; a frontend that mixes IDs now gets an error.
+**Since sale 26.500** точки входа `sale_ps_ajax.php`, `sale/applepay_gateway.php` проверяют соответствие оплата ↔ заказ ↔ платёжная система. Смешанные ID дают ошибку.
 
-## Own handler
+## Собственный обработчик
 
-- Location: `/local/php_interface/include/sale_payment/<code>/` with `handler.php` (class extends `PaySystem\ServiceHandler`), `.description.php`, `template/`. Legacy `/bitrix/modules/sale/payment/` handlers are unsupported since sale **22.200.0**.
-- Callback entry: `/bitrix/tools/sale_ps_result.php` → `processRequest()`. In it, re-query the payment status from the gateway (server-to-server). Match invoice ID (`PS_INVOICE_ID`), payment number, amount (minor units) and currency. Never mark paid from the callback body alone. Handle repeated notifications idempotently.
-- HTTP to the gateway: `Web\HttpClient` with SSL verification on, `redirect => false`, `privateIp => false` (`bitrix-http-client`).
-- Custom restrictions: extend `Services\Base\Restriction`, register on `onSalePaySystemRestrictionsClassNamesBuildList`.
+- `/local/php_interface/include/sale_payment/<code>/`: `handler.php` с наследником `PaySystem\ServiceHandler`, `.description.php`, `template/`. Старые `/bitrix/modules/sale/payment/` не поддерживаются **Since sale 22.200.0**.
+- Уведомление: `/bitrix/tools/sale_ps_result.php` → `processRequest()`. Повторно запроси статус у шлюза серверным HTTP. Сверь `PS_INVOICE_ID`, номер оплаты, сумму в минимальных денежных единицах, валюту. Не подтверждай только по телу уведомления. Повторные уведомления обрабатывай идемпотентно.
+- HTTP шлюза: `Web\HttpClient` с проверкой SSL, `redirect => false`, `privateIp => false` (`bitrix-http-client`).
+- Свои ограничения: наследник `Services\Base\Restriction`, регистрация на `onSalePaySystemRestrictionsClassNamesBuildList`.
 
-## Don't subclass kernel handlers
+## Не наследуй обработчики ядра
 
-**Since sale 26.450** `SberbankOnlineHandler` (namespace `Sale\Handlers\PaySystem`) was rewritten. Removed: `registerOrder()`, `getRegisterOrderParams()`, `getMerchantParams()`, `isCheckSumCorrect()`, `getDescriptionCode(s)Map()`, the `PAYMENT_*` / `RESPONSE_CODE_SUCCESS` constants. Calls are fatal, overrides go silently dead. Methods are typed now (`isMyResponse(Request $request, $paySystemId): bool`, `getPaymentIdFromRequest(Request $request): string`), so an untyped override is fatal at load. Callbacks accept POST+JSON only. `AlfaBankHandler` now extends `AlfabankLegacyHandler`, so `instanceof SberbankOnlineHandler` is false for it.
+**Since sale 26.450** переписан `SberbankOnlineHandler` (`Sale\Handlers\PaySystem`). Удалены `registerOrder()`, `getRegisterOrderParams()`, `getMerchantParams()`, `isCheckSumCorrect()`, `getDescriptionCode(s)Map()`, константы `PAYMENT_*` / `RESPONSE_CODE_SUCCESS`. Вызовы фатальны, переопределения молча перестают работать. Методы типизированы: `isMyResponse(Request $request, $paySystemId): bool`, `getPaymentIdFromRequest(Request $request): string`; нетипизированное переопределение фатально при загрузке. Уведомления принимают только POST+JSON. `AlfaBankHandler` наследует `AlfabankLegacyHandler`, поэтому для него `instanceof SberbankOnlineHandler` ложно.
 
-Write your own `ServiceHandler` instead. If you must extend it, override only the typed hooks `getOrderDescription(Payment $payment): string` and `createHttpClient(): \Bitrix\Main\Web\HttpClient`. Load the parent via `PaySystem\Manager::includeHandler('SberbankOnline')`. URL check: `SberbankOnlineHandler::isPaymentUrlValid(string $url, bool $testMode): bool`.
+Пиши свой `ServiceHandler`. При необходимом наследовании переопределяй только типизированные `getOrderDescription(Payment $payment): string`, `createHttpClient(): \Bitrix\Main\Web\HttpClient`. Загрузи родителя через `PaySystem\Manager::includeHandler('SberbankOnline')`. Проверка URL: `SberbankOnlineHandler::isPaymentUrlValid(string $url, bool $testMode): bool`.
+
+## Ограничения запуска — Since sale 26.600
+
+sale.entity.initiatepay проверяет доступность платёжной системы в режиме покупателя. Для собственного менеджерского действия `Controller\Action\Entity\InitiatePayAction::setRestrictionMode()` принимает только `Services\PaySystem\Restrictions\Manager::MODE_CLIENT` / MODE_MANAGER. Менеджерский режим выбирает сервер после проверки прав, а не параметр клиента. На старом sale отфильтруй платёжную систему через `getListWithRestrictions()` до запуска.

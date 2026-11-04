@@ -1,27 +1,28 @@
 ---
 name: bitrix-rest
-description: 'Expose your module''s methods through the rest module — REST 3.0 RestController, Engine controllers with restIntegration, OnRestServiceBuildDescription, scopes. Use when adding REST methods, events or placements to a /local module.'
+description: 'Серверный REST своего PHP-модуля коробки: REST 3.0, Engine restIntegration, OnRestServiceBuildDescription, события и scopes. Для публикации методов; клиентские вызовы — bitrix24-rest-api.'
 ---
 
-# REST server side (`rest`)
+# Серверный REST (`rest`)
 
-Baseline: main 23.0+ · Verified: rest 26.650.0, main 26.800.0
+Baseline: main 23.0+ · Verified: rest 26.1100.0, main 26.1000.0
 
-Publishing methods from your module. Calling REST (webhooks, OAuth, batch, limits, error handling on the client): `bitrix24-rest-api`.
+Перед PHP-кодом один раз прочитай `bitrix-framework`. Здесь публикуют методы своего модуля. Клиентские вызовы (вебхуки, OAuth, batch, лимиты, ошибки): `bitrix24-rest-api`.
 
-| Path | Registration | Read |
+| Вариант | Регистрация | Открыть |
 | --- | --- | --- |
-| REST 3.0 (`/rest/api/…`, DTO, JSON) | module `.settings.php` → `rest` section | `rules/v3.md` |
-| Engine controller (same class as AJAX) | `.settings.php` → `controllers.restIntegration.enabled` | `rules/classic.md` |
-| Classic method map, REST events, placements | event `rest:OnRestServiceBuildDescription` | `rules/classic.md` |
+| REST 3.0 (`/rest/api/…`, DTO, JSON) | секция `rest` в `.settings.php` модуля | `rules/v3.md` |
+| Идемпотентность V3, динамические перечисления, отложенный batch | атрибуты и очередь Messenger | `rules/v3-runtime.md` |
+| Engine-контроллер, общий с AJAX | `.settings.php` → `controllers.restIntegration.enabled` | `rules/classic.md` |
+| Классическая карта методов, REST-события и встройки | событие `rest:OnRestServiceBuildDescription` | `rules/classic.md` |
 
-For new APIs: REST 3.0 (**Since rest 26.200\***), fallback Engine controller + `restIntegration`. Classic descriptions: for REST events, placements, or explicit method names.
+Новые API публикуй через REST 3.0 (**Since rest 26.200\***); на старом модуле используй Engine + `restIntegration`. Классическая карта нужна для событий, встроек и явных имён методов.
 
-## Invariants
+## Общие правила
 
-- `Loader::includeModule('rest')`; code lives in `/local/modules/<vendor.module>/`, the module must be installed.
-- REST calls have no CSRF: authentication is the app token/webhook. Check the user's rights inside every action.
-- Scopes are the permission units granted to apps. Keep names stable and documented.
-- Return errors in REST form (v3 exceptions, controller `addError`, `\Bitrix\Rest\RestException`), never HTML or `die()`.
-- Don't extend `rest` classes or implement `Bitrix\Rest\Internal\*` contracts: signatures change in minor releases (26.650: `Engine\Access`, `Api\User`, `IncomingWebhookRepositoryInterface`). Compose instead.
-- Landing blocks and placements via REST: `bitrix-landing`.
+- Подключи `Loader::includeModule('rest')`. Код размещай в установленном `/local/modules/<vendor.module>/`.
+- REST не использует CSRF: запрос авторизует токен приложения или вебхука. В каждом действии проверяй права пользователя на данные.
+- Scopes определяют разрешения приложения. Сохраняй стабильные имена и документируй их.
+- Возвращай REST-ошибки: исключения V3, `addError` контроллера, `\Bitrix\Rest\RestException`. Не выводи HTML и не вызывай `die()`.
+- Для собственных методов наследуй документированные базовые контроллеры. Не наследуй внутренние сервисы и не реализуй `Bitrix\Rest\Internal\*`: их сигнатуры меняются даже в промежуточном релизе (26.650: `Engine\Access`, `Api\User`, `IncomingWebhookRepositoryInterface`). Используй композицию.
+- Блоки Landing и встройки через REST: `bitrix-landing`.

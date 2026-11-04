@@ -1,15 +1,17 @@
 ---
 name: bitrix-vue
-description: 'BitrixVue 3 (ui.vue3) — createApp, $Bitrix.Loc, kernel Vue components, Pinia, markRaw for kernel widgets, Vue 2 migration. Use when building reactive UI with Vue inside Bitrix pages, components or extensions.'
+description: 'BitrixVue 3 (ui.vue3): createApp, $Bitrix.Loc, Pinia и компоненты ядра в страницах и расширениях Битрикс. Используй для реактивного интерфейса, состояния, виджетов и миграции с Vue 2.'
 ---
 
 # BitrixVue 3
 
-Baseline: main 23.0+ · Verified: main 26.800.0, ui 26.687.0
+Baseline: main 23.0+ · Verified: main 26.1000.0, ui 26.700.0
 
-`ui.vue3` = Vue 3 + the BitrixVue plugin (`$Bitrix`), one shared Vue for the whole page. Runtime template compilation; no SFC `.vue`, no SSR. Vue 2 (`ui.vue`, global `BX.BitrixVue`) is legacy — don't start new code on it.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-## In an extension (preferred)
+`ui.vue3` — Vue 3 с плагином BitrixVue (`$Bitrix`), единый экземпляр на страницу. Компиляция шаблонов во время выполнения; SFC `.vue` и SSR нет. Vue 2 (`ui.vue`, глобальный `BX.BitrixVue`) устарел, новый код пиши на Vue 3.
+
+## В расширении (предпочтительно)
 
 ```javascript
 import { BitrixVue, ref } from 'ui.vue3';
@@ -30,10 +32,10 @@ BitrixVue.createApp({
 }).mount('#vendor-items');
 ```
 
-- Import `BitrixVue` and every Vue API (`ref`, `computed`, `markRaw`, `defineComponent` …) from `ui.vue3` (kernel canon, not `ui.vue3.bitrixvue`); `rel: ['ui.vue3']` is enough.
-- Extension setup and phrases: `bitrix-extensions`.
+- Импортируй `BitrixVue` и API Vue (`ref`, `computed`, `markRaw`, `defineComponent` …) из `ui.vue3`, как ядро, а не из `ui.vue3.bitrixvue`. Достаточно `rel: ['ui.vue3']`.
+- Настройка расширения и фраз: `bitrix-extensions`.
 
-## On a PHP page (no build)
+## На PHP-странице без сборки
 
 ```php
 \Bitrix\Main\UI\Extension::load('ui.vue3');
@@ -42,48 +44,48 @@ BitrixVue.createApp({
 ```html
 <div id="vendor-app"></div>
 <script>
-    BX.Vue3.BitrixVue.createApp({ template: '<div>Hello</div>' }).mount('#vendor-app');
+    BX.Vue3.BitrixVue.createApp({ template: '<div>Здравствуйте</div>' }).mount('#vendor-app');
 </script>
 ```
 
-Global is `BX.Vue3.BitrixVue`. `BX.BitrixVue` is Vue 2: undefined here, or silently Vue 2 if `ui.vue` is also on the page.
+Глобальный объект — `BX.Vue3.BitrixVue`. `BX.BitrixVue` — Vue 2: здесь он не определён либо молча запустит Vue 2, если загружен и `ui.vue`.
 
-## `$Bitrix` (every component)
+## `$Bitrix` в каждом компоненте
 
-| Member | Use |
+| Член | Назначение |
 | --- | --- |
-| `$Bitrix.Loc.getMessage(code, {'#N#': n})` | Phrases (from `BX.message`); JS outside Vue: `Loc` from `main.core` |
-| `$Bitrix.eventEmitter` | App-scoped `EventEmitter` |
-| `$Bitrix.Data.get/set` | App-scoped shared data |
-| `$Bitrix.RestClient.get()` / `$Bitrix.PullClient.get()` | Default REST / Pull clients (`bitrix-pull`) |
+| `$Bitrix.Loc.getMessage(code, {'#N#': n})` | Фразы из `BX.message`; вне Vue — `Loc` из `main.core` |
+| `$Bitrix.eventEmitter` | `EventEmitter` приложения |
+| `$Bitrix.Data.get/set` | Общие данные приложения |
+| `$Bitrix.RestClient.get()` / `$Bitrix.PullClient.get()` | Клиенты REST / Pull по умолчанию (`bitrix-pull`) |
 
-`BitrixVue.getFilteredPhrases(this, 'VENDOR_')` — first arg is the component instance in Vue 3 (docs show the Vue 2 form without it).
+`BitrixVue.getFilteredPhrases(this, 'VENDOR_')`: первый аргумент в Vue 3 — экземпляр компонента (документация показывает форму Vue 2 без него).
 
-## Kernel pieces
+## Готовые средства ядра
 
-- Components: `ui.vue3.components.*` (`button`, `popup`, `hint`, `switcher` …), e.g. `import { Counter } from 'ui.vue3.components.counter'` (`components: { Counter }` → `<Counter :value="5"/>`; **Since ui 26.200\***; fallback: wrap `ui.cnt` yourself). Widget options: `bitrix-ui`.
-- State and routing: `ui.vue3.pinia`, `ui.vue3.vuex`, `ui.vue3.router`.
-- Lazy component: `BitrixVue.defineAsyncComponent('vendor.module.heavy', 'HeavyForm')` loads the extension on first render.
-- Extensible component: `BitrixVue.mutableComponent(name, def)`; others change it via `mutateComponent()` / `cloneComponent()`.
+- Компоненты: `ui.vue3.components.*` (`button`, `popup`, `hint`, `switcher` …), например `import { Counter } from 'ui.vue3.components.counter'` (`components: { Counter }` → `<Counter :value="5"/>`; **Since ui 26.200\***; на старом ядре оберни `ui.cnt` самостоятельно). Настройки виджетов: `bitrix-ui`.
+- Состояние и маршруты: `ui.vue3.pinia`, `ui.vue3.vuex`, `ui.vue3.router`.
+- Отложенный компонент: `BitrixVue.defineAsyncComponent('vendor.module.heavy', 'HeavyForm')` загружает расширение при первом выводе.
+- Расширяемый компонент: `BitrixVue.mutableComponent(name, def)`; изменения через `mutateComponent()` / `cloneComponent()`.
 
-## Kernel widgets inside Vue
+## Виджеты ядра внутри Vue
 
-Keep Popup / Menu / Dialog / Popover / ActionPanel instances non-reactive: `this.popup = markRaw(new Popup(...))`, or hold them outside `data()`. Widgets rebuilt since ui 26.650 use native `#private` fields; through a reactive Proxy they throw `TypeError: Cannot read private member`.
+Экземпляры Popup / Menu / Dialog / Popover / ActionPanel оставляй нереактивными: `this.popup = markRaw(new Popup(...))` либо храни вне `data()`. Виджеты, переделанные с ui 26.650, используют нативные поля `#private`; реактивный Proxy вызывает `TypeError: Cannot read private member`.
 
-## Debug
+## Отладка
 
-`define('VUEJS_DEBUG', true);` in `/local/php_interface/init.php` (dev only) → dev build + devtools; with it, `VUEJS_LOCALIZATION_DEBUG` shows phrase codes instead of text.
+`define('VUEJS_DEBUG', true);` в `/local/php_interface/init.php` включает отладочную сборку и devtools только для разработки. Вместе с ним `VUEJS_LOCALIZATION_DEBUG` показывает коды фраз вместо текста.
 
-## From Vue 2 (`ui.vue`)
+## Переход с Vue 2 (`ui.vue`)
 
 - `BX.BitrixVue` / `import … from 'ui.vue'` → `ui.vue3`.
-- `BitrixVue.component()` / `.directive()` do not register in Vue 3 (console error): use local `components: {}`, `app.component()` or `mutableComponent()`.
-- `getFilteredPhrases(prefix)` → `getFilteredPhrases(this, prefix)`; `destroyed` → `unmounted`; no filters, no `$on`/`$off`.
+- `BitrixVue.component()` / `.directive()` не регистрируют компоненты в Vue 3 (ошибка в консоли). Используй локальные `components: {}`, `app.component()` либо `mutableComponent()`.
+- `getFilteredPhrases(prefix)` → `getFilteredPhrases(this, prefix)`; `destroyed` → `unmounted`; фильтров и `$on`/`$off` нет.
 
-## Checklist
+## Проверка
 
-- [ ] `ui.vue3` only; all imports from `ui.vue3`; inline scripts use `BX.Vue3.BitrixVue`.
-- [ ] Kernel widget instances wrapped in `markRaw()`.
-- [ ] Phrases via `$Bitrix.Loc` / `Loc`, never hard-coded.
-- [ ] Server calls via `BX.ajax.runAction` (CSRF included), not raw `fetch`.
-- [ ] Pull subscriptions removed in `unmounted`.
+- [ ] Только `ui.vue3`, все импорты из него; встроенные скрипты используют `BX.Vue3.BitrixVue`.
+- [ ] Экземпляры виджетов ядра обёрнуты в `markRaw()`.
+- [ ] Фразы читаются через `$Bitrix.Loc` / `Loc`, не зашиты в код.
+- [ ] Engine вызывается через HttpClient.action() при поддержке ядром либо BX.ajax.runAction(), с CSRF; контракт — `bitrix-extensions`.
+- [ ] Подписки Pull сняты в `unmounted`.

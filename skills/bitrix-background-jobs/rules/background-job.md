@@ -6,22 +6,22 @@
 use Bitrix\Main\Application;
 
 Application::getInstance()->addBackgroundJob(
-    [\Vendor\Module\Public\Service\WelcomeService::class, 'sendAsync'], // static method
+    [\Vendor\Module\Public\Service\WelcomeService::class, 'sendAsync'], // статический метод
     [$userId],
 );
 ```
 
-When it runs — `Application::end()` → response sent (`fastcgi_finish_request()`) → `terminate()`:
+Порядок выполнения: `Application::end()` → отправка ответа (`fastcgi_finish_request()`) → `terminate()`:
 
-1. `OnAfterEpilog` handlers;
-2. `session_write_close()` — session writes from a job are lost;
-3. jobs by priority (`JOB_PRIORITY_NORMAL` = 100 first, `JOB_PRIORITY_LOW` = 50; kernel agents run at 50, mail events at 49), DB pool forced to master;
-4. jobs added by jobs run in the same loop.
+1. Обработчики `OnAfterEpilog`;
+2. `session_write_close()`: изменения сессии из задания теряются;
+3. Задания по приоритету (`JOB_PRIORITY_NORMAL` = 100 первым, `JOB_PRIORITY_LOW` = 50; агенты ядра — 50, почтовые события — 49); пул БД переключён на master;
+4. Добавленные из заданий задания выполняются в том же цикле.
 
-Rules:
+Правила:
 
-- The user already has the response, but the PHP worker is busy until jobs finish — keep them short (seconds).
-- An exception in one job is logged, the rest still run, then it is rethrown.
-- No delivery guarantee: a crash or `exit` loses the job. Need retries, volume or a separate worker → Messenger (`rules/messenger.md`).
-- Pass scalars in `$args`; don't capture request/session objects.
-- Only on hits that end through `Application::end()`/`terminate()` (normal pages, controllers, `bitrix.php` CLI).
+- Пользователь уже получил ответ, но PHP-воркер занят до завершения заданий. Ограничивай работу секундами.
+- Исключение одного задания записывается в лог; остальные выполняются, после чего исключение выбрасывается повторно.
+- Гарантии доставки нет: сбой процесса или `exit` теряет задание. Для повторов, объёма или отдельного воркера используй Messenger (`rules/messenger.md`).
+- Передавай скаляры в `$args`; не захватывай объекты запроса/сессии.
+- Работает только при завершении через `Application::end()`/`terminate()` (обычные страницы, контроллеры, CLI `bitrix.php`).

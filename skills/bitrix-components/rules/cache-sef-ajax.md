@@ -1,20 +1,20 @@
-# Cache, paged lists, SEF, AJAX
+# Кеш, постраничные списки, ЧПУ, AJAX
 
-## Result cache
+## Кеш результата
 
-Cache ID = site, language, site template, component, template, every non-`~` param, time zone offset, plus `startResultCache()`'s 2nd arg. Add everything else that changes output:
+ID кеша включает сайт, язык, шаблон сайта, компонент, шаблон компонента, все параметры без `~`, смещение часового пояса и второй аргумент `startResultCache()`. Добавь остальные значения, влияющие на вывод:
 
 ```php
 if ($this->startResultCache(false, [$GLOBALS['USER']->GetUserGroupArray()])) { … }
 ```
 
-- `CACHE_TYPE = 'N'` disables caching; `'A'` follows the main option `component_cache_on`.
-- On a hit neither `result_modifier.php` nor `template.php` runs; only keys from `setResultCacheKeys()` reach `component_epilog.php` (`rules/template.md`).
-- Invalidate by tag: `bitrix-caching`.
+- `CACHE_TYPE = 'N'` отключает кеш; `'A'` следует опции main `component_cache_on`.
+- При попадании в кеш `result_modifier.php` и `template.php` не выполняются; в `component_epilog.php` попадут только ключи из `setResultCacheKeys()` (`rules/template.md`).
+- Сброс по тегу: `bitrix-caching`.
 
-## Paged list
+## Постраничный список
 
-Build `PageNavigation` before the cache and put the page into the cache key; otherwise every page shows cached page 1. Count before `initFromUri()` so bogus page numbers clamp instead of creating a cache entry each.
+Создай `PageNavigation` до кеша, включи страницу в ключ; иначе все страницы покажут закешированную первую. Считай строки до `initFromUri()`: завышенные номера ограничатся, а не создадут отдельные записи кеша.
 
 ```php
 public function executeComponent(): void
@@ -48,11 +48,11 @@ $APPLICATION->IncludeComponent('bitrix:main.pagenavigation', '', [
 ], $component);
 ```
 
-Add `$nav->allRecordsShown()` to the key if `page-all` is allowed. `PageNavigation` details and custom pager markup: `bitrix-cms-basics` (`rules/page-navigation.md`).
+Если разрешён `page-all`, включи `$nav->allRecordsShown()` в ключ. Подробности `PageNavigation` и своя разметка навигации: `bitrix-cms-basics` (`rules/page-navigation.md`).
 
-## SEF (complex components)
+## ЧПУ комплексных компонентов
 
-`.parameters.php` declares pages: `'SEF_MODE' => ['list' => ['NAME' => …, 'DEFAULT' => '', 'VARIABLES' => []], 'detail' => ['NAME' => …, 'DEFAULT' => '#ELEMENT_ID#/', 'VARIABLES' => ['ELEMENT_ID']]]`; the call then carries `SEF_MODE = 'Y'`, `SEF_FOLDER`, `SEF_URL_TEMPLATES`.
+`.parameters.php` объявляет страницы: `'SEF_MODE' => ['list' => ['NAME' => …, 'DEFAULT' => '', 'VARIABLES' => []], 'detail' => ['NAME' => …, 'DEFAULT' => '#ELEMENT_ID#/', 'VARIABLES' => ['ELEMENT_ID']]]`; при вызове передаются `SEF_MODE = 'Y'`, `SEF_FOLDER`, `SEF_URL_TEMPLATES`.
 
 ```php
 $templates = \CComponentEngine::makeComponentUrlTemplates(
@@ -67,7 +67,7 @@ $this->arResult = ['FOLDER' => $this->arParams['SEF_FOLDER'], 'URL_TEMPLATES' =>
 $this->includeComponentTemplate($page);   // templates/.default/list.php, detail.php
 ```
 
-Links: `CComponentEngine::makePathFromTemplate($folder . $templates['detail'], ['ELEMENT_ID' => $id])`. The folder must reach the page (`urlrewrite.php` rule added when the component is saved in the editor). New sections: prefer controllers + `/local/routes` (`bitrix-routing`); complex SEF components only when the visual editor must manage the section.
+Ссылки: `CComponentEngine::makePathFromTemplate($folder . $templates['detail'], ['ELEMENT_ID' => $id])`. Папка должна вести на страницу (правило `urlrewrite.php` добавляется при сохранении компонента в редакторе). Для новых разделов предпочитай контроллеры + `/local/routes` (`bitrix-routing`); комплексный ЧПУ — если разделом управляет визуальный редактор.
 
 ## AJAX: `Controllerable`
 
@@ -79,7 +79,7 @@ final class VendorCatalogListComponent extends \CBitrixComponent
 
     public function onPrepareComponentParams($arParams): array
     {
-        $this->errorCollection = new \Bitrix\Main\ErrorCollection(); // runs for AJAX too
+        $this->errorCollection = new \Bitrix\Main\ErrorCollection(); // выполняется и для AJAX
         $arParams['IBLOCK_ID'] = (int)($arParams['IBLOCK_ID'] ?? 0);
 
         return $arParams;
@@ -87,17 +87,17 @@ final class VendorCatalogListComponent extends \CBitrixComponent
 
     public function configureActions(): array
     {
-        return ['addToCart' => []];   // [] keeps the default prefilters (`bitrix-framework`)
+        return ['addToCart' => []];   // [] сохраняет фильтры по умолчанию (bitrix-framework)
     }
 
     public function addToCartAction(int $productId): array
     {
-        return ['ok' => true];        // executeComponent() is not called on AJAX
+        return ['ok' => true];        // executeComponent() при AJAX не вызывается
     }
 
     protected function listKeysSignedParameters(): array
     {
-        return ['IBLOCK_ID'];         // params restored on AJAX from signedParameters
+        return ['IBLOCK_ID'];         // параметры восстанавливаются из signedParameters
     }
 
     public function getErrors(): array { return $this->errorCollection->toArray(); }
@@ -113,4 +113,6 @@ BX.ajax.runComponentAction('vendor:catalog.list', 'addToCart', {
 });
 ```
 
-Filters, errors and response types: `bitrix-controllers`. Legacy `AJAX_MODE = 'Y'` (compat) refreshes the whole component and updates `#pagetitle` / `#navigation` in the site template.
+Фильтры, ошибки и типы ответа: `bitrix-controllers`. Старый `AJAX_MODE = 'Y'` обновляет весь компонент и `#pagetitle` / `#navigation` шаблона сайта; оставляй для совместимости.
+
+Подпись параметров AJAX-компонента и подпись пошагового экспорта — разные контракты. Для экспорта прочитай `bitrix-controllers`, rules/errors-response.md, раздел «Подпись экспорта».

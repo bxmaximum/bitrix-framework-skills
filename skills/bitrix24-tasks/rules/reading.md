@@ -1,14 +1,14 @@
-# Reading tasks
+# Чтение задач
 
-| Need | API | Returns |
+| Задача | API | Результат |
 | --- | --- | --- |
-| One task | `V2\Public\Provider\TaskProvider::get(TaskParams)` | `?Entity\Task`; `null` = missing **or** no read access |
-| List, count | `TaskProvider::getList(TaskListParams)`, `getCount()` | `TaskCollection` of `Entity\Task`, `int` |
-| Compat list | `Bitrix\Tasks\Provider\TaskList::getList(Query\TaskQuery)` | arrays with UPPER_CASE keys |
+| Одна задача | `V2\Public\Provider\TaskProvider::get(TaskParams)` | `?Entity\Task`; `null`, если отсутствует либо нет права чтения |
+| Список/количество | `TaskProvider::getList(TaskListParams)`, `getCount()` | `TaskCollection` объектов `Entity\Task`, `int` |
+| Совместимый список | `Bitrix\Tasks\Provider\TaskList::getList(Query\TaskQuery)` | массивы с ключами UPPER_CASE |
 
-`TaskTable::getList()` has no access filter: never use it for user-facing lists.
+`TaskTable::getList()` не фильтрует права: для пользовательского списка не используй.
 
-## Example
+## Пример
 
 ```php
 <?php
@@ -87,23 +87,23 @@ final class TaskReader
 }
 ```
 
-## Rules and pitfalls
+## Правила и ограничения
 
-- Filter conditions are `[field, operator, value]` (`ConditionTree::createFromArray` format; `in`, `like`, `=`, `!=`, `<`, `>=` …; nest arrays for groups, `'logic' => 'or'`). Field names are `FieldsEnum` values (camelCase): `responsibleId`, `createdBy`, `accomplice`, `auditor`, `member`, `groupId`, `realStatus`, `deadline`, `tag`, `parentId`, `flowId` …
-- Unknown filter, select or sort fields are dropped silently. A typo removes the condition and widens the result. Always use `FieldsEnum` cases.
-- `userId` builds the access filter. `skipAccessCheck: true` (with `userId: 0`) only in system jobs, never with user input.
-- `TaskParams` loads every part by default; switch off what you do not render. `view: false` (default) does not mark the task viewed. `get()` creates the task chat if it is missing.
-- Status: filter by `realStatus` with `Status::*` ints (`Status::COMPLETED`, `getInWorkStatuses()`). Entity `status` is the `Entity\Task\Status` enum. In legacy rows `STATUS` is a computed meta-status; compare `REAL_STATUS`.
-- Dates are Unix timestamps (`deadlineTs`, `createdTs`, `closedTs`). `DateTime::createFromTimestamp()` gives server time; `->toUserTime()` shifts to the current user for display.
+- Фильтры: `[field, operator, value]`, формат `ConditionTree::createFromArray`. Операторы `in`, `like`, `=`, `!=`, `<`, `>=` …; группы — вложенные массивы, `'logic' => 'or'`. Имена — значения `FieldsEnum` camelCase: `responsibleId`, `createdBy`, `accomplice`, `auditor`, `member`, `groupId`, `realStatus`, `deadline`, `tag`, `parentId`, `flowId` …
+- Неизвестные поля фильтра, выборки и сортировки молча удаляются. Опечатка может расширить результат. Используй `FieldsEnum`.
+- `userId` задаёт фильтр прав. `skipAccessCheck: true` с `userId: 0` допустим только системному заданию, без пользовательского ввода.
+- `TaskParams` по умолчанию загружает все части; отключай ненужные. `view: false` по умолчанию не отмечает просмотр. `get()` создаёт отсутствующий чат задачи.
+- Фильтруй `realStatus` целыми `Status::*` (`Status::COMPLETED`, `getInWorkStatuses()`). `status` сущности — enum `Entity\Task\Status`. В legacy-строках `STATUS` вычисляемый метастатус; сравнивай `REAL_STATUS`.
+- Даты — timestamp (`deadlineTs`, `createdTs`, `closedTs`). `DateTime::createFromTimestamp()` даёт серверное время; для вывода текущему пользователю применяй `->toUserTime()`.
 
-## Compat list (older boxes)
+## Совместимый список старой коробки
 
 ```php
 $rows = (new \Bitrix\Tasks\Provider\TaskList())->getList(
-    (new \Bitrix\Tasks\Provider\Query\TaskQuery($viewerId)) // access filter for $viewerId
+    (new \Bitrix\Tasks\Provider\Query\TaskQuery($viewerId)) // фильтр прав пользователя $viewerId
         ->setSelect(['ID', 'TITLE', 'DEADLINE', 'REAL_STATUS'])
         ->setWhere(['=RESPONSIBLE_ID' => $responsibleId, '@REAL_STATUS' => [2, 3]])
         ->setOrder(['DEADLINE' => 'asc'])
         ->setLimit(50),
-); // throws Bitrix\Tasks\Provider\Exception\TaskListException
+); // может бросить Bitrix\Tasks\Provider\Exception\TaskListException
 ```

@@ -1,20 +1,20 @@
-# Events, cache, security
+# События, кеш и безопасность
 
-## Events
+## События
 
-Nine types, constants `DataManager::EVENT_ON_*`: `OnBeforeAdd`, `OnAdd`, `OnAfterAdd`, `OnBeforeUpdate`, `OnUpdate`, `OnAfterUpdate`, `OnBeforeDelete`, `OnDelete`, `OnAfterDelete`.
+Девять типов, константы `DataManager::EVENT_ON_*`: `OnBeforeAdd`, `OnAdd`, `OnAfterAdd`, `OnBeforeUpdate`, `OnUpdate`, `OnAfterUpdate`, `OnBeforeDelete`, `OnDelete`, `OnAfterDelete`.
 
-| Parameter | Add | Update | Delete |
+| Параметр | Add | Update | Delete |
 | --- | --- | --- | --- |
-| `fields` | yes | yes | no |
-| `object` | yes (clone in On/After) | yes (clone in On/After) | yes (clone) |
-| `primary` (+ legacy `id`) | After only | yes | yes |
+| `fields` | Да | Да | Нет |
+| `object` | Да (клон в On/After) | Да (клон в On/After) | Да (клон) |
+| `primary` (+ устаревший `id`) | Только After | Да | Да |
 
-Only `OnBefore*` results are applied: `modifyFields()`, `unsetFields()`/`unsetField()` (Add/Update), `addError()` (all three). An error aborts the write.
+Применяются только результаты `OnBefore*`: `modifyFields()`, `unsetFields()`/`unsetField()` (Add/Update), `addError()` (все три). Ошибка отменяет запись.
 
-### In the tablet
+### Внутри таблета
 
-A static method named like the event (`onBeforeAdd`) runs for the namespaced event only:
+Статический метод с именем события (`onBeforeAdd`) выполняется только для события с пространством имён:
 
 ```php
 use Bitrix\Main\ORM\Event;
@@ -28,7 +28,7 @@ public static function onBeforeAdd(Event $event): EventResult
 
     if (trim((string)($fields['TITLE'] ?? '')) === '')
     {
-        $result->addError(new FieldError($event->getEntity()->getField('TITLE'), 'Title is required'));
+        $result->addError(new FieldError($event->getEntity()->getField('TITLE'), 'Нужен заголовок'));
         return $result;
     }
 
@@ -38,7 +38,7 @@ public static function onBeforeAdd(Event $event): EventResult
 }
 ```
 
-### From another module
+### Из другого модуля
 
 ```php
 use Bitrix\Main\ORM\Data\DataManager;
@@ -50,38 +50,40 @@ EventManager::getInstance()->addEventHandler(
     DataManager::EVENT_ON_AFTER_UPDATE,
     static function (Event $event): void { /* ... */ },
 );
-// persistent, on module install:
+// постоянная регистрация при установке модуля:
 EventManager::getInstance()->registerEventHandler(PostTable::class, DataManager::EVENT_ON_AFTER_UPDATE, 'vendor.other', OnPostUpdate::class, 'handle');
 ```
 
-- Event name `\Vendor\Module\Post::OnAfterUpdate`, module derived from the namespace (`vendor.module`). A legacy `PostOnAfterUpdate` event with fewer parameters is sent too. Unknown type → `ArgumentException`.
-- Highloadblock entities fire in module `''`: `bitrix-highloadblock`.
+- Имя события `\Vendor\Module\Post::OnAfterUpdate`, модуль определяется по пространству имён (`vendor.module`). Также отправляется устаревшее событие `PostOnAfterUpdate` с меньшим числом параметров. Неизвестный тип вызывает `ArgumentException`.
+- Сущности highloadblock отправляют события в модуле `''`: `bitrix-highloadblock`.
 
-## Query cache
+## Кеш запросов
 
 ```php
 PostTable::query()->setSelect(['ID', 'TITLE'])->setCacheTtl(3600)->cacheJoins(true)->fetchAll();
-PostTable::cleanCache();              // after raw SQL that bypassed ORM writes
+PostTable::cleanCache();              // после прямого SQL, обошедшего запись через ORM
 ```
 
-- `isCacheable()` defaults to `true`. Cache lives in managed-cache dir `orm_<table>`; ORM writes clean it. There are no `ORM_*` TaggedCache tags.
-- `.settings.php` `cache_flags`: `<table>_max_ttl`, `<table>_min_ttl` clamp TTL; `<table>_max_ttl => 0` disables it. Details: `bitrix-caching`.
+- `isCacheable()` по умолчанию `true`. Кеш хранится в каталоге управляемого кеша `orm_<table>`; записи ORM очищают его. Тегов TaggedCache `ORM_*` нет.
+- `cache_flags` в `.settings.php`: `<table>_max_ttl`, `<table>_min_ttl` ограничивают TTL; `<table>_max_ttl => 0` отключает кеш. Подробнее: `bitrix-caching`.
 
-## User input in queries
+`cacheJoins(true)` разрешает кеширование запроса с JOIN, но не связывает сброс кеша основной сущности с записью в присоединённые таблицы. При их изменении очищай кеш основной сущности самостоятельно либо не кешируй такой результат.
 
-`select`, `order`, `group`, `runtime` and `ExpressionField` are not safe for input: whitelist names. Filter values are escaped, filter keys (field names) are not checked: whitelist them too.
+## Пользовательский ввод в запросах
+
+`select`, `order`, `group`, `runtime`, `ExpressionField` небезопасны для ввода: сверяй имена с разрешённым списком. Значения фильтра экранируются, его ключи (имена полей) не проверяются: разрешённый список нужен и для них.
 
 ```php
 $by = in_array($requestBy, ['ID', 'CREATED_AT', 'TITLE'], true) ? $requestBy : 'ID';
 PostTable::query()->setSelect(['ID'])->setOrder([$by => 'DESC'])->fetchAll();
 ```
 
-Row-level access: keep the access filter a separate element so user keys or `'LOGIC' => 'OR'` cannot override it, and reuse it for the count:
+Доступ к строкам: держи фильтр прав отдельным элементом, чтобы пользовательские ключи или `'LOGIC' => 'OR'` не могли его заменить. Тот же фильтр нужен для подсчёта:
 
 ```php
-$filter = [$userFilter, $accessFilter];            // top-level elements are ANDed; never array_merge()
+$filter = [$userFilter, $accessFilter];            // элементы верхнего уровня соединяются AND; не array_merge()
 $rows = PostTable::getList(['select' => ['ID'], 'filter' => $filter])->fetchAll();
 $total = PostTable::getCount($filter);
 ```
 
-Full patterns: `bitrix-security`.
+Полные схемы: `bitrix-security`.

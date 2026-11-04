@@ -1,80 +1,84 @@
 ---
 name: bitrix-sessions
-description: 'Bitrix sessions — Application::getSession(), getLocalSession(), kernel session, BX_SECURITY_SESSION_READONLY/VIRTUAL, session section (redis, memcache, database, separated mode). Use instead of $_SESSION, for AJAX lock issues or session storage.'
+description: 'Используй для сессий Битрикса: Application::getSession(), getLocalSession(), параллельный AJAX и блокировки. Хранилище, BX_SECURITY_SESSION_READONLY и разделённый режим.'
 ---
 
-# Sessions
+# Сессии
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-Never touch `$_SESSION`: it bypasses lazy start, read-only and virtual modes.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+
+Не обращайся к `$_SESSION`: это обходит отложенный запуск и режимы только чтения/виртуальной сессии.
 
 ```php
 use Bitrix\Main\Application;
 
 $session = Application::getInstance()->getSession(); // SessionInterface + ArrayAccess
 $session->set('vendor.wizard', ['step' => 2]);
-$state = $session->get('vendor.wizard');              // null if missing
+$state = $session->get('vendor.wizard');              // null при отсутствии
 if ($session->has('vendor.flash')) { $msg = $session->get('vendor.flash'); $session->remove('vendor.flash'); }
-$session->regenerateId();                             // after login / privilege change
+$session->regenerateId();                             // после входа или изменения привилегий
 ```
 
-- Prefix keys with your module id; store scalars/arrays only.
-- The session is written and closed before background jobs and agents run: writes from `addBackgroundJob()` are lost (`bitrix-background-jobs`). CLI, agents and Messenger have no session.
+- Добавляй к ключам префикс модуля; храни только скаляры/массивы.
+- Сессия записывается и закрывается до фоновых заданий и агентов: записи из `addBackgroundJob()` теряются (`bitrix-background-jobs`). В CLI, агентах и Messenger сессии нет.
 
-## Local session — "session cache"
+## Локальная сессия — «кеш сессии»
 
 ```php
-$local = Application::getInstance()->getLocalSession('vendor_cart'); // separate container per name
+$local = Application::getInstance()->getLocalSession('vendor_cart'); // отдельный контейнер для каждого имени
 $local->set('productIds', [1, 2, 3]);
 $ids = $local['productIds'] ?? [];
 ```
 
-- Stored in the `cache` engine (Redis/Memcache/APC) keyed by session ID, saved at the end of the hit; with the files cache it falls back to `$_SESSION`.
-- TTL: `.settings.php` `'session_local_storage' => ['value' => ['ttl' => 86400]]`.
-- Use for carts, filters, wizard drafts: big or frequently changed data that should not bloat or lock the main session.
+- Хранится в движке `cache` (Redis/Memcache/APC) по ID сессии, записывается в конце хита; при файловом кеше переходит на `$_SESSION`.
+- TTL: `.settings.php` → `'session_local_storage' => ['value' => ['ttl' => 86400]]`.
+- Подходит для корзин, фильтров, черновиков мастера: больших/часто меняющихся данных, которым не следует раздувать и блокировать основную сессию.
 
-## Kernel session
+## Сессия ядра
 
-`Application::getInstance()->getKernelSession()` holds kernel data (auth, `sessid`). In `default` mode it is the main session; in `separated` mode an encrypted cookie (`crypto_key`), no objects. Don't put application data there.
+`Application::getInstance()->getKernelSession()` хранит данные ядра (авторизация, `sessid`). В режиме `default` это основная сессия; в `separated` — зашифрованный cookie (`crypto_key`), без объектов. Не храни там данные приложения.
 
-## Modes (define before `prolog_before.php`)
+**Since main 26.900** зашифрованное значение cookie имеет внутреннюю версию `v2:` и HMAC-подпись. Старые зашифрованные cookies не проходят проверку: ожидай повторный вход и сброс сессий в `separated` при обновлении. Не отключай проверку для сохранения старого cookie. До 26.900 формат старый; повторная авторизация безопаснее самодельного переноса cookie.
 
-- `define('BX_SECURITY_SESSION_READONLY', true);` — handlers read without a lock and never write. For parallel read-only AJAX (suggest, counters); changes are discarded.
-- `define('BX_SECURITY_SESSION_VIRTUAL', true);` — in-memory session, no cookie, nothing stored. For token-authenticated REST/webhooks.
-- `define('BX_FORCE_DISABLE_SEPARATED_SESSION_MODE', true);` — force `default` mode for a script.
+## Режимы (определи до `prolog_before.php`)
 
-## `session` section (`bitrix-settings`)
+- `define('BX_SECURITY_SESSION_READONLY', true);`: обработчики читают без блокировки и не пишут. Для параллельного AJAX только чтения (подсказки, счётчики); изменения отбрасываются.
+- `define('BX_SECURITY_SESSION_VIRTUAL', true);`: сессия в памяти, без cookie и сохранения. Для REST/вебхуков с токенами.
+- `define('BX_FORCE_DISABLE_SEPARATED_SESSION_MODE', true);`: принудительный `default` для скрипта.
+
+## Секция `session` (`bitrix-settings`)
 
 ```php
 'session' => [
     'value' => [
         'mode' => 'separated',              // 'default' | 'separated'
-        'lifetime' => 14400,                // kernel cookie lifetime, separated mode only
+        'lifetime' => 14400,                // срок cookie ядра, только разделённый режим
         'handlers' => [
-            'kernel' => 'encrypted_cookies',  // the only allowed kernel handler
+            'kernel' => 'encrypted_cookies',  // единственный допустимый обработчик ядра
             'general' => [
                 'type' => 'redis',            // file | database | redis | memcache | null
                 'host' => '127.0.0.1',
                 'port' => 6379,
-                'keyPrefix' => 'site1',       // default 'BX'; unique per site sharing a server
+                'keyPrefix' => 'site1',       // по умолчанию 'BX'; уникален для сайта на общем сервере
             ],
         ],
         'regenerateIdAfterLogin' => true,
-        'ignoreSessionStartErrors' => false, // true: hit continues if storage is down
+        'ignoreSessionStartErrors' => false, // true: продолжить хит при недоступном хранилище
     ],
     'readonly' => true,
 ],
 ```
 
-- `separated`: kernel data in the cookie, general session starts lazily on first access — anonymous hits that never touch it don't hit storage.
-- General session TTL for Redis/Memcache is `php.ini` `session.gc_maxlifetime`, not `lifetime`.
-- Redis options: `host`, `port`, `password`, `servers` (list of `['host'=>…, 'port'=>…]` for a cluster), `serializer`, `persistent`, `failover`, `timeout`, `readTimeout`, `keyPrefix`, `exclusiveLock` (lock value = requested page, shown in the lock-timeout error). Memcache: `host`, `port`, `servers`, `connectionTimeout`, `keyPrefix`, `exclusiveLock`. File: `savePath`. Database: table `b_user_session` (no extra keys).
-- No `session` section and `php.ini` `session.save_handler` ≠ `files` → PHP's own handler is used as is.
-- Every writable session is locked for the whole request (Redis/Memcache wait up to ~60 s, then fatal): parallel AJAX of one user runs serially — use `BX_SECURITY_SESSION_READONLY` where nothing is written.
+- `separated`: данные ядра в cookie, общая сессия запускается при первом обращении. Анонимные хиты, не использующие её, не обращаются к хранилищу.
+- TTL общей сессии Redis/Memcache задаётся `session.gc_maxlifetime` в `php.ini`, не `lifetime`.
+- Redis: `host`, `port`, `password`, `servers` (список `['host'=>…, 'port'=>…]` для кластера), `serializer`, `persistent`, `failover`, `timeout`, `readTimeout`, `keyPrefix`, `exclusiveLock` (значение блокировки — запрошенная страница, видна при ошибке таймаута). Memcache: `host`, `port`, `servers`, `connectionTimeout`, `keyPrefix`, `exclusiveLock`. Файлы: `savePath`. БД: таблица `b_user_session`, дополнительных ключей нет.
+- Если секции `session` нет, а `session.save_handler` в `php.ini` не равен `files`, обработчик PHP используется без изменений.
+- Сессия с записью блокируется на весь запрос (Redis/Memcache ждут около 60 секунд, затем фатальная ошибка): параллельные AJAX одного пользователя идут последовательно. Где нет записи, используй `BX_SECURITY_SESSION_READONLY`.
 
-## Security
+## Безопасность
 
-- Session cookie is always `HttpOnly`; `Secure`/`SameSite` come from `php.ini` `session.cookie_secure` / `session.cookie_samesite`.
-- Regenerate the ID on login and privilege changes (`regenerateIdAfterLogin` or `regenerateId()`).
-- Never store secrets or full user objects in the session; re-check rights on every request (`bitrix-security`).
+- Cookie сессии всегда `HttpOnly`; `Secure`/`SameSite` берутся из `session.cookie_secure` / `session.cookie_samesite` в `php.ini`.
+- Обновляй ID после входа и изменения привилегий (`regenerateIdAfterLogin` или `regenerateId()`).
+- Не храни секреты и полные объекты пользователей в сессии; на каждом запросе проверяй права заново (`bitrix-security`).

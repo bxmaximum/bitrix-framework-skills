@@ -1,8 +1,8 @@
-# Accepting uploads
+# Приём загрузок
 
-## Own action (multipart form)
+## Своё действие (multipart-форма)
 
-Files are never bound to action parameters. Read them from the request and pass them to a service (`bitrix-controllers`; default prefilters keep CSRF, so send `sessid`).
+Файлы не привязываются к параметрам действия: читай из запроса, передавай сервису (`bitrix-controllers`). Фильтры по умолчанию требуют CSRF, отправляй `sessid`.
 
 ```php
 public function uploadAction(int $docId, DocFileService $files): ?array
@@ -27,10 +27,10 @@ public function store(int $docId, array $file): Result
     $result = new Result();
     if (($file['error'] ?? UPLOAD_ERR_NO_FILE) !== UPLOAD_ERR_OK || !is_uploaded_file($file['tmp_name'] ?? ''))
     {
-        return $result->addError(new Error('No file uploaded', 'NO_FILE'));
+        return $result->addError(new Error('Файл не загружен', 'NO_FILE'));
     }
 
-    $file['type'] = MimeType::getByFilePath($file['tmp_name']);  // magic bytes, not the client header
+    $file['type'] = MimeType::getByFilePath($file['tmp_name']); // сигнатура содержимого, не заголовок клиента
     $error = \CFile::CheckFile($file, 10 * 1024 * 1024, ['application/pdf'], 'pdf');
     if ($error !== '')
     {
@@ -41,20 +41,20 @@ public function store(int $docId, array $file): Result
     $fileId = (int)\CFile::SaveFile($file, 'vendor.docs');
     if ($fileId <= 0)
     {
-        return $result->addError(new Error('Cannot save file', 'SAVE_FAILED'));
+        return $result->addError(new Error('Не удалось сохранить файл', 'SAVE_FAILED'));
     }
-    // bind $fileId to $docId in your table here
+    // привяжи $fileId к $docId в своей таблице
     return $result->setData(['fileId' => $fileId]);
 }
 ```
 
-- `is_uploaded_file()` blocks a forged array (`tmp_name` = `/etc/passwd`): `SaveFile()` copies any readable path.
-- `CFile::CheckFile($arFile, $intMaxSize = 0, $mimeType = false, $strExt = false, $bForceMD5 = false, $bSkipExt = false)` returns `''` on success, and also for an empty `name`, so check `error` first. `$mimeType` is a list of prefixes matched against `$arFile['type']`; `$strExt` is a comma-separated list.
-- Images: `CFile::CheckImageFile($arFile, $iMaxSize = 0, $iMaxWidth = 0, $iMaxHeight = 0)` decodes the image. It returns `null` on success and an error string otherwise, so test `(string)$error !== ''`.
-- Detect content with `MimeType::getByFilePath()` or `getByContent()` (finfo). Image check: `(new \Bitrix\Main\File\Image($path))->getInfo()` returns `Image\Info` or `null`.
-- Always whitelist extensions. An `html`, `htm`, `svg`, `xml` or `js` file saved to `/upload/` runs in your origin when opened: stored XSS.
-- `name="files[]"` arrives in PHP's per-key layout (`name[0]`, `tmp_name[0]`, …). For big files use `ui.uploader` (chunked, `rules/ui-uploader.md`) instead of raising PHP limits.
+- `is_uploaded_file()` блокирует поддельный массив с `tmp_name = /etc/passwd`: `SaveFile()` копирует любой читаемый путь.
+- `CFile::CheckFile($arFile, $intMaxSize = 0, $mimeType = false, $strExt = false, $bForceMD5 = false, $bSkipExt = false)` возвращает `''` при успехе **и пустом `name`**: сначала проверь `error`. `$mimeType` — список префиксов для `$arFile['type']`; `$strExt` — список расширений через запятую.
+- Изображения: `CFile::CheckImageFile($arFile, $iMaxSize = 0, $iMaxWidth = 0, $iMaxHeight = 0)` декодирует изображение. Успех — `null`, иначе строка ошибки; проверяй `(string)$error !== ''`.
+- Содержимое: `MimeType::getByFilePath()` или `getByContent()` (finfo). Проверка изображения: `(new \Bitrix\Main\File\Image($path))->getInfo()` → `Image\Info` либо `null`.
+- Всегда разрешай конкретные расширения. Файлы `html`, `htm`, `svg`, `xml`, `js` в `/upload/` при открытии выполняются в origin сайта: сохранённый XSS.
+- `name="files[]"` даёт поключевой формат PHP (`name[0]`, `tmp_name[0]`, …). Большие файлы загружай частями через `ui.uploader` (`rules/ui-uploader.md`), а не повышением лимитов PHP.
 
-## Legacy `bitrix:main.file.input` (compat only)
+## Старый `bitrix:main.file.input` для совместимости
 
-It saves every file to b_file immediately. On submit, keep only the IDs registered for the control: `\Bitrix\Main\UI\FileInputUtility::instance()->checkFiles($controlId, $ids)`, where `$controlId` is `CONTROL_ID` (default `'mfi' . INPUT_NAME`). Without this, any b_file ID can be attached (IDOR).
+Сразу сохраняет каждый файл в b_file. При отправке формы оставляй ID, зарегистрированные для контрола: `\Bitrix\Main\UI\FileInputUtility::instance()->checkFiles($controlId, $ids)`, где `$controlId` — `CONTROL_ID` (по умолчанию `'mfi' . INPUT_NAME`). Иначе можно привязать произвольный ID b_file (IDOR).

@@ -1,25 +1,27 @@
 ---
 name: bitrix-landing
-description: 'Landing (Sites24) module — Site, Landing, Block, custom and repo blocks, publication, preview, hooks. Use when creating sites, pages or blocks from PHP, writing /local/blocks, publishing, adding counters/meta, or landing.repo REST.'
+description: 'Модуль landing (Сайты24): Site, Landing, Block, публикация и предпросмотр. Используй для /local/blocks, счётчиков, метаданных и блоков landing.repo REST.'
 ---
 
-# Landing sites (`landing`)
+# Сайты Landing (`landing`)
 
-Baseline: main 23.0+ · Verified: landing 26.1200.0, main 26.800.0
+Baseline: main 23.0+ · Verified: landing 26.1600.0, main 26.1000.0
 
-Block-based sites: Sites24, stores, knowledge bases, Vibe. Classic site templates, menus and includes: `bitrix-cms-basics`.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
 
-| Task | Read |
+Блочные сайты: Сайты24, магазины, базы знаний, Вайб. Классические шаблоны, меню и включаемые области: `bitrix-cms-basics`.
+
+| Задача | Читать |
 | --- | --- |
-| Site types, pages, blocks from PHP, custom blocks, URLs in content | `rules/pages-blocks.md` |
-| Publish, preview links, soft delete, hooks (counters, meta), rights | `rules/publish-hooks.md` |
-| Repo blocks via REST, PublicAction batch, Disk files, pictures | `rules/rest-security.md` |
+| Типы сайтов, страницы и блоки из PHP, собственные блоки, URL в содержимом | `rules/pages-blocks.md` |
+| Публикация, ссылки предпросмотра, корзина, события счётчиков / метаданных, права | `rules/publish-hooks.md` |
+| Репозиторные блоки REST, пакет PublicAction, файлы Диска, изображения | `rules/rest-security.md` |
 
-## Invariants
+## Общие правила
 
-- `Loader::includeModule('landing')`; change data through `Site` / `Landing` / `Block`, never SQL on `b_landing_*`.
-- Own blocks live in `/local/blocks/<namespace>/<code>/`; never edit `/bitrix/blocks/` or the module.
-- Links in block content need an allow-listed scheme, otherwise they are saved as `''` without an error (**Since landing 26.1000**).
-- Methods that write return `false`/`Result` and fill `$landing->getError()`; check them, they rarely throw.
-- Don't subclass landing classes to override protected methods: their signatures change in minor releases.
-- Deep PHP page logic belongs in a component on a classic page (`bitrix-components`), not in a landing block.
+- `Loader::includeModule('landing')`; меняй данные через `Site` / `Landing` / `Block`, без SQL в `b_landing_*`.
+- Свои блоки — в `/local/blocks/<namespace>/<code>/`; не меняй `/bitrix/blocks/` и модуль.
+- Ссылки блока должны иметь разрешённую схему, иначе сохраняются как `''` без ошибки (**Since landing 26.1000**).
+- Методы записи возвращают `false`/`Result`, заполняют `$landing->getError()`: проверяй; исключения редки.
+- Не наследуй классы landing ради переопределения защищённых методов: сигнатуры меняются в минорных версиях.
+- Сложную PHP-логику страницы вынеси в компонент классической страницы (`bitrix-components`).

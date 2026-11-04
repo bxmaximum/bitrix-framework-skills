@@ -1,19 +1,19 @@
-# Portal pages, slider, toolbar
+# Страницы портала, слайдер и панель
 
-## Where files live
+## Размещение файлов
 
-| What | Where |
+| Содержимое | Путь |
 | --- | --- |
-| Component (logic + template) | `/local/components/<vendor>/<name>/` |
-| Services, controllers, events | `/local/modules/<vendor.module>/` |
-| Public entry file (URL) | portal site root (`SITE_DIR`, usually `/`), e.g. `/my-reports/index.php` |
-| Override a portal component template | `/local/templates/bitrix24/components/bitrix/<component>/<template>/` (see `bitrix-components`) |
+| Компонент: логика и шаблон | `/local/components/<vendor>/<name>/` |
+| Сервисы, контроллеры, события | `/local/modules/<vendor.module>/` |
+| Публичный файл по URL | корень сайта портала (`SITE_DIR`, обычно `/`), например `/my-reports/index.php` |
+| Свой шаблон компонента портала | `/local/templates/bitrix24/components/bitrix/<component>/<template>/` (`bitrix-components`) |
 
-- The public file is site content: header, one `IncludeComponent`, footer. No logic.
-- Never edit `/bitrix/templates/bitrix24/` or product public files (`/.top.menu_ext.php`, `/company/…`); updates may replace them.
-- URLs: flat pages with query params (`/my-reports/edit.php?id=5`) keep slider rules simple. Pretty URLs: `/local/routes` + `Bitrix\Main\Routing\Controllers\PublicPageController` pointing at the public file (`bitrix-routing`); JSON/AJAX: controllers (`bitrix-controllers`). Product sections use `urlrewrite.php` rules — `urlrewrite.php` is checked before routes, so don't reuse their paths and don't add new rules there.
+- Публичный файл содержит header, один `IncludeComponent`, footer. Логику размещай в компоненте/сервисах.
+- Не редактируй `/bitrix/templates/bitrix24/` и публичные файлы продукта (`/.top.menu_ext.php`, `/company/…`): обновление их заменяет.
+- Прямые URL с параметрами (`/my-reports/edit.php?id=5`) упрощают правила слайдера. Для ЧПУ — `/local/routes` и `Bitrix\Main\Routing\Controllers\PublicPageController` с публичным файлом (`bitrix-routing`); JSON/AJAX — контроллеры (`bitrix-controllers`). Продуктовые правила `urlrewrite.php` идут раньше маршрутов. Не занимай их пути и не добавляй новые правила туда.
 
-## Page in the portal layout
+## Страница в оформлении портала
 
 ```php
 <?php
@@ -24,54 +24,54 @@ $APPLICATION->IncludeComponent('vendor:report.list', '', ['PATH_TO_EDIT' => '/my
 require $_SERVER['DOCUMENT_ROOT'] . '/bitrix/footer.php';
 ```
 
-## Page that opens in a slider
+## Страница в слайдере
 
 ```php
 $APPLICATION->IncludeComponent('bitrix:ui.sidepanel.wrapper', '', [
     'POPUP_COMPONENT_NAME' => 'vendor:report.edit',
     'POPUP_COMPONENT_TEMPLATE_NAME' => '',
     'POPUP_COMPONENT_PARAMS' => ['ID' => $id],
-    'PAGE_MODE' => false,                       // direct URL: open slider over the back URL
+    'PAGE_MODE' => false,                       // прямой URL открывает слайдер поверх обратной страницы
     'PAGE_MODE_OFF_BACK_URL' => '/my-reports/',
 ]);
 ```
 
-- The slider requests the URL with `IFRAME=Y&IFRAME_TYPE=SIDE_SLIDER`. `bitrix24` `header.php`/`footer.php` return early on `IFRAME=Y` (no `<html>`, no assets), so a slider page without the wrapper renders broken.
-- The wrapper calls `RestartBuffer()`, prints a full document and `exit`s in slider mode — use it from a public file, not inside a controller response.
-- `PAGE_MODE` defaults to `true`: a direct URL renders the component as a normal page.
-- Other params: `HIDE_TOOLBAR`/`PLAIN_VIEW` (toolbar is on by default; `USE_UI_TOOLBAR` is compat only), `USE_PADDING`, `USE_BACKGROUND_CONTENT`, `BUTTONS` (passed to `bitrix:ui.button.panel`: `save`, `apply`, `cancel`, `close`), `CLOSE_AFTER_SAVE` / `RELOAD_GRID_AFTER_SAVE` / `RELOAD_PAGE_AFTER_SAVE` (work after POST → redirect → GET).
-- `POPUP_COMPONENT_PARAMS` always gets `IFRAME => true`.
+- Слайдер запрашивает `IFRAME=Y&IFRAME_TYPE=SIDE_SLIDER`. Шаблон `bitrix24` пропускает header/footer при `IFRAME=Y`, включая `<html>` и ресурсы, поэтому без обёртки страница будет неполной.
+- Обёртка вызывает `RestartBuffer()`, печатает целый документ и завершает запрос через `exit`. Используй из публичного файла, не внутри ответа контроллера.
+- `PAGE_MODE` по умолчанию `true`: прямой URL показывает обычную страницу с компонентом.
+- Параметры: `HIDE_TOOLBAR`/`PLAIN_VIEW` (панель включена по умолчанию; `USE_UI_TOOLBAR` только для совместимости), `USE_PADDING`, `USE_BACKGROUND_CONTENT`, `BUTTONS` для `bitrix:ui.button.panel` (`save`, `apply`, `cancel`, `close`), `CLOSE_AFTER_SAVE`/`RELOAD_GRID_AFTER_SAVE`/`RELOAD_PAGE_AFTER_SAVE` после POST, перенаправления и GET.
+- В `POPUP_COMPONENT_PARAMS` всегда добавляется `IFRAME => true`.
 
-## SidePanel JS
+## JavaScript SidePanel
 
-Open, `bindAnchors`, `postMessage`/`SidePanel.Slider:onMessage`, events and options: `bitrix-ui` → `rules/popups-sidepanel.md`. Portal specifics:
+Открытие, `bindAnchors`, `postMessage`/`SidePanel.Slider:onMessage`, события и параметры: `bitrix-ui`, `rules/popups-sidepanel.md`. Особенности портала:
 
-- Inside a slider iframe `BX.SidePanel.Instance` is the top window's manager — open nested sliders from it, not `window.open`.
-- A `bindAnchors` rule (`condition: ['^/my-reports/edit\\.php']`) makes links to your page open in a slider; without it a plain link reloads the whole portal page.
-- Refresh the opener via `postMessage` + `onMessage`, not `top.location.reload()`.
+- В iframe слайдера `BX.SidePanel.Instance` — менеджер верхнего окна. Через него открывай вложенные слайдеры вместо `window.open`.
+- Правило `bindAnchors` (`condition: ['^/my-reports/edit\\.php']`) открывает ссылки в слайдере. Без него обычная ссылка перезагрузит портал.
+- Обновляй открывшее окно сообщением `postMessage`/`onMessage`, а не `top.location.reload()`.
 
-## Page toolbar
+## Панель страницы
 
-The template renders `bitrix:ui.toolbar` through a deferred buffer, so call the facade anywhere before the page ends (component `class.php` or template).
+Шаблон выводит `bitrix:ui.toolbar` отложенным буфером. Фасад вызывай до конца страницы: в `class.php` компонента или шаблоне.
 
 ```php
 \Bitrix\UI\Toolbar\Facade\Toolbar::addFilter([
     'FILTER_ID' => $gridId, 'GRID_ID' => $gridId, 'FILTER' => $fields, 'ENABLE_LABEL' => true,
 ]);
 \Bitrix\UI\Toolbar\Facade\Toolbar::addButton(
-    ['text' => 'Add', 'color' => \Bitrix\UI\Buttons\Color::SUCCESS, 'link' => '/my-reports/edit.php'],
+    ['text' => 'Добавить', 'color' => \Bitrix\UI\Buttons\Color::SUCCESS, 'link' => '/my-reports/edit.php'],
     \Bitrix\UI\Toolbar\ButtonLocation::AFTER_TITLE,
 );
 \Bitrix\UI\Toolbar\Facade\Toolbar::addFavoriteStar();
 ```
 
-- `addButton()` takes a `Bitrix\UI\Buttons\Button` or its params array (`text`, `color`, `link`, `click`, `icon`, …). Locations (`Bitrix\UI\Toolbar\ButtonLocation`): `RIGHT` (default), `AFTER_TITLE`, `AFTER_FILTER`.
-- `addFilter()` includes `bitrix:main.ui.filter` with the given params — don't include the filter component again.
-- The facade methods are resolved by `__callStatic` (`@method` docblock on `Bitrix\UI\Toolbar\Facade\Toolbar`); the real methods live in `Bitrix\UI\Toolbar\Toolbar`.
+- `addButton()` принимает `Bitrix\UI\Buttons\Button` либо массив параметров (`text`, `color`, `link`, `click`, `icon`, …). Позиции `Bitrix\UI\Toolbar\ButtonLocation`: `RIGHT` (по умолчанию), `AFTER_TITLE`, `AFTER_FILTER`.
+- `addFilter()` уже подключает `bitrix:main.ui.filter`; не выводи компонент фильтра повторно.
+- Методы фасада разрешаются через `__callStatic` и `@method` класса `Bitrix\UI\Toolbar\Facade\Toolbar`. Реализация — `Bitrix\UI\Toolbar\Toolbar`.
 
-## Checklist
+## Проверка
 
-- [ ] Public file has no logic; code is in `/local/components` or `/local/modules`.
-- [ ] Every slider page goes through `bitrix:ui.sidepanel.wrapper`.
-- [ ] Toolbar buttons/filter added via `Toolbar::*`, not hand-made HTML.
-- [ ] Slider → opener communication via `postMessage` / `SidePanel.Slider:onMessage`, not `top.location.reload()`.
+- [ ] В публичном файле нет логики; код в `/local/components` или `/local/modules`.
+- [ ] Страница слайдера использует `bitrix:ui.sidepanel.wrapper`.
+- [ ] Кнопки и фильтр добавлены через `Toolbar::*`, без собственного HTML.
+- [ ] Слайдер общается с открывшим окном через `postMessage`/`SidePanel.Slider:onMessage`, без `top.location.reload()`.

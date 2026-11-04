@@ -1,35 +1,35 @@
-# IDs, API boundary, iblock setup, rights
+# ID, границы API, настройка инфоблока, права
 
-Iblock type (`b_iblock_type`) → iblock (`b_iblock`, bound to sites) → sections (tree, `b_iblock_section`) → elements (`b_iblock_element`) with properties (`b_iblock_property`).
+Тип (`b_iblock_type`) → инфоблок (`b_iblock`, привязка к сайтам) → разделы (дерево `b_iblock_section`) → элементы (`b_iblock_element`) со свойствами (`b_iblock_property`).
 
-## Identifiers
+## Идентификаторы
 
-- `API_CODE`: `^[a-z][a-z0-9]{0,49}$` (case-insensitive; no `_`), unique across iblocks. Without it there is no property-aware ORM class and no REST (`REST_ON`). The docs list it as string(255); the kernel limits it to 50.
-- `CODE`: symbolic code for URLs; `XML_ID`: external ID for exchange and migrations.
+- `API_CODE`: `^[a-z][a-z0-9]{0,49}$` без учёта регистра, без `_`, уникален между инфоблоками. Без него нет ORM со свойствами и REST (`REST_ON`). Документация указывает string(255), ядро ограничивает 50 символами.
+- `CODE`: символьный код URL; `XML_ID`: внешний ID обмена и миграций.
 
-## ORM vs classic API
+## ORM и классический API
 
-| Task | API |
+| Задача | API |
 | --- | --- |
-| Iblock type | `CIBlockType::Add` (ORM does not write lang names) |
-| Iblock | `CIBlock::Add/Update` (ORM does not bind sites, rights, SEO templates) |
-| Property add/update/delete | `CIBlockProperty` (see storage versions) |
-| Rights | `CIBlock::SetPermission`, `CIBlockRights`, `CIBlockSectionRights`, `CIBlockElementRights` |
-| Element/section CRUD | compiled ORM (`rules/orm-entities.md`) or `CIBlockElement`/`CIBlockSection` |
-| Thumbnails | `CFile::ResizeImageGet($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL)['src']` |
-| Search index | `CIBlockElement::UpdateSearch($id, true)` |
+| Тип инфоблока | `CIBlockType::Add`: ORM не пишет названия языков |
+| Инфоблок | `CIBlock::Add/Update`: ORM не привязывает сайты, права, SEO-шаблоны |
+| Добавление / изменение / удаление свойства | `CIBlockProperty`, с учётом версии хранения |
+| Права | `CIBlock::SetPermission`, `CIBlockRights`, `CIBlockSectionRights`, `CIBlockElementRights` |
+| CRUD элемента / раздела | Компилируемый ORM (`rules/orm-entities.md`) либо `CIBlockElement`/`CIBlockSection` |
+| Миниатюры | `CFile::ResizeImageGet($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL)['src']` |
+| Индекс поиска | `CIBlockElement::UpdateSearch($id, true)` |
 
-## Create an iblock
+## Создание инфоблока
 
 ```php
 $iblock = new \CIBlock();
 $iblockId = $iblock->Add([
     'IBLOCK_TYPE_ID' => 'news',
-    'NAME'           => 'News',
+    'NAME'           => 'Новости',
     'CODE'           => 'news',
-    'API_CODE'       => 'News',      // required for ORM
+    'API_CODE'       => 'News',      // обязателен для ORM
     'LID'            => ['s1'],
-    'VERSION'        => 2,           // explicit; the default is 1
+    'VERSION'        => 2,           // явно; по умолчанию 1
     'GROUP_ID'       => [2 => \CIBlockRights::PUBLIC_READ, 8 => \CIBlockRights::EDIT_ACCESS],
 ]);
 if (!$iblockId) {
@@ -37,18 +37,22 @@ if (!$iblockId) {
 }
 ```
 
-## Property storage versions
+## Версии хранения свойств
 
-- **1 (default)**: all values in shared `b_iblock_element_property`. `CIBlock::Add` stores 2 only when 2 is passed; `IblockTable` defaults to `PROPERTY_STORAGE_COMMON`.
-- **2**: `b_iblock_element_prop_s{ID}` (single values, one row per element) + `b_iblock_element_prop_m{ID}` (multiple). Faster selections with a moderate number of properties.
-- `PropertyTable` is fine for **reading** property metadata. Write with `CIBlockProperty::Add/Update/Delete`: on v2 they also alter `prop_s`/`prop_m`. `PropertyTable::add/update/delete` touch only `b_iblock_property` and leave v2 storage inconsistent.
+- **1, по умолчанию:** значения в общей `b_iblock_element_property`. `CIBlock::Add` сохраняет 2 только при явной передаче; у `IblockTable` стандарт — `PROPERTY_STORAGE_COMMON`.
+- **2:** `b_iblock_element_prop_s{ID}` (одиночные, строка на элемент) + `b_iblock_element_prop_m{ID}` (множественные). Быстрее при умеренном числе свойств.
+- `PropertyTable` подходит для **чтения** метаданных. Запись: `CIBlockProperty::Add/Update/Delete`, для v2 меняют также `prop_s`/`prop_m`. `PropertyTable::add/update/delete` меняют лишь `b_iblock_property`, нарушая хранение v2.
 
-## Rights
+## Права
 
-- Simple mode: `GROUP_ID` on `Add`, or `CIBlock::SetPermission($iblockId, [$groupId => 'R'])`. Letters: `CIBlockRights::PUBLIC_READ` (R), `EDIT_ACCESS` (W), `FULL_ACCESS` (X). Extended mode (`RIGHTS_MODE = 'E'`): `CIBlockRights`/`CIBlockSectionRights`/`CIBlockElementRights`.
-- Check: `CIBlockElementRights::UserHasRightTo($iblockId, $elementId, 'element_read')` (both modes, current `$USER` only; `false` without it), `CIBlock::GetPermission($iblockId, $userId)` (iblock-level letter). In agents/CLI decide the access model explicitly.
-- `CIBlockElement::GetList` checks rights only with `'CHECK_PERMISSIONS' => 'Y'` (+ `MIN_PERMISSION`, default `R`; `PERMISSIONS_BY` = user ID). ORM `getList` never checks them.
-- Never pass user-supplied filters straight into `GetList`: drop `CHECK_PERMISSIONS`, `PERMISSIONS_BY`, `MIN_PERMISSION`, `IBLOCK_ID` from them and set these server-side.
-- Moving an element/section: check that the target section belongs to the same iblock and that the user has add rights there. Send `IBLOCK_SECTION_ID` only when moving (`0` = root).
-- Lists module (Bitrix24 "Lists"): `CListPermissions::CheckAccess($USER, $typeId, $iblockId)` returns a letter (`CListPermissions::ACCESS_DENIED` … `IS_ADMIN`) or a negative int (`WRONG_IBLOCK_TYPE`, `WRONG_IBLOCK`, …). Treat `is_int($r) && $r < 0` as an error too, not only `ACCESS_DENIED`.
-- `Bitrix\Iblock\Public\…` is mostly REST validation helpers, not a CRUD facade.
+- Простой режим: `GROUP_ID` при `Add` либо `CIBlock::SetPermission($iblockId, [$groupId => 'R'])`. `CIBlockRights::PUBLIC_READ` (R), `EDIT_ACCESS` (W), `FULL_ACCESS` (X). Расширенный (`RIGHTS_MODE = 'E'`): `CIBlockRights`/`CIBlockSectionRights`/`CIBlockElementRights`.
+- Проверка: `CIBlockElementRights::UserHasRightTo($iblockId, $elementId, 'element_read')` (оба режима, только текущий `$USER`, без него `false`), `CIBlock::GetPermission($iblockId, $userId)` (буква уровня инфоблока). Для агентов / CLI явно определи модель доступа.
+- `CIBlockElement::GetList` проверяет права только с `'CHECK_PERMISSIONS' => 'Y'`; `MIN_PERMISSION` по умолчанию R, `PERMISSIONS_BY` — ID пользователя. ORM `getList` прав не проверяет.
+- Не передавай фильтр пользователя в `GetList` напрямую: убери `CHECK_PERMISSIONS`, `PERMISSIONS_BY`, `MIN_PERMISSION`, `IBLOCK_ID`, задай на сервере.
+- Перенос элемента / раздела: целевой раздел должен быть в том же инфоблоке, пользователь иметь право добавления. `IBLOCK_SECTION_ID` отправляй только при переносе; 0 — корень.
+- Модуль списков Битрикс24: `CListPermissions::CheckAccess($USER, $typeId, $iblockId)` возвращает букву (`CListPermissions::ACCESS_DENIED` … `IS_ADMIN`) либо отрицательный int (`WRONG_IBLOCK_TYPE`, `WRONG_IBLOCK`, …). Ошибка — также `is_int($r) && $r < 0`, не только `ACCESS_DENIED`.
+- `Bitrix\Iblock\Public\…` в основном проверяет данные REST, это не CRUD-фасад.
+
+## REST V3 — Since iblock 26.100
+
+iblock.element.get/list читают только инфоблок с REST_ON = Y и непустым API_CODE. Без API_CODE сущность не компилируется; REST_ON отдельно проверяется сервисом чтения. list требует фильтр iblockId, get — параметр iblock и id. Это не замена PHP-правил выше. Для старого модуля используй серверный сервис на подтверждённом PHP API; вызовы REST и официальный контракт — `bitrix24-rest-api`.

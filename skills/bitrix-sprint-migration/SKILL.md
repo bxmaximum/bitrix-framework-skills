@@ -1,36 +1,38 @@
 ---
 name: bitrix-sprint-migration
-description: 'sprint.migration module — Version classes (up/down), HelperManager helpers, builders, migrate.php CLI, migrations.*.php configs. Use when writing or applying schema/content migrations, exporting iblocks/HL/options, or checking migration status.'
+description: 'Миграции проекта через sprint.migration: классы Version (up/down), HelperManager, генераторы и CLI migrate.php. Используй для переноса структуры, контента и настроек или проверки миграций.'
 ---
 
 # sprint.migration
 
-Baseline: main 23.0+ · Verified: sprint.migration 5.15.1, main 26.800.0
+Baseline: main 23.0+ · Verified: sprint.migration 5.16.1, main 26.1000.0
 
-Marketplace/Composer module (`andreyryabin/sprint.migration`) that keeps project schema and content changes as PHP classes in VCS. Module-owned tables, events and agents of your own module go into its installer instead (`bitrix-modules`).
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
 
-**Not installed?** Check `/local/modules/sprint.migration/` and `/bitrix/modules/sprint.migration/`, then `Loader::includeModule('sprint.migration')`. If it is missing, propose installing it (Marketplace or Composer). Never write a home-made migration framework.
+Модуль Marketplace/Composer `andreyryabin/sprint.migration` хранит изменения структуры и контента PHP-классами в VCS. Таблицы, события и агенты собственного модуля — в его установщике (`bitrix-modules`).
 
-| Task | Read |
+**Не установлен?** Проверь `/local/modules/sprint.migration/`, `/bitrix/modules/sprint.migration/`, затем `Loader::includeModule('sprint.migration')`. Если отсутствует, предложи установку Marketplace / Composer. Не создавай самодельную систему миграций.
+
+| Задача | Читать |
 | --- | --- |
-| CLI commands, configs, version naming, console user | `rules/cli-config.md` |
-| Writing `Version::up()`/`down()`, restartable batches, exchange files | `rules/writing.md` |
-| Helper and builder map, method names | `rules/helpers-builders.md` |
-| Safety rules, review and apply checklist | `rules/checklist.md` |
+| CLI, конфигурации, имена версий, консольный пользователь | `rules/cli-config.md` |
+| `Version::up()`/`down()`, возобновляемые пакеты, файлы обмена | `rules/writing.md` |
+| Помощники и генераторы, имена методов | `rules/helpers-builders.md` |
+| Безопасность, ревью и проверка применения | `rules/checklist.md` |
 
-## Defaults (config `cfg`)
+## Значения по умолчанию, конфигурация `cfg`
 
-| Item | Default |
+| Параметр | По умолчанию |
 | --- | --- |
-| Migration dir | `{local\|bitrix}/php_interface/migrations` (`local` if `local/php_interface` exists) |
-| Versions table | `sprint_migration_versions` |
-| Class | `namespace Sprint\Migration;` `Version<YmdHis>` extends `Version` |
+| Каталог миграций | `{local\|bitrix}/php_interface/migrations`; local, если существует local/php_interface |
+| Таблица версий | `sprint_migration_versions` |
+| Класс | `namespace Sprint\Migration;` `Version<YmdHis>` наследует `Version` |
 | CLI | `php {module}/tools/migrate.php <command>` |
 
-## Invariants
+## Общие правила
 
-- Never edit the module source; write only migration files and `migrations.*.php` configs.
-- Create files with `add` or a builder; hand-made names break timestamp validation.
-- Identify entities by `CODE`/`XML_ID`, never by ids from another database.
-- An applied migration is immutable: fix forward with a new one.
-- `up`/`down` on shared or production databases only with explicit human approval.
+- Не меняй исходники модуля; записывай файлы миграций и конфигурации `migrations.*.php`.
+- Создавай через `add` / генератор: ручные имена могут нарушить проверку времени.
+- Находи сущности по `CODE`/`XML_ID`, не по ID другой БД.
+- Применённую миграцию не меняй: исправление новой версией.
+- `up`/`down` в общей / production БД — только с явным разрешением человека.

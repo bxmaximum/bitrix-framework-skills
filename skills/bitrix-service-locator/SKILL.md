@@ -1,47 +1,49 @@
 ---
 name: bitrix-service-locator
-description: 'Bitrix\Main\DI\ServiceLocator (PSR-11) — services in .settings.php, autowiring rules, interface bindings, factories, overrides, kernel services. Use when wiring dependencies of services, controller actions, commands or handlers.'
+description: 'Используй для DI Битрикса: ServiceLocator, services в .settings.php, привязки интерфейсов, фабрики и автосборка. Переопределение сервисов, контекст вызова и версия ядра.'
 ---
 
-# ServiceLocator (DI)
+# ServiceLocator и внедрение зависимостей
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-Where constructor DI is allowed (services yes; controllers via action params; commands and handlers no): `bitrix-framework`. Domain classes never touch the container.
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-## How `get($id)` resolves (**Since main 26.250\***)
+Границы DI задаёт `bitrix-framework`: сервисы и получатели Messenger поддерживают конструктор; контроллеры — параметры действий; CLI — конструктор **Since main 26.900**. Классы предметной области не обращаются к контейнеру.
 
-| Key | Result |
+## Как разрешается `get($id)` (**Since main 26.250\***)
+
+| Ключ | Результат |
 | --- | --- |
-| Built before, or `addInstance()` | the same instance |
-| Not registered, class exists | autowired: each ctor param = `get(<its type>)`; a param with a default gets the default |
-| Registered interface / abstract class | `className` → implementation **autowired** (`constructorParams` ignored); `constructor` closure → called with `constructorParams` as args |
-| Registered concrete class or string id | `className` → `new $class(...array_values(constructorParams))`, **no autowire**; `constructor` closure → called without args |
+| Уже создан или передан в `addInstance()` | Тот же экземпляр |
+| Не зарегистрирован, класс существует | Автосборка: параметр конструктора = `get(<его тип>)`; при наличии значения по умолчанию берётся оно |
+| Зарегистрирован интерфейс / абстрактный класс | `className` → реализация с **автосборкой** (`constructorParams` игнорируется); замыкание `constructor` вызывается с аргументами `constructorParams` |
+| Зарегистрирован конкретный класс или строковый ID | `className` → `new $class(...array_values(constructorParams))`, **без автосборки**; замыкание `constructor` вызывается без аргументов |
 
-- Instances are cached for the process unless the entry has `'singleton' => false`.
-- A cycle throws `CircularDependencyException`. An untyped, union or scalar param without a default throws `ServiceNotFoundException`.
-- Before 26.250: every registered key is built by `new $class(...constructorParams)` or `constructor()`. Unregistered classes are autowired only if all ctor params are concrete classes (no interfaces, defaults ignored). No `singleton` option. On such kernels bind implementations with dependencies through a `constructor` closure.
+- Экземпляры кешируются на время процесса, кроме записей с `'singleton' => false`.
+- Цикл вызывает `CircularDependencyException`. Нетипизированный, объединённый или скалярный параметр без значения по умолчанию вызывает `ServiceNotFoundException`.
+- До 26.250 зарегистрированный ключ создаётся через `new $class(...constructorParams)` или `constructor()`. Незарегистрированные классы собираются, только если все параметры конструктора — конкретные классы (без интерфейсов; значения по умолчанию игнорируются). Параметра `singleton` нет. На таком ядре привязывай реализации с зависимостями через замыкание `constructor`.
 
-## Registration
+## Регистрация
 
-`services` in `/local/modules/vendor.module/.settings.php` (registered on `Loader::includeModule()`) or in the global settings:
+Секция `services` в `/local/modules/vendor.module/.settings.php` регистрируется при `Loader::includeModule()`; также доступна в глобальных настройках:
 
 ```php
 <?php
 return [
     'services' => [
         'value' => [
-            // interface → implementation (autowired since 26.250*)
+            // интерфейс → реализация (автосборка с 26.250*)
             \Vendor\Blog\Domain\PostRepositoryInterface::class => [
                 'className' => \Vendor\Blog\Infrastructure\OrmPostRepository::class,
             ],
-            // scalar arguments → factory
+            // скалярные аргументы → фабрика
             \Vendor\Blog\Infrastructure\TelegramClient::class => [
                 'constructor' => static fn () => new \Vendor\Blog\Infrastructure\TelegramClient(
                     (string)getenv('TELEGRAM_BOT_TOKEN'),
                 ),
             ],
-            // positional args; closure evaluated on first get()
+            // позиционные аргументы; замыкание вычисляется при первом get()
             'vendor.blog.mailer' => [
                 'className' => \Vendor\Blog\Infrastructure\Mailer::class,
                 'constructorParams' => static fn () => ['noreply@example.com'],
@@ -52,25 +54,25 @@ return [
 ];
 ```
 
-- Don't register a concrete class that only needs other classes. `get(PostService::class)` autowires it, while `[ 'className' => PostService::class ]` alone makes it `new PostService()` → `ArgumentCountError`.
-- Prefer FQCN keys. String ids (`main.validation.service`) are kernel style.
-- The kernel registers `Application`, `Routing\Router`, `DB\Connection`, `Data\Cache`, `Data\ManagedCache`, `Data\TaggedCache`, `EventManager`, `Data\ConnectionPool`, `\CUserTypeManager` (**Since main 26.250\***), and `Data\Storage\PersistentStorageInterface` (**Since main 25.1100**, `bitrix-storage`). Constructor-inject them instead of calling `Application::getInstance()->…`.
+- Не регистрируй конкретный класс, которому нужны только другие классы. `get(PostService::class)` соберёт зависимости, а один `[ 'className' => PostService::class ]` приведёт к `new PostService()` → `ArgumentCountError`.
+- Предпочитай ключи FQCN. Строковые ID (`main.validation.service`) — соглашение ядра.
+- Ядро регистрирует `Application`, `Routing\Router`, `DB\Connection`, `Data\Cache`, `Data\ManagedCache`, `Data\TaggedCache`, `EventManager`, `Data\ConnectionPool`, `\CUserTypeManager` (**Since main 26.250\***) и `Data\Storage\PersistentStorageInterface` (**Since main 25.1100**, `bitrix-storage`). Передавай их в конструктор вместо вызовов `Application::getInstance()->…`.
 
-## Overrides
+## Переопределения
 
-- First registration wins: `registerByModuleSettings()` skips keys that already exist. A later module can't override an earlier one.
-- Override a module binding in the global `services` of `/local/.settings_extra.php` (registered at app start, before modules), or at runtime (`init.php`, tests): `ServiceLocator::getInstance()->addInstance($id, $object)` / `addInstanceLazy($id, ['className' => …])`.
+- Побеждает первая регистрация: `registerByModuleSettings()` пропускает существующие ключи. Последующий модуль не переопределяет предыдущий.
+- Переопределяй привязку модуля в глобальной секции `services` файла `/local/.settings_extra.php` (регистрируется при старте до модулей) или во время выполнения (`init.php`, тесты): `ServiceLocator::getInstance()->addInstance($id, $object)` / `addInstanceLazy($id, ['className' => …])`.
 
-## Getting services
+## Получение сервисов
 
-- Services: constructor params.
-- Controller actions: type-hint the concrete class. Interfaces in action params are not resolved (`bitrix-controllers`).
-- Messenger receivers are built with `get(FQCN)`, so they are autowired. Console commands and event handlers are not: call `ServiceLocator::getInstance()->get(Foo::class)` inside `execute()` / the handler.
-- `has($id)` is true only for registered or built ids, not for autowirable classes.
+- Сервисы: параметры конструктора.
+- Действия контроллеров: конкретный класс в типе параметра. Интерфейсы в параметрах действий не разрешаются (`bitrix-controllers`).
+- Получатели Messenger создаются через `get(FQCN)` с автосборкой. Команды CLI поддерживают её **Since main 26.900**; на старом ядре получай сервис в `execute()`. Обработчики событий получают сервис внутри обработчика.
+- `has($id)` возвращает true только для зарегистрированных или созданных ID, а не для любых классов, доступных автосборке.
 
-## Rules
+## Правила
 
-- Services are singletons per process: no per-request state in properties. Long-running consumers keep instances between messages.
-- No `new Service()` in controllers/commands when the container can build it. No container calls in domain code.
-- Config goes in as a typed object or scalars through a factory, not as a raw array service.
-- Feature toggles: the kernel `Bitrix\Main\Config\Feature` (**Since main 26.700**, `bitrix-storage`), not a home-made flags service.
+- Сервисы — одиночки на время процесса: не храни в свойствах состояние запроса. Долгоживущие потребители сохраняют экземпляры между сообщениями.
+- Не создавай `new Service()` в контроллере/команде, если контейнер может его собрать. В предметной области вызовов контейнера нет.
+- Конфигурация передаётся типизированным объектом или скалярами через фабрику, а не сервисом с произвольным массивом.
+- Флаги возможностей: `Bitrix\Main\Config\Feature` (**Since main 26.700**, `bitrix-storage`), а не самодельный сервис флагов.

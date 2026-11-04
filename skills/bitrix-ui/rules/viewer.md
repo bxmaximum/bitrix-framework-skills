@@ -1,6 +1,6 @@
-# File viewer (`ui.viewer`)
+# Просмотрщик файлов (`ui.viewer`)
 
-Opens images, video, audio, PDF and code over the page, with gallery, download and print. `Extension::load('ui.viewer')`; a delegated click handler opens any `[data-viewer]` element (always in the top window, slider-aware). Markup comes from PHP `Bitrix\Main\UI\Viewer\ItemAttributes`.
+Открывает поверх страницы изображения, видео, аудио, PDF, код; галерея, скачивание, печать. `Extension::load('ui.viewer')`: делегированный обработчик открывает [data-viewer] в верхнем окне с учётом слайдеров. Атрибуты формирует PHP `Bitrix\Main\UI\Viewer\ItemAttributes`.
 
 ```php
 use Bitrix\Main\UI\Extension;
@@ -8,30 +8,30 @@ use Bitrix\Main\UI\Viewer\ItemAttributes;
 
 Extension::load('ui.viewer');
 
-$attributes = ItemAttributes::tryBuildByFileId($fileId, '/local/orders/file.php?id=' . $fileId) // unknown type on bad id
-    ->setTitle($originalName)            // escaped
-    ->setGroupBy('order-' . $orderId);   // same group = one gallery
+$attributes = ItemAttributes::tryBuildByFileId($fileId, '/local/orders/file.php?id=' . $fileId) // плохой ID: тип unknown
+    ->setTitle($originalName) // экранируется
+    ->setGroupBy('order-' . $orderId); // одна группа — одна галерея
 ?>
 <a href="#" <?= $attributes ?>><?= htmlspecialcharsbx($originalName) ?></a>
 ```
 
-- Builders: `buildByFileId()` / `buildByFileData($fileArray, $uri)` throw `ArgumentException`; `tryBuild*()` fall back to type `unknown`; `buildAsUnknownType($uri)`.
-- Setters: `setTitle()`, `setGroupBy()`, `setViewerType()`, `setTypeClass()`, `setExtension()`, `addAction(['type' => 'download'])`, `setAttribute('data-viewer-preview', $thumbUrl)`. `setSources()`, `setWidth()`, `setHeight()`, `toVueBind()` are **Since main 26.250\*** (older: one `data-src` source, markup via `toString()`). `toDataSet()` for JS-built markup.
-- Types by `CONTENT_TYPE`: image, video, audio, document (PDF), code (text, ≤ 2 MB), unknown. Office documents and non-web video are converted by the `transformer` module; without it they cannot be previewed (download only).
+- buildByFileId() / buildByFileData($fileArray, $uri) бросают ArgumentException; tryBuild*() возвращают тип unknown; buildAsUnknownType($uri).
+- Методы: `setTitle()`, `setGroupBy()`, `setViewerType()`, `setTypeClass()`, `setExtension()`, addAction(['type' => 'download']), setAttribute('data-viewer-preview', $thumbUrl). `setSources()`, `setWidth()`, `setHeight()`, toVueBind() — **Since main 26.250\***; раньше один data-src, разметка через toString(). Для JS-разметки — toDataSet().
+- Типы по CONTENT_TYPE: image, video, audio, document (PDF), code (текст до 2 МБ), unknown. Office и не-веб-видео преобразует transformer; без него только скачивание.
 
-## File endpoint
+## Обработчик выдачи
 
-The viewer sends service headers (`BX-Viewer`, `BX-Viewer-src`, …) and preview requests to the source URI. Answer with `BFile::createByFileId($fileId)` from a controller action, or `CFile::ViewByUser()` in a plain script: both hand those requests to `PreviewManager`. A hand-made `readfile()` breaks previews. The viewer checks no rights: the endpoint must (`bitrix-files`).
+Просмотрщик отправляет заголовки BX-Viewer, BX-Viewer-src и запросы предпросмотра на URI файла. Отвечай `BFile::createByFileId($fileId)` из действия либо `CFile::ViewByUser()` из скрипта: оба передают в PreviewManager. Самописный readfile() ломает предпросмотр. Права проверяет обработчик выдачи, не просмотрщик (`bitrix-files`).
 
-- Warm up conversion early: `(new \Bitrix\Main\UI\Viewer\PreviewManager())->generatePreview($fileId)` (`null` without `transformer`).
+- Предварительное преобразование: `(new \Bitrix\Main\UI\Viewer\PreviewManager())->generatePreview($fileId)`, null без transformer.
 
 ## JS
 
-- `BX.UI.Viewer.Instance` (singleton, top-window aware): `openByNode(node)`, `setItems(items)` → Promise, `open(index)`, `close()`, `isOpen()`, `getCurrentItem()`.
-- Markup added later inside a container: `BX.UI.Viewer.bind(container)`; item from a node: `BX.UI.Viewer.buildItemByNode(node)`.
-- Events are legacy: `BX.addCustomEvent('BX.UI.Viewer.Controller:onAfterShow', (controller, item) => …)`; also `onBeforeShow`, `onSetItems`, `onClose`, `onItemError`.
-- Inline PDF: `new BX.UI.Viewer.SingleDocumentController({ baseContainer: node, stretch: true })`, then `setItems([...])` and `open()`.
+- BX.UI.Viewer.Instance — единый экземпляр с учётом верхнего окна: openByNode(node), setItems(items) → Promise, open(index), close(), `isOpen()`, `getCurrentItem()`.
+- Поздняя разметка: BX.UI.Viewer.bind(container); запись из узла: BX.UI.Viewer.buildItemByNode(node).
+- События старого формата: `BX.addCustomEvent('BX.UI.Viewer.Controller:onAfterShow', (controller, item) => …)`; также onBeforeShow, onSetItems, onClose, onItemError.
+- PDF внутри страницы: `new BX.UI.Viewer.SingleDocumentController({ baseContainer: node, stretch: true })`, затем setItems([...]), open().
 
-## Custom file type
+## Свой тип файла
 
-Server: subclass `Bitrix\Main\UI\Viewer\Renderer\Renderer` (`static getAllowedContentTypes()`, `static getJsType()`, `render()`), register it from a `main:onPreviewRendererBuildList` handler returning `new EventResult(EventResult::SUCCESS, [MyRenderer::class])` (`bitrix-events`). Client: `BX.UI.Viewer.addType(type, 'BX.Vendor.ViewerItem')` with a class extending `BX.UI.Viewer.Item`.
+Сервер: наследуй `Bitrix\Main\UI\Viewer\Renderer\Renderer` (static `getAllowedContentTypes()`, static `getJsType()`, `render()`); зарегистрируй обработчик main:onPreviewRendererBuildList, возвращающий `new EventResult(EventResult::SUCCESS, [MyRenderer::class])` (`bitrix-events`). Клиент: `BX.UI.Viewer.addType(type, 'BX.Vendor.ViewerItem')`, класс-наследник BX.UI.Viewer.Item.

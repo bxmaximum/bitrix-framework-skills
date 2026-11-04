@@ -1,25 +1,27 @@
 ---
 name: bitrix-events
-description: 'Bitrix events — D7 Event/EventResult/EventManager vs legacy ExecuteModuleEventEx hooks (OnBeforeUserAdd, &$arFields), make:event, make:eventhandler, handler registration. Use when publishing, handling or cancelling module events.'
+description: 'Используй для событий Битрикса: D7 Event/EventManager и старые обработчики (OnBeforeUserAdd, &$arFields). Публикация, обработка, отмена, сигнатуры и регистрация.'
 ---
 
-# Bitrix events
+# События Битрикса
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-## Who dispatches decides the handler signature
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
 
-| Dispatcher (find it in the caller) | Examples | Handler receives | Result |
+## Способ отправки определяет сигнатуру обработчика
+
+| Отправка (найди в вызывающем коде) | Примеры | Аргументы обработчика | Результат |
 | --- | --- | --- | --- |
-| `new Event(...)` + `->send()` | own events, `main:OnBeforeMailSend`, ORM tablet events | VERSION 2 (`registerEventHandler`, `addEventHandler`): the `Event` object. VERSION 1 (`*Compatible`): `...array_values($params)` | `$event->getResults()`; non-`EventResult` returns are wrapped as `UNDEFINED` |
-| `GetModuleEvents()` + `ExecuteModuleEventEx()` (legacy) | `main:OnBeforeUserAdd`, `OnAfterUserAdd`, `OnPageStart`, `OnEpilog`, `iblock:OnBeforeIBlockElementAdd` | raw args, whatever VERSION was registered — e.g. `array &$arFields` | caller-specific |
+| `new Event(...)` + `->send()` | Свои события, `main:OnBeforeMailSend`, события таблетов ORM | VERSION 2 (`registerEventHandler`, `addEventHandler`): объект `Event`. VERSION 1 (`*Compatible`): `...array_values($params)` | `$event->getResults()`; результат кроме `EventResult` оборачивается как `UNDEFINED` |
+| `GetModuleEvents()` + `ExecuteModuleEventEx()` (старое API) | `main:OnBeforeUserAdd`, `OnAfterUserAdd`, `OnPageStart`, `OnEpilog`, `iblock:OnBeforeIBlockElementAdd` | Исходные аргументы при любой зарегистрированной VERSION, например `array &$arFields` | Зависит от вызывающего кода |
 
-- Legacy `OnBefore*`: cancel = `$APPLICATION->ThrowException('…'); return false;` (callers check `=== false`). Modify data through the reference `&$arFields`; a returned array (`['FIELDS' => …]`) is ignored.
-- ORM tablet / highload record events use `Bitrix\Main\ORM\EventManager` and `ORM\EventResult::modifyFields()` — see `bitrix-orm`; HL event names — `bitrix-highloadblock`.
+- В старых `OnBefore*` отмена — `$APPLICATION->ThrowException('…'); return false;` (проверяется `=== false`). Меняй данные через ссылку `&$arFields`; возвращённый массив (`['FIELDS' => …]`) игнорируется.
+- События таблетов ORM / записей highloadblock используют `Bitrix\Main\ORM\EventManager` и `ORM\EventResult::modifyFields()` (`bitrix-orm`); имена событий HL — `bitrix-highloadblock`.
 
-## Publish a D7 event
+## Отправка события D7
 
-`php bitrix.php make:event PostCreated -m vendor.blog -C Post` (**Since main 25.900**; older: write the class) → `Vendor\Blog\Public\Event\Post\PostCreatedEvent` (without `-C`: `…\Public\Event\`). The generated class passes no params — add them:
+`php bitrix.php make:event PostCreated -m vendor.blog -C Post` (**Since main 25.900**; раньше пиши класс вручную) создаёт `Vendor\Blog\Public\Event\Post\PostCreatedEvent` (без `-C`: `…\Public\Event\`). Генератор не добавляет параметры — задай их:
 
 ```php
 namespace Vendor\Blog\Public\Event\Post;
@@ -42,16 +44,16 @@ foreach ($event->getResults() as $result)
 {
     if ($result->getType() === \Bitrix\Main\EventResult::ERROR)
     {
-        // caller decides: abort, log, collect errors
+        // вызывающий код решает: прервать, записать лог или собрать ошибки
     }
 }
 ```
 
-Cancel with a reason: return `new EventResult(EventResult::ERROR, ['error' => new Error('…', 'CODE')])` — only callers that read it honor it (mail events: `bitrix-mail`).
+Отмена с причиной: верни `new EventResult(EventResult::ERROR, ['error' => new Error('…', 'CODE')])`. Отказ учитывают только вызывающие методы, читающие результат (почта: `bitrix-mail`).
 
-## Handle it
+## Обработка
 
-`php bitrix.php make:eventhandler PostCreated --event-module=vendor.blog -m vendor.notify` — `name` is the **event** name, `-m` is the handler module → `Vendor\Notify\Internals\Integration\Vendor\Blog\EventHandler\PostCreatedEventHandler::handle(PostCreatedEvent $event)`. Add the missing `use` for the event class.
+`php bitrix.php make:eventhandler PostCreated --event-module=vendor.blog -m vendor.notify`: `name` — имя **события**, `-m` — модуль обработчика; результат `Vendor\Notify\Internals\Integration\Vendor\Blog\EventHandler\PostCreatedEventHandler::handle(PostCreatedEvent $event)`. Добавь отсутствующий `use` класса события.
 
 ```php
 public static function handle(PostCreatedEvent $event): EventResult
@@ -63,11 +65,11 @@ public static function handle(PostCreatedEvent $event): EventResult
 }
 ```
 
-Handlers are static callbacks, never built by the container: resolve services inside (`bitrix-framework`).
+Обработчики — статические функции обратного вызова; контейнер их не создаёт. Получай сервисы внутри (`bitrix-framework`).
 
-## Register
+## Регистрация
 
-Persistent (module installer; unregister with the same args in `DoUninstall`):
+Постоянная (установщик модуля; в `DoUninstall` удали с теми же аргументами):
 
 ```php
 EventManager::getInstance()->registerEventHandler(
@@ -79,16 +81,16 @@ EventManager::getInstance()->registerEventHandler(
 );
 ```
 
-- `registerEventHandlerCompatible()` (same args, VERSION 1): a D7 event then passes `...array_values($params)` instead of `Event`. For legacy `ExecuteModuleEventEx` events both calls deliver raw args; the kernel uses `*Compatible` for them by convention.
-- **Since main 26.600\***: declare handlers in `install/migrations/events.php` (`register()` = VERSION 2, `registerCompatible()` = VERSION 1) — `bitrix-modules`.
-- Per request only: `addEventHandler($fromModuleId, $eventType, $callback, $includeFile = false, $sort = 100)` (VERSION 2) / `addEventHandlerCompatible()` (VERSION 1), e.g. from `init.php`.
-- Order: ascending `$sort` (default 100) — 5th arg of `addEventHandler`, 6th of `registerEventHandler`.
-- `Event::send()` runs every handler even after an `ERROR`, but an exception thrown in a handler stops the chain and propagates to the caller.
+- `registerEventHandlerCompatible()` (те же аргументы, VERSION 1) заставляет D7-событие передать `...array_values($params)` вместо `Event`. Для старых событий `ExecuteModuleEventEx` оба метода передают исходные аргументы; ядро по соглашению использует для них `*Compatible`.
+- **Since main 26.600\*** обработчики объявляются в `install/migrations/events.php` (`register()` = VERSION 2, `registerCompatible()` = VERSION 1), см. `bitrix-modules`.
+- Только на время запроса: `addEventHandler($fromModuleId, $eventType, $callback, $includeFile = false, $sort = 100)` (VERSION 2) / `addEventHandlerCompatible()` (VERSION 1), например в `init.php`.
+- Порядок — по возрастанию `$sort` (по умолчанию 100): пятый аргумент `addEventHandler`, шестой `registerEventHandler`.
+- `Event::send()` выполняет все обработчики даже после `ERROR`, но исключение по умолчанию прерывает цепочку и передаётся вызывающему коду. При `Event::isDebugOn()` исключения `Exception` добавляются в событие, и цепочка продолжается; PHP `Error` этот перехват не охватывает.
 
-## Checklist
+## Проверка
 
-- [ ] Handler signature matches the dispatcher (`Event` vs raw `&$arFields`).
-- [ ] Every `registerEventHandler` has an `unRegisterEventHandler` with identical args in uninstall.
-- [ ] Named args use kernel names (`fromModuleId`, not `fromModule`).
-- [ ] Handlers catch and log their own exceptions; heavy work goes to Messenger (`bitrix-background-jobs`).
-- [ ] Own events live in `lib/Public/Event/`, handlers in `lib/Internals/Integration/<Module>/EventHandler/`.
+- [ ] Сигнатура соответствует способу отправки (`Event` или исходные `&$arFields`).
+- [ ] Каждому `registerEventHandler` соответствует `unRegisterEventHandler` с теми же аргументами при удалении модуля.
+- [ ] Именованные аргументы используют имена ядра (`fromModuleId`, не `fromModule`).
+- [ ] Обработчик перехватывает и пишет свои исключения; тяжёлая работа уходит в Messenger (`bitrix-background-jobs`).
+- [ ] Свои события находятся в `lib/Public/Event/`, обработчики — в `lib/Internals/Integration/<Module>/EventHandler/`.

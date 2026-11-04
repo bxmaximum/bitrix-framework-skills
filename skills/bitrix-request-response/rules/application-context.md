@@ -1,29 +1,29 @@
-# Application and Context
+# Приложение и контекст
 
-## Application
+## Приложение
 
-A singleton per hit, configures the kernel, provides access to general services.
+Одиночка на время хита: настраивает ядро и предоставляет общие сервисы.
 
 ```php
 use Bitrix\Main\Application;
 
 $app = Application::getInstance();
 
-$app->getContext();           // current context
-$app->getManagedCache();      // managed cache
-$app->getTaggedCache();       // tagged cache
-$app->getSession();           // session object (see bitrix-sessions)
-$app->getConnection();        // primary DB connection
-$app->getConnection('log');   // connection by name from connections
-$app->getKernelSession();     // kernel session
-$app->addBackgroundJob(fn () => /* ... */);     // see bitrix-background-jobs
+$app->getContext();           // текущий контекст
+$app->getManagedCache();      // управляемый кеш
+$app->getTaggedCache();       // тегированный кеш
+$app->getSession();           // объект сессии (см. bitrix-sessions)
+$app->getConnection();        // основное соединение БД
+$app->getConnection('log');   // именованное соединение из connections
+$app->getKernelSession();     // сессия ядра
+$app->addBackgroundJob(fn () => /* ... */);     // см. bitrix-background-jobs
 ```
 
-Descendants: `HttpApplication` (HTTP hit), `CliApplication` (CLI hit — `bitrix.php`).
+Наследники: `HttpApplication` (HTTP-хит), `CliApplication` (CLI через `bitrix.php`).
 
-## Context
+## Контекст
 
-An "envelope" for a single request: `Request`, `Response`, `Server`, language, `Culture`, site.
+Окружение одного запроса: `Request`, `Response`, `Server`, язык, `Culture`, сайт.
 
 ```php
 use Bitrix\Main\Context;
@@ -32,11 +32,11 @@ $ctx = Context::getCurrent();
 
 $ctx->getRequest();    // HttpRequest
 $ctx->getResponse();   // HttpResponse
-$ctx->getServer();     // Server (wrapper over $_SERVER)
-$ctx->getCulture();    // regional formats
+$ctx->getServer();     // Server — обёртка над $_SERVER
+$ctx->getCulture();    // региональные форматы
 $ctx->getLanguage();   // 'ru'
 $ctx->getSite();       // 's1'
 $ctx->getEnvironment();
 ```
 
-`Context::getCurrent()` is a shorter alias for `Application::getInstance()->getContext()`.
+`Context::getCurrent()` — короткая форма `Application::getInstance()->getContext()`.

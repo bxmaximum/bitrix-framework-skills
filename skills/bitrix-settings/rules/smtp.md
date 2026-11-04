@@ -1,47 +1,47 @@
-# `smtp` section
+# Секция `smtp`
 
-Without the section (or with `enabled` not strictly `true`) `bxmail()` calls `custom_mail()` if defined, else PHP `mail()`.
+Без секции (или если `enabled` не строго `true`) `bxmail()` вызывает `custom_mail()`, если она определена, иначе PHP `mail()`.
 
-## 1. Enable per-sender SMTP connections
+## 1. SMTP-подключения отправителей
 
-Connections are created in *Settings → Product settings → Mail and SMS events → SMTP settings*; they are used only when:
+Подключения создаются в «Настройки → Настройки продукта → Почтовые и СМС события → Настройки SMTP» и используются только при:
 
 ```php
 'smtp' => [
     'value' => [
-        'enabled' => true,                       // boolean true, not 'Y' or 1
-        'debug' => true,                         // optional: log the SMTP dialogue
-        'log_file' => '/var/log/site/mailer.log', // optional, this key for per-sender mode
+        'enabled' => true,                       // именно true, не 'Y' и не 1
+        'debug' => false,                        // включай временно только для безопасной диагностики
+        'log_file' => '/var/log/site/mailer.log', // необязательно; ключ режима подключений отправителей
     ],
     'readonly' => true,
 ],
 ```
 
-Which connection a message uses (by `From`/identity; rule changed in main 26.800), queue and templates: `bitrix-mail`.
+Выбор подключения по `From`/отправителю (правило изменилось в main 26.800), очередь и шаблоны: `bitrix-mail`.
 
-## 2. Default SMTP server for all mail
+## 2. Общий SMTP-сервер для всей почты
 
 ```php
 'smtp' => [
     'value' => [
         'enabled' => true,
         'host' => 'smtp.example.com',
-        'port' => 587,                   // default 465
+        'port' => 587,                   // по умолчанию 465
         'login' => 'robot@example.com',
         'password' => getenv('SMTP_PASSWORD'),
         'from' => 'robot@example.com',
-        'encryption_type' => 'smtps',   // 'smtps' → SMTPS on 465, STARTTLS on other ports; 'smtp' → none
-        'connection_timeout' => 10,     // seconds, default 30
-        'force_from' => false,          // true: rewrite every From: to 'from'
+        'encryption_type' => 'smtps',   // 'smtps': SMTPS на 465, STARTTLS на других портах; 'smtp': без шифрования
+        'connection_timeout' => 10,     // секунды, по умолчанию 30
+        'force_from' => false,          // true: каждый From: заменяется на 'from'
         'debug' => false,
-        'logFile' => '/var/log/site/mailer.log', // camelCase in this mode
+        'logFile' => '/var/log/site/mailer.log', // camelCase в этом режиме
     ],
     'readonly' => true,
 ],
 ```
 
-- Used only when both `host` and `login` are non-empty.
-- Log key differs by mode: per-sender connection reads `log_file`, the default server reads `logFile`; missing → `mailer.log` in `DOCUMENT_ROOT`. Set both if unsure.
-- No `'starttls'` value exists; STARTTLS = `'smtps'` with a non-465 port.
-- TLS needs a CA-signed certificate matching `host`; self-signed fails verification.
-- Keep the password in `/local/.settings_extra.php` or env, not in git.
+- Используется, только если `host` и `login` непустые.
+- Ключ лога зависит от режима: подключение отправителя читает `log_file`, общий сервер — `logFile`; без него пишет `mailer.log` в `DOCUMENT_ROOT`. Если режим неясен, задай оба.
+- Значения `'starttls'` нет; STARTTLS — это `'smtps'` с портом кроме 465.
+- TLS требует сертификат доверенного УЦ с именем `host`; самоподписанный не пройдёт проверку.
+- Пароль храни в `/local/.settings_extra.php` или env, не в git.

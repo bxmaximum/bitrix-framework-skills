@@ -23,7 +23,8 @@ Examples:
 
 Options:
   --kernel=DIR    bitrix/modules directory or a single module directory. Repeatable, at least one
-                  is required. Use a Bitrix24 box kernel so that crm, tasks, im etc. are indexed.
+                  is required unless --files-only. Use a Bitrix24 box kernel for crm, tasks, im etc.
+  --files-only    check metadata, Markdown links/budgets and PHP syntax without kernel symbols.
   --skills=DIR    skills directory (default: ./skills, else <repo>/skills)
   --warnings      print WARN lines (default: only their count in the summary)
   --json          machine-readable output with all issues, including WARN
@@ -36,12 +37,12 @@ Options:
 Checks, per skill:
   Files    frontmatter: name == directory, description present and <= 250 chars, no unquoted YAML
            traps (`: `, ` #`) and no `\\` inside double quotes (ERROR);
-           size budgets: SKILL.md 6 KB, router SKILL.md (has rules/) 2.5 KB, rules/*.md 6 KB (WARN);
+           size budgets in Unicode characters: SKILL.md 6000, router (has rules/) 2500,
+           rules/*.md 6000 (WARN); bytes are not a token estimate;
            rules/*.md mentions and relative .md links resolve (ERROR); rules/*.md not referenced
            from SKILL.md (WARN); backticked `bitrix-…` / `bitrix24-…` skill names exist (ERROR);
-           any mention of AGENTS.md (ERROR); no "Baseline|Scope: … · Verified: …" line, "How to use" /
-           "Progressive disclosure" sections, Covers/Applied when/Key terms in description,
-           checklist longer than 6 items (WARN).
+           any mention of AGENTS.md (ERROR); no "Baseline|Scope: … · Verified: …" line,
+           checkbox checklist longer than 6 items in a section (WARN, any language).
   Lint     php -l for every ```php block. `...` placeholders are neutralised first. A block that
            fails is retried wrapped in a class, a function and an array literal; ERROR only when
            every variant fails (reported at the md line of the error). Compile-time
@@ -61,7 +62,7 @@ Checks, per skill:
            Bitrix\Main), otherwise WARN. Inline `code` is lenient: X::name may be a method or a
            constant, X::PREFIX_* is a prefix, static calls are checked only when arguments contain
            variables (ERROR for singletons with getInstance(), else WARN), and errors on lines
-           that call an API removed / deprecated / "do not use" become WARN.
+           explicitly marked with <!-- verify:negative --> become WARN. PHP blocks stay strict.
 
 Kernel index:
   Built statically with PhpToken from every *.php under each --kernel dir (lang/, install/js/,
@@ -78,12 +79,10 @@ TXT;
 
 const VS_INDEX_FORMAT = 3;
 const VS_DESCRIPTION_MAX = 250;
-const VS_BUDGET_SKILL = 6144;
-const VS_BUDGET_ROUTER = 2560;
-const VS_BUDGET_RULE = 6144;
+const VS_BUDGET_SKILL = 6000;
+const VS_BUDGET_ROUTER = 2500;
+const VS_BUDGET_RULE = 6000;
 const VS_CHECKLIST_MAX = 6;
-/** Prose lines that mention an API as wrong or removed: inline symbol errors there are only WARN. */
-const VS_NEGATIVE = '/\b(?:do not use|don\'t use|never use|instead of|no such|not exist|does not exist|doesn\'t exist|is wrong|wrong:|removed|deprecated|hallucinat|there is no|not available|no longer|before it|previously|formerly|renamed|old name)\b|❌|✗/iu';
 /** Short names of Composer-vendor classes used by Bitrix code (Symfony Console): never matched to kernel classes. */
 const VS_EXTERNAL_SHORT = [
     'command' => true, 'inputinterface' => true, 'outputinterface' => true, 'inputargument' => true,
@@ -1375,7 +1374,7 @@ final class VsIndexBuilder
             $listFile = $this->tmp . '/list-' . $b . '.txt';
             $outs[$b] = $this->tmp . '/part-' . $b . '.ser';
             file_put_contents($listFile, implode("\n", $list));
-            $cmds[$b] = [PHP_BINARY, '-d', 'memory_limit=-1', '-d', 'display_errors=stderr', __FILE__,
+            $cmds[$b] = [PHP_BINARY, '-n', '-d', 'memory_limit=-1', '-d', 'display_errors=stderr', __FILE__,
                 '--index-worker=' . $listFile, '--index-out=' . $outs[$b], '--index-root=' . $real];
         }
         $results = VsProc::run($cmds, $this->jobs, $this->tmp);
@@ -1526,12 +1525,16 @@ final class VsMd
         $fields = [];
         $at = [];
         $raws = [];
+        $duplicates = [];
         for ($i = 1; $i < $end; $i++) {
             if (!preg_match('/^([A-Za-z0-9_-]+):\s*(.*)$/', $lines[$i], $m)) {
                 continue;
             }
             $key = $m[1];
             $val = rtrim($m[2]);
+            if (array_key_exists($key, $raws)) {
+                $duplicates[$key] = $i + 1;
+            }
             $at[$key] = $i + 1;
             $raws[$key] = $val;
             $cont = [];
@@ -1542,6 +1545,7 @@ final class VsMd
                 $val = implode($val[0] === '>' ? ' ' : "\n", $cont);
             } elseif ($val !== '' && ($val[0] === '"' || $val[0] === "'")) {
                 $raw = implode(' ', array_merge([$val], $cont));
+                $raws[$key] = $raw;
                 if ($raw[0] === '"') {
                     $dec = json_decode($raw);
                     $val = is_string($dec) ? $dec : trim($raw, '"');
@@ -1555,7 +1559,7 @@ final class VsMd
             }
             $fields[$key] = $val;
         }
-        return ['fields' => $fields, 'lines' => $at, 'raw' => $raws, 'end' => $end + 1];
+        return ['fields' => $fields, 'lines' => $at, 'raw' => $raws, 'duplicates' => $duplicates, 'end' => $end + 1];
     }
 }
 
@@ -2797,8 +2801,12 @@ final class VsApp
             fwrite(STDOUT, VS_HELP . "\n");
             return 0;
         }
-        if ($opt['kernel'] === []) {
-            fwrite(STDERR, "verify-skills: at least one --kernel=<bitrix/modules dir> is required.\nRun with --help for usage.\n");
+        if ($opt['kernel'] === [] && !$opt['filesonly']) {
+            fwrite(STDERR, "verify-skills: --kernel=<bitrix/modules dir> or explicit --files-only is required.\nRun with --help for usage.\n");
+            return 2;
+        }
+        if ($opt['kernel'] !== [] && $opt['filesonly']) {
+            fwrite(STDERR, "verify-skills: --files-only cannot be combined with --kernel.\n");
             return 2;
         }
         foreach ($opt['kernel'] as $k) {
@@ -2891,17 +2899,19 @@ final class VsApp
         }
         $this->lintBlocks($selected, $docs, $opt['jobs']);
         $checker = new VsCodeChecker($idx, $userShort, $userFq, $opt['guess']);
-        foreach ($selected as $skill) {
-            $checker->setSkill($skill);
-            foreach ($docs[$skill] ?? [] as $file => $doc) {
-                $this->checkSymbols($checker, $skill, $file, $doc['md']);
+        if (!$opt['filesonly']) {
+            foreach ($selected as $skill) {
+                $checker->setSkill($skill);
+                foreach ($docs[$skill] ?? [] as $file => $doc) {
+                    $this->checkSymbols($checker, $skill, $file, $doc['md']);
+                }
             }
         }
 
         $this->stats['checks'] = $checker->counts;
         $elapsed = microtime(true) - $t0;
         $meta = ['index' => $idxInfo, 'index_seconds' => round($tIndex, 2), 'seconds' => round($elapsed, 2),
-            'classes' => count($idx->classes)];
+            'classes' => count($idx->classes), 'symbol_checks' => !$opt['filesonly']];
         if ($opt['json']) {
             $this->printJson($meta);
         } else {
@@ -2917,7 +2927,7 @@ final class VsApp
 
     private function args(array $argv): array
     {
-        $o = ['kernel' => [], 'skills' => null, 'json' => false, 'nocache' => false, 'warnings' => false,
+        $o = ['kernel' => [], 'skills' => null, 'json' => false, 'nocache' => false, 'warnings' => false, 'filesonly' => false,
             'help' => false, 'names' => [], 'jobs' => self::cpus(), 'guess' => 'ERROR'];
         $args = array_slice($argv, 1);
         for ($i = 0, $n = count($args); $i < $n; $i++) {
@@ -2948,6 +2958,9 @@ final class VsApp
                     break;
                 case '--json':
                     $o['json'] = true;
+                    break;
+                case '--files-only':
+                    $o['filesonly'] = true;
                     break;
                 case '--no-cache':
                     $o['nocache'] = true;
@@ -3046,17 +3059,17 @@ final class VsApp
             $this->stats['files']++;
             $content = $doc['content'];
             $md = $doc['md'];
-            $size = strlen($content);
+            $size = mb_strlen($content, 'UTF-8');
             if ($file === $skillMd) {
                 $this->checkFrontmatter($skill, $file, $content);
                 $budget = $rules === [] ? VS_BUDGET_SKILL : VS_BUDGET_ROUTER;
                 if ($size > $budget) {
-                    $this->add($skill, $file, 1, 'WARN', 'size', sprintf('SKILL.md is %.1f KB, budget %.1f KB%s', $size / 1024, $budget / 1024,
+                    $this->add($skill, $file, 1, 'WARN', 'size', sprintf('SKILL.md is %d Unicode chars, budget %d%s', $size, $budget,
                         $rules === [] ? '' : ' (router: has rules/)'));
                 }
                 $this->checkLayout($skill, $file, $content, $md);
             } elseif (in_array($file, $rules, true) && $size > VS_BUDGET_RULE) {
-                $this->add($skill, $file, 1, 'WARN', 'size', sprintf('%s is %.1f KB, budget %.1f KB', basename($file), $size / 1024, VS_BUDGET_RULE / 1024));
+                $this->add($skill, $file, 1, 'WARN', 'size', sprintf('%s is %d Unicode chars, budget %d', basename($file), $size, VS_BUDGET_RULE));
             }
             if ($md['unclosed'] !== null) {
                 $this->add($skill, $file, $md['unclosed'], 'ERROR', 'content', 'Unclosed code fence');
@@ -3097,11 +3110,17 @@ final class VsApp
             return;
         }
         $f = $fm['fields'];
+        foreach ($fm['duplicates'] as $key => $line) {
+            $this->add($skill, $file, $line, 'ERROR', 'frontmatter', sprintf('Duplicate frontmatter field `%s`', $key));
+        }
         $name = $f['name'] ?? '';
         if ($name === '') {
             $this->add($skill, $file, 1, 'ERROR', 'frontmatter', 'Frontmatter has no `name`');
         } elseif ($name !== $skill) {
             $this->add($skill, $file, $fm['lines']['name'], 'ERROR', 'frontmatter', sprintf('name `%s` does not match directory `%s`', $name, $skill));
+        }
+        if ($name !== '' && (strlen($name) > 64 || preg_match('/^[a-z0-9]+(?:-[a-z0-9]+)*$/D', $name) !== 1)) {
+            $this->add($skill, $file, $fm['lines']['name'], 'ERROR', 'frontmatter', 'Invalid skill name: use 1–64 lowercase ASCII letters/digits with single hyphens between segments');
         }
         // YAML traps: the skills CLI parses frontmatter with a real YAML parser and skips the skill on error.
         foreach (['name', 'description'] as $key) {
@@ -3110,6 +3129,11 @@ final class VsApp
                 continue;
             }
             $at = $fm['lines'][$key] ?? 1;
+            if ($raw[0] === "'" && preg_match("/^'(?:[^']|'')*'$/s", $raw) !== 1) {
+                $this->add($skill, $file, $at, 'ERROR', 'frontmatter', sprintf('Invalid single-quoted `%s`: close the quote and escape apostrophes as two quotes', $key));
+            } elseif ($raw[0] === '"' && !str_contains($raw, '\\') && !is_string(json_decode($raw))) {
+                $this->add($skill, $file, $at, 'ERROR', 'frontmatter', sprintf('Invalid double-quoted `%s`', $key));
+            }
             if ($raw[0] === '"' && str_contains($raw, '\\')) {
                 $this->add($skill, $file, $at, 'ERROR', 'frontmatter', sprintf('`%s` is double-quoted and contains `\\` (YAML escape); use single quotes', $key));
             } elseif ($raw[0] !== '"' && $raw[0] !== "'" && (preg_match('/: | #/', $raw) || preg_match('/^[&*!|>%@`{\[\]]/', $raw))) {
@@ -3122,12 +3146,9 @@ final class VsApp
             $this->add($skill, $file, $line, 'ERROR', 'frontmatter', 'Frontmatter has no `description`');
             return;
         }
-        $len = mb_strlen($desc);
+        $len = mb_strlen($desc, 'UTF-8');
         if ($len > VS_DESCRIPTION_MAX) {
             $this->add($skill, $file, $line, 'ERROR', 'frontmatter', sprintf('description is %d chars, max %d', $len, VS_DESCRIPTION_MAX));
-        }
-        if (preg_match('/\b(Covers|Applied when|Key terms)\b/', $desc, $m)) {
-            $this->add($skill, $file, $line, 'WARN', 'frontmatter', sprintf('description uses "%s"; write "what it is. Use when …"', $m[1]));
         }
     }
 
@@ -3147,25 +3168,24 @@ final class VsApp
         }
         $checklistAt = null;
         $items = 0;
-        foreach ($md['text'] as $no => $l) {
-            if (preg_match('/^#{1,6}\s+(How to use|.*Progressive disclosure)/i', $l, $m) || preg_match('/^Progressive disclosure\b/i', $l, $m)) {
-                $this->add($skill, $file, $no, 'WARN', 'content', sprintf('"%s" section: the router table already says what to open', trim($m[1] ?? $m[0])));
+        $flushChecklist = function () use ($skill, $file, &$checklistAt, &$items): void {
+            if ($checklistAt !== null && $items > VS_CHECKLIST_MAX) {
+                $this->add($skill, $file, $checklistAt, 'WARN', 'content', sprintf('Checklist has %d items, max %d', $items, VS_CHECKLIST_MAX));
             }
+            $checklistAt = null;
+            $items = 0;
+        };
+        foreach ($md['text'] as $no => $l) {
             if (preg_match('/^#{1,6}\s/', $l)) {
-                if ($checklistAt !== null && $items > VS_CHECKLIST_MAX) {
-                    break;
-                }
-                $checklistAt = preg_match('/^#{1,6}\s+.*checklist/i', $l) === 1 ? $no : null;
-                $items = 0;
+                $flushChecklist();
                 continue;
             }
-            if ($checklistAt !== null && preg_match('/^\s{0,3}(?:[-*+]|\d+\.)\s/', $l)) {
+            if (preg_match('/^\s*(?:[-*+]|\d+\.)\s+\[[ xX]\]\s/', $l)) {
+                $checklistAt ??= $no;
                 $items++;
             }
         }
-        if ($checklistAt !== null && $items > VS_CHECKLIST_MAX) {
-            $this->add($skill, $file, $checklistAt, 'WARN', 'content', sprintf('Checklist has %d items, max %d', $items, VS_CHECKLIST_MAX));
-        }
+        $flushChecklist();
     }
 
     private function checkLinks(string $skill, string $dir, string $file, int $no, string $line, array $allSkills): void
@@ -3295,10 +3315,10 @@ final class VsApp
                 continue;
             }
             $this->stats['spans']++;
-            $negative = preg_match(VS_NEGATIVE, str_replace('*', '', $md['text'][$no] ?? '')) === 1;
+            $negative = str_contains($md['text'][$no] ?? '', '<!-- verify:negative -->');
             foreach ($checker->check('<?php ' . $code, true) as $is) {
                 if ($negative && $is['level'] === 'ERROR') {
-                    $this->add($skill, $file, $no, 'WARN', 'symbol', $is['msg'] . ' [inline, negative context]');
+                    $this->add($skill, $file, $no, 'WARN', 'symbol', $is['msg'] . ' [inline, negative example]');
                     continue;
                 }
                 $this->add($skill, $file, $no, $is['level'], 'symbol', $is['msg'] . ' [inline]');
@@ -3364,13 +3384,21 @@ final class VsApp
         printf("  Skills %d, files %d, php blocks %d, inline code spans checked %d\n",
             $this->stats['skills'], $this->stats['files'], $this->stats['blocks'], $this->stats['spans']);
         $k = $this->stats['checks'] ?? [];
-        printf("  Resolved against the index: %d imports, %d class refs, %d static calls, %d constants, %d inferred instance calls, %d named args\n",
-            $k['import'] ?? 0, $k['class'] ?? 0, $k['static'] ?? 0, $k['const'] ?? 0, $k['instance'] ?? 0, $k['named'] ?? 0);
+        if ($meta['symbol_checks']) {
+            printf("  Resolved against the index: %d imports, %d class refs, %d static calls, %d constants, %d inferred instance calls, %d named args\n",
+                $k['import'] ?? 0, $k['class'] ?? 0, $k['static'] ?? 0, $k['const'] ?? 0, $k['instance'] ?? 0, $k['named'] ?? 0);
+        } else {
+            echo "  FILES ONLY: kernel symbols and API compatibility were NOT checked.\n";
+        }
         printf("  ERROR %d (%s)\n", $c['errors'], implode(', ', $parts));
         printf("  WARN  %d%s\n", $c['warnings'], $warnings ? '' : ' (use --warnings to list)');
-        printf("  Kernel index: %d classes from %d dir(s)%s; %.1fs index, %.1fs total\n",
-            $meta['classes'], count($meta['index']), count($cached) === count($meta['index']) ? ' (cached)' : '',
-            $meta['index_seconds'], $meta['seconds']);
+        if ($meta['symbol_checks']) {
+            printf("  Kernel index: %d classes from %d dir(s)%s; %.1fs index, %.1fs total\n",
+                $meta['classes'], count($meta['index']), count($cached) === count($meta['index']) ? ' (cached)' : '',
+                $meta['index_seconds'], $meta['seconds']);
+        } else {
+            printf("  Time: %.1fs total\n", $meta['seconds']);
+        }
     }
 
     private function printJson(array $meta): void

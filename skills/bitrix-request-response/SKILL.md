@@ -1,23 +1,26 @@
 ---
 name: bitrix-request-response
-description: 'Application, Context, HttpRequest (query/post/JSON body), HttpResponse, Json/AjaxJson/Redirect/file responses, cookies, Converter, Uri, UuidGenerator. Use instead of $_GET/$_POST, header(), setcookie() or json_encode().'
+description: 'Используй для HTTP-ввода и ответов Битрикса: Context, HttpRequest, JSON-тело, HttpResponse, cookies, перенаправления и файлы. Вместо $_GET/$_POST, header() и json_encode().'
 ---
 
-# Application, Context, Request, Response
+# Приложение, контекст, запрос и ответ
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-| Task | Read |
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
+
+| Задача | Читать |
 | --- | --- |
-| `Application`, `Context`, site, language, session access | `rules/application-context.md` |
-| Reading query, form, headers, cookies, files, JSON body | `rules/request.md` |
-| `HttpResponse`, `Json`/`AjaxJson`, redirect, files, cookies, `Converter` | `rules/response.md` |
+| `Application`, `Context`, сайт, язык, доступ к сессии | `rules/application-context.md` |
+| Строка запроса, форма, заголовки, cookies, файлы и тело JSON | `rules/request.md` |
+| `HttpResponse`, `Json`/`AjaxJson`, перенаправления, файлы, cookies, `Converter` | `rules/response.md` |
 | `Uri`, `UuidGenerator` | `rules/uri-uuid.md` |
 
-## Invariants
+## Обязательные правила
 
-- Request data only via `$this->getRequest()` (controllers) or `Context::getCurrent()->getRequest()`. Never `$_GET`/`$_POST`/`$_COOKIE`/`$_SERVER`.
-- Use the getter for the known source (`getQuery`/`getPost`/`getHeader`/`getCookie`). `get()` merges query and form only.
-- A JSON body is not in `get()`/`getPost()` and is bound to action params only in `JsonController`: `getJsonList()` or `JsonPayload`.
-- Filtered values (`$request['x']`) are not escaped: cast, validate, escape on output.
-- Output via response objects (`HttpResponse`, `Engine\Response\*`), not `header()`/`echo json_encode()`.
+- Читай данные запроса через `$this->getRequest()` в контроллере или `Context::getCurrent()->getRequest()`. Не используй `$_GET`/`$_POST`/`$_COOKIE`/`$_SERVER`.
+- Выбирай метод конкретного источника (`getQuery`/`getPost`/`getHeader`/`getCookie`). `get()` объединяет только строку запроса и форму.
+- Тело JSON не входит в `get()`/`getPost()`; параметры действия привязываются к нему только в `JsonController`. Используй `getJsonList()` или `JsonPayload`.
+- Отфильтрованные значения (`$request['x']`) не экранированы: приводи типы, проверяй и экранируй при выводе.
+- Возвращай объекты ответа (`HttpResponse`, `Engine\Response\*`), не `header()`/`echo json_encode()`.

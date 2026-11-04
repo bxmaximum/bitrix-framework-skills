@@ -1,8 +1,8 @@
-# Uri and UuidGenerator
+# Uri и UuidGenerator
 
 ## Uri
 
-Prefer `Bitrix\Main\Web\Uri` over `parse_url()` + string concat when reading or rebuilding URLs.
+Для чтения и пересборки URL предпочитай `Bitrix\Main\Web\Uri` комбинации `parse_url()` и склейки строк.
 
 ```php
 use Bitrix\Main\Web\Uri;
@@ -11,28 +11,28 @@ $uri = new Uri('/company/personal/user/15/?tab=tasks');
 $uri->addParams(['from' => 'invite', 'success' => 'Y']);
 $url = (string)$uri;
 
-// Keep query names with dots/spaces:
+// Сохранить имена параметров с точками/пробелами:
 $uri->addParams(['a.b' => '1'], preserveDots: true);
 $uri->deleteParams(['utm_source']);
 
 $absolute = (new Uri('/path/'))->toAbsolute();
 ```
 
-Also: `resolveRelativeUri()`, IDN via `convertToPunycode()` / `convertToUnicode()`, `isPathTraversal()` for user-supplied paths. There is no public `getQueryParams()` — take `getQuery()` and `parse_str` only when you need an array. Raw `foo=1&bar=2` payloads (no URL parts) may skip `Uri`.
+Также доступны `resolveRelativeUri()`, IDN через `convertToPunycode()` / `convertToUnicode()`, `isPathTraversal()` для пользовательских путей. Открытого `getQueryParams()` нет: бери `getQuery()` и `parse_str`, только если нужен массив. Для исходных данных `foo=1&bar=2` без частей URL можно обойтись без `Uri`.
 
 ## UuidGenerator
 
-For new random opaque identifiers (correlation id, upload token, public proxy id) use `Bitrix\Main\UuidGenerator::generateV4()` — not `uniqid()`, manual `random_bytes` assembly, or a local helper.
+Для новых случайных непрозрачных идентификаторов (ID корреляции, токен загрузки, публичный ID прокси) используй `Bitrix\Main\UuidGenerator::generateV4()`, а не `uniqid()`, сборку из `random_bytes` или свой помощник.
 
 ```php
 use Bitrix\Main\UuidGenerator;
 
-$id = UuidGenerator::generateV4(); // lowercase, 36 chars, with hyphens
+$id = UuidGenerator::generateV4(); // нижний регистр, 36 символов, с дефисами
 ```
 
-- Not for deterministic IDs derived from domain input.
-- Legacy `{uuid}` wrappers: generate with `generateV4()`, wrap only at the boundary.
-- External UUIDs used for lookup/access must be validated separately — generation ≠ trust.
-- `uniqid()` only for local page/request-level DOM-ish ids without crypto/uniqueness requirements.
+- Не подходит для детерминированных ID из предметных данных.
+- Старые обёртки `{uuid}`: генерируй через `generateV4()`, оборачивай только на границе интеграции.
+- Внешние UUID для поиска/доступа проверяй отдельно: генерация не означает доверие.
+- `uniqid()` допустим только для локальных ID страницы/запроса вроде DOM, без требований криптостойкости/уникальности.
 
-Storage of TTL keys that *use* a UUID: see `bitrix-storage`.
+Хранение ключей с TTL, использующих UUID: `bitrix-storage`.

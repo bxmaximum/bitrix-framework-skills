@@ -1,22 +1,22 @@
 # REST 3.0
 
-**Since rest 26.200\*** (transport and V3 controllers; absent in rest 25.300). Fallback: the classic method at `/rest/…`, which keeps working in parallel. Kernel: `rest/lib/V3/`, routes `api/#aplogin#/#ap#/#method#` and `api/#method#` in component `bitrix:rest.server`.
+**Since rest 26.200\***: транспорт и контроллеры V3 отсутствуют в rest 25.300. Для старого ядра используй классический аналог `/rest/…`. Реализация: `rest/lib/V3/`, маршруты `api/#aplogin#/#ap#/#method#`, `api/#method#` компонента `bitrix:rest.server`.
 
-## When it applies
+## Область применения
 
-- Only methods already migrated. Docs list: tasks (`tasks.task.*`), Knowledge Base 2.0, mail, company structure (`humanresources.*`; `department.*` stays classic), event log, time tracking records, call follow-up.
-- The same name can exist in both versions with different params and response (`tasks.task.get`). The method page header says which version it documents.
-- The authoritative list for a given portal: `rest.documentation.openapi` (alias `documentation`) returns OpenAPI 3.0; methods are in `paths`, schemas in `components.schemas`. On-premise the set depends on module versions.
-- `rest.scope.list` (alias `scopes`, V3 only) maps methods to scopes.
+- Только перенесённые методы. Документация на 30.10.2026 включает задачи, базу знаний 2.0, почту, оргструктуру `humanresources.*` (`department.*` остаётся классическим), журнал, рабочее время, итоги звонков; в октябре добавлены CRM-формы `crm.form.*`, каталог/склад `catalog.*`, форум и `iblock.element.*`. У инфоблока должен быть включён доступ REST.
+- Одинаковое имя бывает в двух версиях с разными параметрами/ответом, например `tasks.task.get`. Версию смотри в заголовке официальной страницы.
+- `rest.documentation.openapi` (псевдоним `documentation`) отдаёт OpenAPI 3.0 конкретного портала: методы в `paths`, схемы в `components.schemas`. В коробке состав зависит от модулей и флагов.
+- `rest.scope.list` (псевдоним `scopes`, только V3) сопоставляет методы и scopes.
 
-## Calling
+## Вызов
 
-- Webhook: `POST https://{host}/rest/api/{userId}/{code}/{method}`. App: `POST https://{host}/rest/api/{method}` with `auth` in the JSON body.
-- JSON body only (`Content-Type: application/json`); form-data gives `…INVALIDJSONEXCEPTION`. Parameters are never read from the query string. Parameterless methods also accept GET.
-- Without `/api/` the portal runs the classic method of the same name if it exists. A V3-only name without `/api/` returns `ERROR_METHOD_NOT_FOUND`.
-- SDK: b24jssdk `$b24.actions.v3.*`; b24phpsdk, BX24.js and CRest have no V3 support, so use plain HTTP.
+- Вебхук: `POST https://{host}/rest/api/{userId}/{code}/{method}`. Приложение: `POST https://{host}/rest/api/{method}`, `auth` в JSON.
+- Тело только JSON (`Content-Type: application/json`); form-data даёт `…INVALIDJSONEXCEPTION`. Query string не используется для параметров. Методы без параметров также допускают GET.
+- Без `/api/` вызывается классический одноимённый метод, если он существует. Имя только V3 без `/api/` даёт `ERROR_METHOD_NOT_FOUND`.
+- b24jssdk: `$b24.actions.v3.*`. Для SDK без подтверждённой поддержки нужного V3-метода используй прямой HTTP (`rules/sdk.md`).
 
-## Request shape
+## Формат запроса
 
 ```json
 {
@@ -27,19 +27,19 @@
 }
 ```
 
-- Related fields via dot in `select` (`responsible.name`). An unknown related field → `…UNKNOWNDTOPROPERTYEXCEPTION`. An unknown own field is silently dropped from the response: check what came back.
-- Filter conditions at one level are AND. Operators: `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `between`. Only fields with `filterable: true` in `*.field.list`; sorting needs `sortable: true`.
-- `pagination`: `limit` default 50, max 1000 (`PaginationStructure`), plus `offset` or `page`.
+- Связанные поля в `select`: `responsible.name`. Неизвестное связанное поле даёт `…UNKNOWNDTOPROPERTYEXCEPTION`; неизвестное собственное поле молча исключается из ответа. Проверяй результат.
+- Условия одного уровня объединяются AND. Операторы: `=`, `!=`, `>`, `>=`, `<`, `<=`, `in`, `between`. Фильтруются только поля с `filterable: true` из `*.field.list`, сортируются с `sortable: true`.
+- `pagination`: `limit` по умолчанию 50, максимум 1000 (`PaginationStructure`), плюс `offset` либо `page`.
 
-## Response and errors
+## Ответ и ошибки
 
-- Success: `result.item` (one), `result.items` (list) or `result.result` (bool), plus `time`.
-- Error: 4xx with `{"error": {"code", "message", "validation": [{"field", "message"}]}}`. Codes are `BITRIX_REST_V3_EXCEPTION_*`, derived from the exception class name: `…VALIDATION_REQUESTVALIDATIONEXCEPTION`, `…ACCESSDENIEDEXCEPTION` (403), `…INSUFFICIENTSCOPEEXCEPTION` (403), `…ENTITYNOTFOUNDEXCEPTION`, `…UNKNOWNFILTEROPERATOREXCEPTION`, `…METHODNOTFOUNDEXCEPTION`. Plan refusal keeps the plain code `FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN`.
-- Message language: header `X-Bitrix-Rest-Response-Language` (read by the kernel, not documented).
+- Успех: `result.item` (один), `result.items` (список) либо `result.result` (bool), плюс `time`.
+- Ошибка: HTTP 4xx и `{"error": {"code", "message", "validation": [{"field", "message"}]}}`. Коды `BITRIX_REST_V3_EXCEPTION_*` следуют классу исключения: `…VALIDATION_REQUESTVALIDATIONEXCEPTION`, `…ACCESSDENIEDEXCEPTION` (403), `…INSUFFICIENTSCOPEEXCEPTION` (403), `…ENTITYNOTFOUNDEXCEPTION`, `…UNKNOWNFILTEROPERATOREXCEPTION`, `…METHODNOTFOUNDEXCEPTION`. Тарифный отказ может сохранить `FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN`.
+- Язык сообщения: заголовок `X-Bitrix-Rest-Response-Language`, читается ядром, хотя не описан в проверенной документации.
 
-## Batch 3.0
+## Пакетные вызовы REST 3.0
 
-Body is a JSON array at the root; the classic `cmd` format fails with `…INVALIDSELECTEXCEPTION`.
+Тело — JSON-массив в корне; классический `cmd` даёт `…INVALIDSELECTEXCEPTION`.
 
 ```json
 [
@@ -50,15 +50,15 @@ Body is a JSON array at the root; the classic `cmd` format fails with `…INVALI
 ]
 ```
 
-- `$ref` takes one value (`name.field` or `index.field`, without the `item` wrapper), `$refArray` collects a field from all rows of a list result. Names in `as` must be unique.
-- Sequential only, no nested batch, no transaction. One failed call returns a top-level `error` and no results, but earlier calls may already have written data.
+- `$ref` берёт значение `name.field`/`index.field` без обёртки `item`; `$refArray` собирает поле строк списка. Имена `as` уникальны. Значения из ссылок приводятся к типу целевого поля, включая вложенные поля и фильтр `in`; явно переданные значения не приводятся. Неприводимый тип даёт `…VALIDATION_REQUESTVALIDATIONEXCEPTION` (400).
+- Выполнение последовательное, без вложенного batch и общей транзакции. Ошибка даёт верхнеуровневый `error` без результатов, хотя предыдущие команды уже могли записать данные.
 
-## Idempotency-Key
+## Защита от повторов Idempotency-Key
 
-**Since rest 26.600.** Fallback: before retrying a create, look the object up by your external key.
+**Since rest 26.600.** На старой версии перед повтором создания ищи объект по собственному внешнему ключу.
 
-- Header `Idempotency-Key: <1–255 printable ASCII>` (UUID) on add, update and delete calls. A repeat with the same key and the same body within 24 h returns the stored response plus `Idempotent-Replayed: true`, and the action does not run again.
-- The key is scoped to app or webhook + user + method. The body is compared as raw bytes (sha256): resend the exact same bytes, not re-serialized JSON.
-- Only 200 responses are stored; a failed call runs again on retry. Same key, different body → `…IDEMPOTENCYKEYREUSEDEXCEPTION` (422); bad key → `…INVALIDIDEMPOTENCYKEYEXCEPTION` (400).
-- Two concurrent requests with one key may both run: retry only after a response or a timeout.
-- Ignored on classic `/rest/` calls.
+- Заголовок `Idempotency-Key: <1–255 печатных ASCII-символов>` (например UUID) для add/update/delete. Повтор с тем же ключом и телом в течение 24 часов возвращает сохранённый ответ и `Idempotent-Replayed: true`, без повторного действия.
+- Область ключа: приложение/вебхук + пользователь + метод. Тело сравнивается побайтно через sha256: повторяй исходные байты, не пересобранный JSON.
+- Сохраняются только ответы 200; ошибочный вызов выполнится при повторе снова. Тот же ключ с другим телом: `…IDEMPOTENCYKEYREUSEDEXCEPTION` (422); неверный ключ: `…INVALIDIDEMPOTENCYKEYEXCEPTION` (400).
+- Одновременные запросы с одним ключом могут выполниться оба: повторяй после ответа либо таймаута.
+- Классический `/rest/` игнорирует заголовок.

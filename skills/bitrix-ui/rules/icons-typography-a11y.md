@@ -1,8 +1,8 @@
-# Icons, typography, Lottie, accessibility
+# Иконки, типографика, Lottie, доступность
 
-## Icons (`ui.icon-set`)
+## Иконки (`ui.icon-set`)
 
-JS API `ui.icon-set.api.core` (`Icon`, `IconHoverMode` and the set constants). Every set also needs its **CSS extension**, or the icon renders empty.
+JS API ui.icon-set.api.core: Icon, IconHoverMode и константы наборов. Каждому набору нужна также **CSS-зависимость**, иначе иконка пустая.
 
 ```js
 import { Icon, Outline } from 'ui.icon-set.api.core';
@@ -11,62 +11,66 @@ import 'ui.icon-set.outline';
 new Icon({ icon: Outline.CHECK_L, size: 24, color: 'var(--ui-color-base-70)' }).renderTo(container);
 ```
 
-- Sets → CSS extension: `Actions` → `ui.icon-set.actions`, `Main` → `ui.icon-set.main`, `Outline` → `ui.icon-set.outline`, also `Solid`, `Social`, `CRM`, `Editor`, `ContactCenter`, `Animated`, `Special`, `SmallOutline`, `Disk`/`DiskCompact` (fixed colors, `color` ignored). `Outline`, `Solid`, `SmallOutline`, `Disk` are **Since ui 26.200\*** (older: `Main`, `Actions`).
-- PHP / static HTML: `<div class="ui-icon-set --check-l"></div>` + `Extension::load('ui.icon-set.outline')`; size and color via CSS vars `--ui-icon-set__icon-size`, `--ui-icon-set__icon-color`.
-- Vue: `BIcon` from `ui.icon-set.api.vue` (props `name`, `size`, `color`, `hoverable`, `responsive`).
-- Use named icons, not copied SVG. Colors and spacing come from `ui.design-tokens` CSS vars (`--ui-color-*`).
+- Набор → CSS: Actions → ui.icon-set.actions, Main → ui.icon-set.main, Outline → ui.icon-set.outline; также Solid, Social, CRM, Editor, ContactCenter, Animated, Special, SmallOutline, Disk/DiskCompact (цвет фиксирован, color игнорируется). Outline, Solid, SmallOutline, Disk — **Since ui 26.200\***; раньше Main, Actions.
+- PHP / HTML: `<div class="ui-icon-set --check-l"></div>` + `Extension::load('ui.icon-set.outline')`; CSS-переменные размера / цвета --ui-icon-set__icon-size, --ui-icon-set__icon-color.
+- Vue: BIcon из ui.icon-set.api.vue, параметры name, size, color, hoverable, responsive.
+- Используй именованные иконки, не копии SVG. Цвета и отступы — переменные CSS ui.design-tokens (--ui-color-*).
 
-## Typography (`ui.system.typography`, **Since ui 26.200\***)
+## Типографика (`ui.system.typography`, **Since ui 26.200\***)
 
 ```js
 import { Headline, Text } from 'ui.system.typography';
 
-container.append(Headline.render('Orders', { size: 'lg', tag: 'h2' }), Text.render(order.comment, { size: 'sm' }));
+container.append(Headline.render('Заказы', { size: 'lg', tag: 'h2' }), Text.render(order.comment, { size: 'sm' }));
 ```
 
-Text goes in as text content (safe for user data). `Headline` needs `size` (`xl|lg|md|sm|xs`); `Text` sizes `2xl` … `4xs`. Vue: `ui.system.typography.vue`. Older ui: `ui.fonts.opensans` + your CSS.
+Текст вставляется как текстовое содержимое, безопасно для данных пользователя. Headline требует size (xl|lg|md|sm|xs); Text — 2xl … 4xs. Vue: ui.system.typography.vue. Раньше ui.fonts.opensans + свой CSS.
 
 ## Lottie (`ui.lottie`)
 
 ```js
-import { Lottie } from 'ui.lottie'; // or BX.UI.Lottie
+import { Lottie } from 'ui.lottie'; // либо BX.UI.Lottie
 
 const animation = Lottie.loadAnimation({
-    container: node,                     // must be in the DOM
-    path: '/local/assets/loader.json',   // or animationData: {...}, one source only
+    container: node,                     // узел уже в DOM
+    path: '/local/assets/loader.json',   // либо animationData: {...}, только один источник
     renderer: 'svg', loop: true, autoplay: true,
 });
-// on teardown:
+// при уничтожении:
 animation.destroy();
 ```
 
 `AnimationItem`: `play()`, `stop()`, `pause()`, `setSpeed()`, `goToAndStop()`, `addEventListener('complete' | 'loopComplete' | 'data_failed', fn)`.
 
-## Accessibility (`ui.a11y`, **Since ui 26.500\***)
+## Доступность (`ui.a11y`, **Since ui 26.500\***)
 
-| Need | Export |
+| Задача | Экспорт |
 | --- | --- |
-| Keep Tab inside a modal | `FocusTrap` |
-| Restore focus after close / redraw | `FocusMonitor` (starts on import) |
-| Arrow / Home / End keys inside a widget | `FocusZone` |
-| Move focus to next / previous focusable | `FocusNavigator` |
-| Announce text without moving focus | `LiveAnnouncer` |
-| Visible / focusable checks, input type | `InteractivityChecker`, `InputModalityTracker` |
-| Hide visually, keep for screen readers | `VisuallyHidden` |
+| Удержать Tab внутри модального окна | FocusTrap |
+| Восстановить фокус после закрытия / перерисовки | FocusMonitor, запускается при импорте |
+| Стрелки / Home / End внутри виджета | FocusZone |
+| Фокус на следующий / предыдущий доступный элемент | FocusNavigator |
+| Озвучить текст без перемещения фокуса | LiveAnnouncer |
+| Проверка видимости / фокусируемости, способ ввода | InteractivityChecker, InputModalityTracker |
+| Скрыть визуально, сохранить для экранного диктора | VisuallyHidden |
 
 ```js
 import { FocusTrap, LiveAnnouncer } from 'ui.a11y';
 
 const trap = new FocusTrap(dialogNode);
-trap.activate();   // on close: trap.deactivate()
-LiveAnnouncer.announce('Saved', 'polite'); // or 'assertive'
+trap.activate(); // при закрытии trap.deactivate()
+LiveAnnouncer.announce('Сохранено', 'polite'); // либо assertive
 ```
 
-- `Popup` accepts `focusTrap: true`; `SidePanel` sliders always trap focus (`focusTrap` takes only options) (**Since main 26.600\***).
-- Global flags `ui` → `a11y` (`restoreLostFocus`, `useFocusTrapInDialogs`, `bitrix-settings`) are `false` on a regular install: don't rely on them, activate `FocusTrap` in your own dialogs.
-- Older ui: manage focus manually (`element.focus()`, `aria-live` region).
+- Popup принимает focusTrap: true; слайдеры SidePanel всегда удерживают фокус, focusTrap принимает только настройки (**Since main 26.600\***).
+- Флаги ui → a11y (restoreLostFocus, useFocusTrapInDialogs, `bitrix-settings`) на обычной установке false. В своих диалогах явно включай FocusTrap.
+- На старом ui управляй фокусом вручную: element.focus(), область aria-live.
 
-## Assets
+## Ресурсы
 
-- Never reference kernel images or CSS paths (`/bitrix/js/…`, `/bitrix/panel/…`) from `/local` CSS: they move (main 26.800 replaced PNG sprites with WebP). Copy the asset into your module.
-- Don't build `/local` templates on `ui.bootstrap4`: its JS is Bootstrap 4.6.2, its CSS 5.0.0-alpha1 (ui 26.600). Ship your own Bootstrap.
+- Из CSS /local не ссылайся на картинки и CSS ядра (`/bitrix/js/…`, `/bitrix/panel/…`): пути меняются, main 26.800 заменил PNG-спрайты на WebP. Скопируй ресурс в свой модуль.
+- Не строй шаблон /local на ui.bootstrap4: JS Bootstrap 4.6.2, CSS 5.0.0-alpha1 (ui 26.600). Поставляй свою версию Bootstrap.
+
+## Иллюстрации — Since ui 26.700
+
+ui.system.illustration экспортирует Illustration и IllustrationName. Например: `new Illustration({ name: IllustrationName.EMPTY_SEARCH, size: 120, ariaLabel: 'Ничего не найдено' }).renderTo(container)`. Используй имя из enum, задавай ariaLabel для смысловой картинки; пустой ariaLabel оставляет её декоративной. При удалении — `destroy()`. На старом ui поставляй свою иллюстрацию в ресурсах модуля.

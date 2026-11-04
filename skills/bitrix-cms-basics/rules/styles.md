@@ -1,39 +1,39 @@
-# CSS placement
+# Размещение CSS
 
-| Owner of the markup | CSS lives in |
+| Владелец разметки | Где хранить CSS |
 | --- | --- |
-| Site frame (`header.php`/`footer.php`, grid) | `template_styles.css` of the site template |
-| Page content styleable in the visual editor | `styles.css` + `.styles.php` of the site template |
-| Component template (`template.php`) | `style.css` next to it |
-| JS extension UI | the extension's `css` (`bitrix-extensions`) |
-| One-off page | `Asset::getInstance()->addCss()` |
+| Обрамление сайта (`header.php`/`footer.php`, сетка) | `template_styles.css` шаблона сайта |
+| Содержимое страницы, оформляемое визуальным редактором | `styles.css` + `.styles.php` шаблона сайта |
+| Шаблон компонента (`template.php`) | `style.css` рядом с ним |
+| Интерфейс JS-расширения | `css` расширения (`bitrix-extensions`) |
+| Отдельная страница | `Asset::getInstance()->addCss()` |
 
-- The visual editor injects `styles.css` into its iframe: never put frame rules there, they distort the editor. Both files are editable in Admin → Settings → Sites → Site templates.
-- `.styles.php` returns the editor's style list (the CSS rule itself goes to `styles.css`):
+- Визуальный редактор вставляет `styles.css` в свой iframe: стили обрамления здесь искажают редактор. Оба файла редактируются в Настройки → Сайты → Шаблоны сайтов.
+- `.styles.php` возвращает список стилей редактора; сами правила CSS хранятся в `styles.css`:
 
 ```php
 return [
-    'note' => [                          // key = CSS class
-        'tag' => 'p',                    // tag(s), comma-separated
-        'title' => 'Note',               // name in the editor
-        'html' => '<span class="note">Preview</span>', // optional preview
-        // optional 'section' groups entries
+    'note' => [                          // ключ — класс CSS
+        'tag' => 'p',                    // теги через запятую
+        'title' => 'Примечание',         // название в редакторе
+        'html' => '<span class="note">Образец</span>', // необязательный образец
+        // необязательный section группирует записи
     ],
 ];
 ```
 
-- Editor-only CSS: `'EDITOR_STYLES' => ['/local/css/editor.css']` in `description.php` (`$arTemplate`); not loaded on the public site.
+- CSS только для редактора: `'EDITOR_STYLES' => ['/local/css/editor.css']` в `description.php` (`$arTemplate`); на публичном сайте не загружается.
 
-## Include APIs
+## Подключение
 
 ```php
 \Bitrix\Main\Page\Asset::getInstance()->addCss(SITE_TEMPLATE_PATH . '/css/page.css');
-// 2nd arg true → template set, after styles.css / template_styles.css
-\Bitrix\Main\UI\Extension::load('vendor.module.card');   // extension JS + CSS
+// true вторым аргументом: набор шаблона после styles.css / template_styles.css
+\Bitrix\Main\UI\Extension::load('vendor.module.card');   // JS + CSS расширения
 ```
 
-Classic templates: `$APPLICATION->ShowCSS()` in `<head>` of `header.php` outputs the collected set; `$APPLICATION->SetAdditionalCSS($path)` adds to it (compat; prefer `Asset::addCss()`).
+Классический шаблон: `$APPLICATION->ShowCSS()` в `<head>` файла `header.php` выводит собранные стили. `$APPLICATION->SetAdditionalCSS($path)` добавляет стиль; для нового кода используй `Asset::addCss()`.
 
-## Optimization
+## Оптимизация
 
-Main module options: merge CSS (`optimize_css_files`), use `.min` files (`use_minified_assets`), gzip copies (`compres_css_js_files`, needs zlib). Merging covers Asset-registered CSS only, is skipped in the admin section and AJAX, and can be turned off per page with `Asset::getInstance()->disableOptimizeCss()`. Merged files: `/bitrix/cache/css/<SITE_ID>/<template>/` — clear the cache after editing CSS if the old look persists.
+Опции main: объединение CSS (`optimize_css_files`), файлы `.min` (`use_minified_assets`), gzip-копии (`compres_css_js_files`, нужен zlib). Объединяется только CSS из Asset; в административной части и AJAX объединения нет. Отключение на странице: `Asset::getInstance()->disableOptimizeCss()`. Результат: `/bitrix/cache/css/<SITE_ID>/<template>/`. Если вид остался прежним, очисти кеш после правки CSS.

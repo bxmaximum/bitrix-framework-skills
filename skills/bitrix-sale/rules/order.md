@@ -1,20 +1,20 @@
-# Orders: API choice, create, update, properties
+# Заказы: API, создание, изменение, свойства
 
-## API choice
+## Выбор API
 
-| Task | API |
+| Задача | API |
 | --- | --- |
-| Create/change basket, order, payment, shipment | Object model `Bitrix\Sale\*`: validates, saves collections, fires events, writes history |
-| Lists, reports, aggregates | `Bitrix\Sale\Internals\*Table` (`OrderTable`, `BasketTable`, `PaymentTable`, `ShipmentTable`), read-only for order data |
-| Settings via code | `PersonTypeTable`, `OrderPropsTable`, `OrderPropsGroupTable`, `StatusTable` + `StatusLangTable` (writes allowed, in migrations) |
-| Pick a configured service | `PaySystem\Manager`, `Delivery\Services\Manager`, `Cashbox\Manager`, `Services\Company\Manager`, `DiscountCouponsManager` |
-| No full D7 replacement | `CSaleOrder::CanUserViewOrder()` etc. (rights), `CSaleOrderChange` (history read), `CSaleDiscount::Add/Update` (cart rules), `CSaleOrderUserProps` (buyer profiles), `CSaleUserAccount` (balance), `CSaleOrderTax` (tax rows) |
+| Создать / изменить корзину, заказ, оплату, отгрузку | Объектная модель `Bitrix\Sale\*`: проверки, сохранение коллекций, события, история |
+| Списки, отчёты, агрегаты | `Bitrix\Sale\Internals\*Table` (`OrderTable`, `BasketTable`, `PaymentTable`, `ShipmentTable`), для данных заказа только чтение |
+| Настройки кодом | `PersonTypeTable`, `OrderPropsTable`, `OrderPropsGroupTable`, `StatusTable` + `StatusLangTable`; запись разрешена в миграциях |
+| Выбор настроенной службы | `PaySystem\Manager`, `Delivery\Services\Manager`, `Cashbox\Manager`, `Services\Company\Manager`, `DiscountCouponsManager` |
+| Полной замены D7 нет | `CSaleOrder::CanUserViewOrder()` и др. (права), `CSaleOrderChange` (чтение истории), `CSaleDiscount::Add/Update` (правила), `CSaleOrderUserProps` (профили), `CSaleUserAccount` (баланс), `CSaleOrderTax` (налоги) |
 
-Never change an order via `OrderTable::update()` or create payments/shipments as raw rows. Don't mix legacy `CSale*` writes with a loaded `Order` in memory.
+Не меняй заказ через `OrderTable::update()`, не создавай оплаты / отгрузки прямой вставкой. Не смешивай запись `CSale*` с загруженным в память `Order`.
 
-## Create (pipeline)
+## Порядок создания
 
-Order matters: basket → order → person type → basket in → properties → shipment → delivery calc → payment → `doFinalAction(true)` → sync payment `SUM` → re-check restrictions → `save()`.
+Корзина → заказ → тип плательщика → привязка корзины → свойства → отгрузка → расчёт доставки → оплата → `doFinalAction(true)` → синхронизация `SUM` оплаты → повторная проверка ограничений → `save()`.
 
 ```php
 <?php declare(strict_types=1);
@@ -24,13 +24,13 @@ use Bitrix\Sale\Order;
 use Bitrix\Sale\PaySystem\Manager as PaySystemManager;
 use Bitrix\Sale\Services\Base\RestrictionManager;
 
-$order = Order::create($siteId, $userId);  // currency: site's, else base
-$order->setPersonTypeId($personTypeId);    // BEFORE getPropertyCollection(); not validated against site
-$order->setBasket($orderableBasket);       // new (unsaved) order only; see rules/basket.md
+$order = Order::create($siteId, $userId); // валюта сайта, иначе базовая
+$order->setPersonTypeId($personTypeId); // ДО getPropertyCollection(); привязка к сайту не проверяется
+$order->setBasket($orderableBasket); // только новый заказ; rules/basket.md
 
-$order->getPropertyCollection()->getItemByOrderPropertyCode('PHONE')?->setValue($phone); // setValue returns Result
+$order->getPropertyCollection()->getItemByOrderPropertyCode('PHONE')?->setValue($phone); // setValue возвращает Result
 
-$shipment = $order->getShipmentCollection()->createItem(); // system shipment already exists, never give it a service
+$shipment = $order->getShipmentCollection()->createItem(); // системная уже есть; ей службу не назначать
 foreach ($order->getBasket() as $basketItem) {
     $shipment->getShipmentItemCollection()->createItem($basketItem)->setQuantity($basketItem->getQuantity());
 }
@@ -44,37 +44,37 @@ $allowed = PaySystemManager::getListWithRestrictions($payment, RestrictionManage
 isset($allowed[$paySystemId]) or throw new \RuntimeException('pay system unavailable');
 $payment->setPaySystemService(PaySystemManager::getObjectById($paySystemId));
 
-$order->doFinalAction(true);                   // discounts, taxes, totals; check its Result
-$payment->setField('SUM', $order->getPrice()); // sync after final calc; re-check both restricted lists
+$order->doFinalAction(true); // скидки, налоги, итоги; проверь Result
+$payment->setField('SUM', $order->getPrice()); // после расчёта; повторно проверь оба списка с ограничениями
 
-$saveResult = $order->save();                  // isSuccess() AND getWarningMessages()
+$saveResult = $order->save(); // isSuccess() И getWarningMessages()
 $orderId = $saveResult->getId();
 ```
 
-- Payment and user shipment are optional on first save (digital goods, deferred flows); add them later on the loaded order.
-- Integrations: store your own idempotency key (`XML_ID` is not unique-constrained).
-- Load: `Order::load($id)`, `Order::loadByAccountNumber($number)`, `Order::loadByFilter([...])`. Lock while editing: `Order::lock($id)`, `Order::isLocked($id)`, `Order::unlock($id)`.
+- Оплата и пользовательская отгрузка необязательны при первом сохранении (цифровой товар, отложенный сценарий); добавь позже в загруженный заказ.
+- Интеграции: свой ключ идемпотентности; уникальность `XML_ID` не обеспечивается.
+- Загрузка: `Order::load($id)`, `Order::loadByAccountNumber($number)`, `Order::loadByFilter([...])`. Блокировка редактирования: `Order::lock($id)`, `Order::isLocked($id)`, `Order::unlock($id)`.
 
-## Update
+## Изменение
 
-Work on one loaded object, save once. What to rerun after a change:
+Один загруженный объект, одно сохранение. Что повторить после изменения:
 
-| Change | `calculateDelivery()` | `doFinalAction(true)` | Sync unpaid payment `SUM` |
+| Изменение | `calculateDelivery()` | `doFinalAction(true)` | Синхронизация `SUM` неоплаченной оплаты |
 | --- | --- | --- | --- |
-| Status, cancel, mark, comment, tracking, allow delivery | – | – | – |
-| Location/address used in restrictions | yes | yes | if price changed |
-| Basket items/qty, delivery service/cost, shipment removal | yes | yes | if price changed |
-| Coupon, discount, tax data | if delivery affected | yes | if price changed |
+| Статус, отмена, проблемность, комментарий, трек, разрешение доставки | – | – | – |
+| Местоположение / адрес ограничений | Да | Да | Если изменилась цена |
+| Позиции / количество, служба / стоимость доставки, удаление отгрузки | Да | Да | Если изменилась цена |
+| Купон, скидка, налог | Если влияет на доставку | Да | Если изменилась цена |
 
-- Quantity down: `ShipmentItem::setQuantity()` first, then `BasketItem::setField('QUANTITY')`. Up: basket first, then shipment. Then refresh the item, recalc, save.
-- Cancel: `setField('CANCELED', 'Y')` + `REASON_CANCELED`. Blocked while a paid payment or shipped shipment exists. `Order::delete()` is a service-only hard delete, never a customer refusal.
-- `PERSON_TYPE_ID` change is a migration (property values are not remapped). `CURRENCY`/`USER_ID` can't change via `setField()`. Never write `SUM_PAID`/`PAYED` directly.
+- Уменьшение количества: сначала `ShipmentItem::setQuantity()`, затем `BasketItem::setField('QUANTITY')`. Увеличение: сначала корзина, затем отгрузка. Обнови позицию, пересчитай, сохрани.
+- Отмена: `setField('CANCELED', 'Y')` + `REASON_CANCELED`. Запрещена при оплаченной оплате или отгруженной отгрузке. `Order::delete()` — служебное физическое удаление, не отказ покупателя.
+- Смена `PERSON_TYPE_ID` — миграция: значения свойств не переносятся. `CURRENCY`/`USER_ID` через `setField()` не меняются. Не записывай `SUM_PAID`/`PAYED` напрямую.
 
-## Properties
+## Свойства
 
-Setting (`OrderPropsTable`, bound to a person type; `ENTITY_TYPE` ORDER/SHIPMENT) vs value in an order (`PropertyValueCollection`). Create settings (`OrderPropsGroupTable::add()` + `OrderPropsTable::add()`) in migrations, never during checkout.
+Настройка: `OrderPropsTable`, привязка к типу плательщика, `ENTITY_TYPE` ORDER/SHIPMENT. Значение заказа: `PropertyValueCollection`. Настройки `OrderPropsGroupTable::add()` + `OrderPropsTable::add()` создавай миграцией, не при оформлении.
 
-- Find values: `getItemByOrderPropertyCode()` (first match), `getItemByOrderPropertyId()`, by role `getDeliveryLocation()`, `getPhone()`, `getUserEmail()`; groups `getGroups()`.
-- `LOCATION` takes the location code, not a name. `ENUM` takes the variant `VALUE` (options: `$value->getPropertyObject()->getOptions()`); `MULTIPLE = Y` takes an array. Form input: `$order->getPropertyCollection()->setValuesFromPost($post, $files)` + `verify()`.
-- Required check before save: for each value `isRequired()` + `checkRequiredValue($key, $value)`.
-- Values save only with `Order::save()`; never write `OrderPropsValueTable`.
+- Поиск: `getItemByOrderPropertyCode()` (первое совпадение), `getItemByOrderPropertyId()`; роли `getDeliveryLocation()`, `getPhone()`, `getUserEmail()`; группы `getGroups()`.
+- `LOCATION` принимает код местоположения, не название; `ENUM` — `VALUE` варианта (варианты: `$value->getPropertyObject()->getOptions()`); `MULTIPLE = Y` — массив. Форма: `$order->getPropertyCollection()->setValuesFromPost($post, $files)` + `verify()`.
+- Обязательность до сохранения: у каждого значения `isRequired()` + `checkRequiredValue($key, $value)`.
+- Сохранение значений только `Order::save()`, без записи `OrderPropsValueTable`.

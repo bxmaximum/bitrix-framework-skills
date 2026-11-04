@@ -1,24 +1,27 @@
 ---
 name: bitrix-validation
-description: 'Bitrix\Main\Validation — rule attributes (NotEmpty, Length, Email, RegExp…), ValidationService, ValidationParameter request DTOs, rules on action params, groups, custom validators. Use when validating controller, service or CLI input.'
+description: 'Используй для проверки ввода Битрикса: атрибуты NotEmpty/Length, DTO и ValidationService. Валидация параметров контроллера, сервисов и CLI, свои правила и ошибки.'
 ---
 
-# Validation
+# Валидация
 
-Baseline: main 23.0+ · Verified: main 26.800.0
+Baseline: main 23.0+ · Verified: main 26.1000.0
 
-The whole namespace is **Since main 24.300**. Before that, check input by hand in the service and return `Result` errors (`bitrix-result-and-errors`).
+Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче.
+В таблице выбери только нужный `rules/*.md`; пути относительны каталогу скилла.
 
-| Task | Read |
+Всё пространство имён доступно **Since main 24.300**. Раньше проверяй ввод вручную в сервисе и возвращай ошибки `Result` (`bitrix-result-and-errors`).
+
+| Задача | Читать |
 | --- | --- |
-| Rule attributes, DTOs, nested objects, collections, groups, `ValidationService` | `rules/rules-dto.md` |
-| Controller input: rules on action params, `ValidationParameter` DTOs | `rules/controller.md` |
-| Custom rule attribute and validator, error codes | `rules/custom.md` |
+| Атрибуты правил, DTO, вложенные объекты, коллекции, группы, `ValidationService` | `rules/rules-dto.md` |
+| Ввод контроллера: правила на параметрах, DTO `ValidationParameter` | `rules/controller.md` |
+| Своё правило-атрибут, валидатор, коды ошибок | `rules/custom.md` |
 
-## Invariants
+## Обязательные правила
 
-- Service: `ServiceLocator::getInstance()->get('main.validation.service')`, or type-hint `ValidationService` in a service constructor (stateless).
-- There is no `.settings.php` `validation` section and no `#[ValidationParameter]` attribute.
-- Names: `RegExp` (not `Regex`), `errorMessage` (not `message`). Errors have no `getField()`: the property path is in `getCode()` (`email`, `items.0.name`).
-- Rules on action params, `groups`, `#[Json]`, `#[OnlyOneOfPropertyRequired]` are **Since main 26.250\***. On 25.x a rule on an action param is silently ignored: validate a DTO instead.
-- `ValidationResult` extends `Result`: pass its errors up via the service `Result`, don't throw.
+- Сервис: `ServiceLocator::getInstance()->get('main.validation.service')` либо тип `ValidationService` в конструкторе сервиса (без состояния).
+- Нет секции `validation` в `.settings.php` и атрибута `#[ValidationParameter]`.
+- Имена: `RegExp`, не `Regex`; `errorMessage`, не `message`. Метода `getField()` у ошибки нет: путь свойства находится в `getCode()` (`email`, `items.0.name`).
+- Правила на параметрах действий, `groups`, `#[Json]`, `#[OnlyOneOfPropertyRequired]` доступны **Since main 26.250\***. На 25.x правило параметра молча игнорируется: проверяй DTO.
+- `ValidationResult` наследует `Result`: передавай ошибки через `Result` сервиса, не исключением.
