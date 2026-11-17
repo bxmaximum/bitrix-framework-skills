@@ -22,5 +22,5 @@ Baseline: main 23.0+ · Verified: main 26.1000.0
 - Атрибуты фильтров доступны **Since main 26.250\***; раньше используй `configureActions()`. Не совмещай оба способа для одного действия: `ActionConfigurationException`.
 - Константы `METHOD_*` принадлежат `ActionFilter\HttpMethod`, а не атрибуту `Attribute\Rule\HttpMethod`. Обращение к ним на атрибуте ломает создание контроллера и все его действия.
 - Атрибуты правил добавляют фильтры к стандартным (`Authentication`, `HttpMethod([GET, POST])`, `Csrf`). Повторный `#[Authentication]` или `#[Csrf]` запускает фильтр дважды.
-- При файлах PascalCase сегмент контроллера пиши в регистре класса: `vendor:module.Post.create`. Строчный `post` разрешается в `lib/infrastructure/controller/post.php` и не работает на Linux. REST приводит имена методов к нижнему регистру: PascalCase-контроллер недоступен через классический REST (`bitrix-rest`).
+- Регистр имён действий в классическом REST см. в `bitrix-rest`.
 - HTML (`renderView`/`renderComponent`) возвращай только через маршруты; `BX.ajax.runAction()` ожидает JSON.

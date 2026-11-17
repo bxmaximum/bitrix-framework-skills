@@ -79,6 +79,7 @@ $MESS['VENDOR_EDITOR_TITLE'] = 'Редактор';
 ## Загрузка
 
 ```php
+\Bitrix\Main\UI\Extension::load('main.core'); // BX в script.js PHP-шаблона
 \Bitrix\Main\UI\Extension::load(['vendor.module.editor', 'ui.buttons']); // неизвестный ID молча пропускается
 ```
 

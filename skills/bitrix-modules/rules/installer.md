@@ -7,7 +7,7 @@
 - `install/index.php`, `install/version.php`, `default_option.php`, `lang/ru/install/index.php`;
 - Пустые `install/mysql/install.sql` / `uninstall.sql`: на main 26.600+ удали их и используй `install/migrations/` (`rules/install-migrations.md`).
 
-Нет `.settings.php` и `lib/`. `dev:module-skeleton vendor.module` добавляет пустые каталоги слоёв `lib/` (`Controller`, `Entity`, `Internals/…`, `Service`, …).
+`make:module` не создаёт `.settings.php` и `lib/`.
 
 ```
 /local/modules/vendor.module/

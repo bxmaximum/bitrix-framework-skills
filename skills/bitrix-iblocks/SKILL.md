@@ -18,8 +18,8 @@ Baseline: main 23.0+ · Verified: iblock 26.100.0, main 26.1000.0
 
 ## Общие правила
 
-- `Loader::includeModule('iblock')`. Для ORM со свойствами нужен `API_CODE`: `Element{ApiCode}Table`, `Model\Section::compileEntityByIblock()`. Запись через `ElementTable` всегда ошибочна.
-- Структура (тип, инфоблок, свойство): `CIBlockType`/`CIBlock`/`CIBlockProperty`. Элементы / разделы: компилируемый ORM; для индекса поиска, пересчёта SEO, прав, документооборота, авто-`CODE` — `CIBlockElement`/`CIBlockSection`.
-- ORM игнорирует права инфоблока: проверяй сам либо используй `CIBlockElement::GetList` с серверным `CHECK_PERMISSIONS = 'Y'`.
+- `Loader::includeModule('iblock')`. Для новых инфоблоков задавай `API_CODE`. Для элементов и разделов по умолчанию используй компилируемый D7 ORM. Базовый `ElementTable` только для чтения.
+- Структура (тип, инфоблок, свойство) — `CIBlockType`/`CIBlock`/`CIBlockProperty`. Для элементов и разделов классический API допустим только при подтверждённом ограничении D7. Укажи конкретную причину в коде.
+- ORM не проверяет права инфоблока. См. `rules/basics.md`.
 - ID инфоблоков, свойств, значений списка различаются между средами: находи по `CODE`/`API_CODE`/`XML_ID`.
 - Справочники HL: `bitrix-highloadblock`; цены, SKU, остатки: `bitrix-catalog`.

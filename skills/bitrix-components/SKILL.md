@@ -13,6 +13,7 @@ Baseline: main 23.0+ · Verified: main 26.1000.0
 | --- | --- |
 | Размещение, заготовка, `class.php`, параметры, `.description.php`, `.parameters.php` | `rules/structure.md` |
 | Поиск и переопределение шаблона, `template.php`, `result_modifier.php`, `component_epilog.php` | `rules/template.md` |
+| JavaScript шаблона компонента | `bitrix-extensions` |
 | Кеш результата, постраничный список, комплексный ЧПУ, AJAX-действия | `rules/cache-sef-ajax.md` |
 | `PageNavigation`, шаблоны навигации | `bitrix-cms-basics` |
 | Грид, фильтр, панель инструментов в шаблонах | `bitrix-ui` |
@@ -24,4 +25,4 @@ Baseline: main 23.0+ · Verified: main 26.1000.0
 - `onPrepareComponentParams()` приводит тип каждого параметра; `~KEY` содержит исходное значение.
 - Всё влияющее на вывод входит в ключ кеша: группы пользователя, страница, фильтр.
 - Вложенному компоненту передавай `$component` четвёртым аргументом `IncludeComponent()`.
-- AJAX — через действия `Controllerable` с предварительными фильтрами и подписанными параметрами.
+- Действия самого компонента — `Controllerable` и `BX.ajax.runComponentAction()` с фильтрами и подписанными параметрами. Действия API модуля вызывай через `BX.ajax.runAction()`.

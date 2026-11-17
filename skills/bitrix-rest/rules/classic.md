@@ -22,7 +22,9 @@ return [
 ];
 ```
 
-`Bitrix\Rest\Engine\RestManager::onFindMethodDescription()` публикует действия только модулей с `restIntegration.enabled`. REST-имя: `vendor.module.post.create`, AJAX-имя: `vendor:module.post.create`. `CRestServer` приводит имя к нижнему регистру и ищет `lib/controller/post.php`. Файлы `lib/Controller/Post.php` на регистрозависимой ФС могут дать «method not found». Правила контроллеров: `bitrix-controllers`.
+`Bitrix\Rest\Engine\RestManager::onFindMethodDescription()` публикует действия только модулей с `restIntegration.enabled`. Для `lib/controller/post.php` имя действия в REST — `vendor.module.post.create`, в AJAX — `vendor:module.post.create`.
+
+В `rest` 26.900.0 и 26.1300.0 штатный компонент `bitrix:rest.server` при прямом запросе сначала ищет метод по строчному имени. При `ERROR_METHOD_NOT_FOUND` он повторяет поиск с регистром из запроса. Для `lib/Controller/Post.php` передавай `vendor.module.Post.create` и проверь вызов на целевой версии `rest` с регистрозависимой ФС. Правила разрешения имён — в `bitrix-controllers`.
 
 Ограничь действие REST либо исключи его из REST фильтром области:
 

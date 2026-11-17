@@ -15,7 +15,7 @@
 | Инфоблок | `CIBlock::Add/Update`: ORM не привязывает сайты, права, SEO-шаблоны |
 | Добавление / изменение / удаление свойства | `CIBlockProperty`, с учётом версии хранения |
 | Права | `CIBlock::SetPermission`, `CIBlockRights`, `CIBlockSectionRights`, `CIBlockElementRights` |
-| CRUD элемента / раздела | Компилируемый ORM (`rules/orm-entities.md`) либо `CIBlockElement`/`CIBlockSection` |
+| CRUD элемента / раздела | Компилируемый ORM. Условия для классического API см. в `rules/orm-entities.md` |
 | Миниатюры | `CFile::ResizeImageGet($fileId, ['width' => 300, 'height' => 300], BX_RESIZE_IMAGE_PROPORTIONAL)['src']` |
 | Индекс поиска | `CIBlockElement::UpdateSearch($id, true)` |
 

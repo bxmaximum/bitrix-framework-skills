@@ -2,7 +2,9 @@
 
 ## Стандартные фильтры
 
-`Controller::getDefaultPreFilters()` возвращает `Authentication`, `HttpMethod([GET, POST])`, `Csrf`; `JsonController` добавляет `ContentType([JSON])`. При переопределении начинай с `parent::getDefaultPreFilters()` (контроллеры REST v3 зависят от него). Если базовый список разрешает POST без `Csrf`, POST-запрос всё равно добавит `Csrf`. Действительно удаляют его только `-prefilters` / `#[DisablePrefilters]`.
+`Controller::getDefaultPreFilters()` возвращает `Authentication`, `HttpMethod([GET, POST])` и `Csrf`. `JsonController` добавляет `ContentType([JSON])`. При переопределении начинай с `parent::getDefaultPreFilters()`. От него зависят контроллеры REST v3.
+
+В main 26.1000.0 для POST ядро добавляет отсутствующий `Csrf`, если базовый `prefilters` содержит `HttpMethod`, разрешающий POST. Это происходит до обработки `+prefilters` и `-prefilters`. При замене набора фильтров для AJAX POST укажи `Csrf` явно.
 
 Встроенные `Bitrix\Main\Engine\ActionFilter\*`:
 
@@ -39,9 +41,9 @@ public function pingAction(): array { return ['ok' => true]; } // публичн
 public function configureActions(): array
 {
     return [
-        'get' => [
-            '+prefilters' => [new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_GET])],
-            '-prefilters' => [ActionFilter\Csrf::class],
+        'submit' => [
+            '-prefilters' => [ActionFilter\HttpMethod::class],
+            '+prefilters' => [new ActionFilter\HttpMethod([ActionFilter\HttpMethod::METHOD_POST])],
         ],
     ];
 }

@@ -12,6 +12,7 @@ Baseline: main 23.0+ · Verified: main 26.1000.0
 | Задача | Читать |
 | --- | --- |
 | Сайты, шаблон сайта, `#WORK_AREA#` | `rules/sites-templates.md` |
+| JavaScript шаблона сайта | `bitrix-extensions` |
 | Размещение CSS, `Asset::addCss()`, объединение стилей | `rules/styles.md` |
 | Свойства страницы и раздела, `.section.php`, меню, включаемые области, цепочка навигации, пользователи | `rules/pages.md` |
 | Пагинация: `PageNavigation`, обратная и административная, `bitrix:main.pagenavigation` | `rules/page-navigation.md` |

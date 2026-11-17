@@ -24,7 +24,7 @@ class Version20260720120000 extends Version
 }
 ```
 
-Базовый down() бросает «write down code». Оставь явный down(); если откат невозможен — пустой с объяснением.
+Если откат невозможен, выброси из `down()` исключение `\Sprint\Migration\Exceptions\MigrationException` с причиной. Пустой `down()` допустим, когда откатывать нечего. Sprint считает его успешным и снимает отметку о применении.
 
 ## Контракт результата
 
@@ -52,6 +52,7 @@ public function up()
     $iblockId = $helper->Iblock()->saveIblock([
         'NAME' => 'Новости',
         'CODE' => 'content_news',
+        'API_CODE' => 'ContentNews',
         'LID' => ['s1'],
         'IBLOCK_TYPE_ID' => 'content',
     ]);
@@ -60,7 +61,9 @@ public function up()
 
 public function down()
 {
-    $this->getHelperManager()->Iblock()->deleteIblockIfExists('content_news', 'content');
+    throw new \Sprint\Migration\Exceptions\MigrationException(
+        'Миграция могла изменить существующий инфоблок. Для отката нужны его прежние настройки.'
+    );
 }
 ```
 
@@ -122,4 +125,3 @@ public function up()
 - Предпочитай D7 ORM / сервисы; находи по бизнес-ключу для безопасного повтора.
 - Прямой SQL только вне возможностей ORM / помощников, значения экранируй через SqlHelper (`bitrix-database`).
 - Не допускай секретов, абсолютных путей одной машины, правок `/bitrix/`, случайных начальных данных, рабочей бизнес-логики.
-- Для необратимой правки — пустой down() с причиной, без разрушительного отката ради симметрии.

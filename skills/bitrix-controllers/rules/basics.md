@@ -2,14 +2,14 @@
 
 ## Файлы и имена действий
 
-`.settings.php` модуля (`/local/modules/vendor.module/.settings.php`):
+Настройка `/local/modules/vendor.module/.settings.php`.
 
 ```php
 'controllers' => [
     'value' => [
         'defaultNamespace' => '\\Vendor\\Module\\Infrastructure\\Controller',
         'namespaces' => [
-            '\\Vendor\\Module\\Infrastructure\\Controller\\Web' => 'web', // сегмент псевдонима
+            '\\Vendor\\Module\\Infrastructure\\Controller\\Api' => 'api',
         ],
         'restIntegration' => ['enabled' => true], // только для области REST
     ],
@@ -17,9 +17,10 @@
 ],
 ```
 
-- `lib/Infrastructure/Controller/Post.php` → действие `vendor:module.Post.create` (`Post::createAction`), URL `/bitrix/services/main/ajax.php?action=vendor:module.Post.create`.
-- `Web\Post::getAction` → `vendor:module.web.Post.get`. Суффикс `Controller` неизменен.
-- Если сегмент контроллера начинается со строчной буквы, разрешитель приводит весь путь пространства имён по умолчанию к нижнему регистру: загрузчик ищет `lib/infrastructure/controller/post.php`. Файлы PascalCase находятся на macOS, но на Linux дают "action not found". Ядро: `Engine/Resolver.php`, `buildControllerClassName()`, `Loader::autoLoad()`.
+- `lib/Infrastructure/Controller/Post.php` → `Post::createAction` по URL `/bitrix/services/main/ajax.php?action=vendor:module.Post.create`.
+- Сохраняй регистр имени класса в action. Для `lib/Infrastructure/Controller/Api/Slots.php` с алиасом `api` используй `vendor:module.api.Slots.list` (`Slots::listAction`).
+- Алиас сохраняет регистр namespace. Для фиксированного `vendor:module.api.slots.list` `Loader::autoLoad()` пробует `lib/Infrastructure/Controller/Api/slots.php`, затем `lib/infrastructure/controller/api/slots.php`. Используй второй путь и проверь запрос на регистрозависимой ФС.
+- Без алиаса строчная первая буква имени контроллера переводит `defaultNamespace` в нижний регистр (`Engine/Resolver.php`, `buildControllerClassName()`).
 
 ## Минимальный контроллер
 
@@ -69,9 +70,9 @@ final class Post extends Controller
 }
 ```
 
-Атрибуты требуют main 26.250\*; для старого ядра настройка через `configureActions()` в `rules/filters.md`. `JsonController` — это `Controller` с предварительным фильтром `ContentType([JSON])`.
+Атрибуты требуют main 26.250\*. На старом ядре используй `configureActions()` (`rules/filters.md`). `JsonController` добавляет фильтр `ContentType([JSON])`.
 
-Порядок: `__construct(Request)` → `init()` (строит конфигурацию фильтров; сначала вызывай `parent::init()`) → `processBeforeAction()` → предварительные фильтры → действие → последующие фильтры, `processAfterAction()` → ответ. `processBeforeAction()` выполняется до `Authentication`/`Csrf`: не размещай там побочные эффекты и логику, зависящую от прав. Компоненты (`class.php`, `Controllerable`) вызывают `onPrepareComponentParams()` для AJAX, но не `executeComponent()` (`bitrix-components`).
+`__construct(Request)` → `init()` → `processBeforeAction()` → предварительные фильтры → действие → последующие фильтры, `processAfterAction()` → ответ. Начинай `init()` с `parent::init()` для настройки фильтров. Операции с побочными эффектами и логику, зависящую от прав, размещай после фильтров. Для AJAX компонент вызывает `onPrepareComponentParams()`, пропуская `executeComponent()` (`bitrix-components`).
 
 ## Параметры действий (`Engine\AutoWire\Binder`)
 

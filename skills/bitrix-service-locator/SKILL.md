@@ -34,8 +34,8 @@ return [
     'services' => [
         'value' => [
             // интерфейс → реализация (автосборка с 26.250*)
-            \Vendor\Blog\Domain\PostRepositoryInterface::class => [
-                'className' => \Vendor\Blog\Infrastructure\OrmPostRepository::class,
+            \Vendor\Blog\Internals\Contract\Repository\PostRepositoryInterface::class => [
+                'className' => \Vendor\Blog\Internals\Repository\OrmPostRepository::class,
             ],
             // скалярные аргументы → фабрика
             \Vendor\Blog\Infrastructure\TelegramClient::class => [
@@ -55,13 +55,14 @@ return [
 ```
 
 - Не регистрируй конкретный класс, которому нужны только другие классы. `get(PostService::class)` соберёт зависимости, а один `[ 'className' => PostService::class ]` приведёт к `new PostService()` → `ArgumentCountError`.
-- Предпочитай ключи FQCN. Строковые ID (`main.validation.service`) — соглашение ядра.
+- Для зависимости с интерфейсом типизируй параметр конструктора интерфейсом. В `services` ключ — `Interface::class`, реализация задаётся в `className` или фабрикой `constructor`. Для остальных ключей предпочитай FQCN.
 - Ядро регистрирует `Application`, `Routing\Router`, `DB\Connection`, `Data\Cache`, `Data\ManagedCache`, `Data\TaggedCache`, `EventManager`, `Data\ConnectionPool`, `\CUserTypeManager` (**Since main 26.250\***) и `Data\Storage\PersistentStorageInterface` (**Since main 25.1100**, `bitrix-storage`). Передавай их в конструктор вместо вызовов `Application::getInstance()->…`.
 
 ## Переопределения
 
 - Побеждает первая регистрация: `registerByModuleSettings()` пропускает существующие ключи. Последующий модуль не переопределяет предыдущий.
-- Переопределяй привязку модуля в глобальной секции `services` файла `/local/.settings_extra.php` (регистрируется при старте до модулей) или во время выполнения (`init.php`, тесты): `ServiceLocator::getInstance()->addInstance($id, $object)` / `addInstanceLazy($id, ['className' => …])`.
+- Для переопределения до загрузки модуля задай привязку в секции `services` файла `/local/.settings_extra.php`. Ядро заменяет секцию целиком. Сохрани остальные глобальные привязки (`bitrix-settings`).
+- Во время выполнения используй `addInstanceLazy()` до первого `get()`. Уже созданный экземпляр в локаторе заменяй через `addInstance()`.
 
 ## Получение сервисов
 

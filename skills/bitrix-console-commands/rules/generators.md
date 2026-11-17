@@ -38,7 +38,8 @@
 - `orm:annotate [output] [-m main,vendor.blog] [-c/--clean] [--inside]` — PHPDoc классов ORM (по умолчанию `bitrix/modules/orm_annotations.php`; `--inside` пишет внутрь одного выбранного модуля).
 - `messenger:consume [queue ...] [-t/--time-limit N] [--sleep N]` — `bitrix-background-jobs`.
 - `update:modules [-m list] [-i versions.json]`, `update:versions <file.json>`, `update:languages [-l codes]` — обновления ядра и Marketplace.
-- `dev:module-skeleton <module> [dir]` — пустые каталоги слоёв `lib/`; `dev:locator-codes <module> [code] [--show]` — `.phpstorm.meta.php` для кодов `ServiceLocator::get()` из секции `services` модуля.
+- `dev:module-skeleton <module> [dir]` создаёт пустые каталоги по старой схеме в существующем `lib/`. Архитектуру нового модуля см. в `bitrix-modules/rules/architecture.md`.
+- `dev:locator-codes <module> [code] [--show]` — `.phpstorm.meta.php` для кодов `ServiceLocator::get()` из секции `services` модуля.
 - `translate:index` — только при установленном модуле `translate`.
 
 

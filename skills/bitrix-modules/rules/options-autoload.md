@@ -57,7 +57,8 @@ $tabControl = new CAdminTabControl('tabControl', [['DIV' => 'edit1', 'TAB' => Lo
 ## Автозагрузка
 
 - `Loader::includeModule('vendor.module')` регистрирует корень PSR-4 `Vendor\Module\` → `lib/` (однословный `mymodule` → `Bitrix\Mymodule\`), подключает `include.php` и регистрирует `services` модуля.
-- Загрузчик пробует точный регистр пути, затем нижний (`lib/Public/Service/PostService.php`, затем `lib/public/service/postservice.php`); `FooTable` также ищется как `foo.php`. Выбери единый стиль модуля.
+- Обязательные зависимости подключай в `include.php` модуля через `Loader::includeModule()`. При сбое верни `false`. Опциональные зависимости подключай на входе в интеграцию.
+- Для совместимости `Loader` после точного пути пробует его строчную форму. Для `FooTable` он также проверяет `Foo.php` и `foo.php`.
 - Для старого кода без PSR-4: `Loader::registerAutoLoadClasses('vendor.module', ['CVendorOld' => 'classes/general/old.php'])` в `include.php` (пути от каталога модуля).
 - Подробнее: `bitrix-project-structure`.
 

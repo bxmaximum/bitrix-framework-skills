@@ -9,7 +9,7 @@ Baseline: main 23.0+ · Verified: sprint.migration 5.16.1, main 26.1000.0
 
 Перед PHP-кодом прочитай `bitrix-framework`, если ещё не читал его в этой задаче. По таблице открой только нужный файл правил.
 
-Модуль Marketplace/Composer `andreyryabin/sprint.migration` хранит изменения структуры и контента PHP-классами в VCS. Таблицы, события и агенты собственного модуля — в его установщике (`bitrix-modules`).
+Модуль Marketplace/Composer `andreyryabin/sprint.migration` хранит изменения структуры и контента PHP-классами в VCS. Границу с установщиком модуля см. в `bitrix-modules`.
 
 **Не установлен?** Проверь `/local/modules/sprint.migration/`, `/bitrix/modules/sprint.migration/`, затем `Loader::includeModule('sprint.migration')`. Если отсутствует, предложи установку Marketplace / Composer. Не создавай самодельную систему миграций.
 
